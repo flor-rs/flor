@@ -1,0 +1,25 @@
+[package]
+name = "flor-macros"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = """
+TODO
+"""
+homepage.workspace = true
+repository.workspace = true
+readme = "./README.md"
+keywords.workspace = true
+license.workspace = true
+categories.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+proc-macro = true
+
+[dependencies]
+flor = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true, features = ["full", "parsing"] }
+heck = "0.5.0"

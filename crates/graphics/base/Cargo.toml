@@ -1,0 +1,25 @@
+[package]
+name = "flor-graphics-base"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = """
+TODO
+"""
+homepage.workspace = true
+repository.workspace = true
+readme = "./README.md"
+keywords.workspace = true
+license.workspace = true
+categories.workspace = true
+
+[features]
+svg = []
+
+[dependencies]
+#log =  { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+
+[lints]
+workspace = true

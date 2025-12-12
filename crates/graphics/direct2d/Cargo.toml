@@ -1,0 +1,37 @@
+[package]
+name = "flor-graphics-direct2d"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = """
+TODO
+"""
+homepage.workspace = true
+repository.workspace = true
+readme = "./README.md"
+keywords.workspace = true
+license.workspace = true
+categories.workspace = true
+
+[features]
+svg = ["windows/Win32_UI_Shell", "flor-graphics-base/svg"]
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+rustc-hash = { workspace = true }
+once_cell = { workspace = true }
+flor-graphics-base = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+windows = { workspace = true, features = ["Win32_Foundation",
+    "Win32_System_Com",
+    "Foundation_Numerics",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_Imaging",
+    "Win32_System_Variant",
+    "Win32_System_Com_StructuredStorage"] }
+windows-numerics = { workspace = true }

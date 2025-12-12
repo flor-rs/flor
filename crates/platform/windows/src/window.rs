@@ -1,0 +1,301 @@
+use crate::util::encode_wide::encode_wide;
+use crate::window_id::WindowId;
+use flor_platform_base::{WindowMode, WindowOperations};
+use once_cell::sync::Lazy;
+use windows::Win32::Foundation::{HINSTANCE, HWND, POINT, RECT};
+use windows::Win32::Graphics::Gdi::{ClientToScreen, InvalidateRect, UpdateWindow};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DestroyWindow, GetClientRect, GetWindowPlacement, GetWindowRect, LoadCursorW,
+    RegisterClassExW, SetWindowPos, ShowWindow, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+    HMENU, IDC_ARROW, SHOW_WINDOW_CMD, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED,
+    WINDOWPLACEMENT, WINDOW_EX_STYLE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+};
+use windows_core::{Error, PCWSTR};
+
+static CLASS_NAME: Lazy<Vec<u16>> = Lazy::new(|| {
+    let class_name = encode_wide("flower_window");
+    let wc = WNDCLASSEXW {
+        cbSize: size_of::<WNDCLASSEXW>() as u32,
+        style: CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS,
+        lpfnWndProc: Some(crate::window_proc::window_proc),
+        cbClsExtra: 0,
+        cbWndExtra: 0,
+        hInstance: Default::default(),
+        hIcon: Default::default(),
+        hCursor: unsafe { LoadCursorW(Some(HINSTANCE::default()), IDC_ARROW).unwrap_or_default() },
+        hbrBackground: Default::default(),
+        lpszMenuName: PCWSTR::null(),
+        lpszClassName: PCWSTR(class_name.as_ptr()),
+        hIconSm: Default::default(),
+    };
+    unsafe {
+        RegisterClassExW(&wc);
+    }
+    class_name
+});
+impl WindowOperations for WindowId {
+    type Error = Error;
+
+    fn create_window(title: &str, width: u32, height: u32) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
+        unsafe {
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                PCWSTR(CLASS_NAME.as_ptr()),
+                PCWSTR(encode_wide(title).as_ptr()),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                width as i32,
+                height as i32,
+                Some(HWND::default()),
+                Some(HMENU::default()),
+                Some(HINSTANCE::default()),
+                None,
+            )?;
+            Ok(hwnd.into())
+        }
+    }
+
+    fn request_redraw(&self) -> Result<(), Self::Error> {
+        unsafe {
+            InvalidateRect(Some(self.hwnd()), None, true).ok()?;
+            Ok(())
+        }
+    }
+
+    fn update_window(&self) -> Result<(), Self::Error> {
+        unsafe {
+            UpdateWindow(self.hwnd()).ok()?;
+            Ok(())
+        }
+    }
+
+    fn show(&self) -> Result<(), Self::Error> {
+        unsafe {
+            let _ = ShowWindow(self.hwnd(), SW_SHOW);
+            Ok(())
+        }
+    }
+
+    fn hide(&self) -> Result<(), Self::Error> {
+        unsafe {
+            let _ = ShowWindow(self.hwnd(), SW_HIDE);
+            Ok(())
+        }
+    }
+
+    fn set_window_mode(&self, mode: WindowMode) -> Result<(), Self::Error> {
+        let cmd = match mode {
+            WindowMode::Normal => SW_RESTORE,
+            WindowMode::Minimized => SW_MINIMIZE,
+            WindowMode::Maximized => SW_MAXIMIZE,
+            // 简单映射：全屏暂时等同于最大化 (如需真全屏需修改 Style)
+            WindowMode::Fullscreen => SW_MAXIMIZE,
+        };
+        unsafe {
+            let _ = ShowWindow(self.hwnd(), cmd);
+            Ok(())
+        }
+    }
+
+    fn get_window_mode(&self) -> Result<WindowMode, Self::Error> {
+        unsafe {
+            let mut placement = WINDOWPLACEMENT {
+                length: size_of::<WINDOWPLACEMENT>() as u32,
+                ..Default::default()
+            };
+            GetWindowPlacement(self.hwnd(), &mut placement)?;
+
+            match SHOW_WINDOW_CMD(placement.showCmd as i32) {
+                x if x == SW_SHOWMINIMIZED => Ok(WindowMode::Minimized),
+                x if x == SW_SHOWMAXIMIZED => Ok(WindowMode::Maximized),
+                _ => Ok(WindowMode::Normal),
+            }
+        }
+    }
+
+    fn get_scale_factor(&self) -> Result<f32, Self::Error> {
+        // unsafe {
+        //     // 获取窗口特定的 DPI (Windows 10 1607+)
+        //     let dpi = GetDpiForWindow(self.hwnd());
+        //     // 标准 DPI 是 96
+        //     Ok(dpi as f32 / 96.0)
+        // }
+        todo!()
+    }
+
+    // --- 位置 Getters ---
+
+    #[inline]
+    fn get_left(&self) -> Result<i32, Self::Error> {
+        // 直接复用 get_window_rect 的逻辑
+        self.get_window_rect().map(|v| v.0)
+    }
+
+    #[inline]
+    fn get_top(&self) -> Result<i32, Self::Error> {
+        self.get_window_rect().map(|v| v.1)
+    }
+
+    // --- 位置 Setters ---
+
+    fn set_left(&mut self, left: i32) -> Result<(), Self::Error> {
+        let (_, top, _, _) = self.get_window_rect()?;
+        unsafe {
+            SetWindowPos(
+                self.hwnd(),
+                None,
+                left,
+                top,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )?;
+            Ok(())
+        }
+    }
+
+    fn set_top(&mut self, top: i32) -> Result<(), Self::Error> {
+        let (left, _, _, _) = self.get_window_rect()?;
+        unsafe {
+            SetWindowPos(
+                self.hwnd(),
+                None,
+                left,
+                top,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )?;
+            Ok(())
+        }
+    }
+
+    fn set_position(&mut self, pos: (i32, i32)) -> Result<(), Self::Error> {
+        unsafe {
+            SetWindowPos(
+                self.hwnd(),
+                None,
+                pos.0,
+                pos.1,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )?;
+            Ok(())
+        }
+    }
+
+    // --- 尺寸 Getters ---
+
+    #[inline]
+    fn get_width(&self) -> Result<u32, Self::Error> {
+        self.get_window_rect().map(|v| v.2)
+    }
+
+    #[inline]
+    fn get_height(&self) -> Result<u32, Self::Error> {
+        self.get_window_rect().map(|v| v.3)
+    }
+
+    // --- 尺寸 Setters ---
+
+    fn set_width(&mut self, width: u32) -> Result<(), Self::Error> {
+        let (_, _, _, height) = self.get_window_rect()?;
+        unsafe {
+            SetWindowPos(
+                self.hwnd(),
+                None,
+                0,
+                0,
+                width as i32,
+                height as i32,
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )?;
+            Ok(())
+        }
+    }
+
+    fn set_height(&mut self, height: u32) -> Result<(), Self::Error> {
+        let (_, _, width, _) = self.get_window_rect()?;
+        unsafe {
+            SetWindowPos(
+                self.hwnd(),
+                None,
+                0,
+                0,
+                width as i32,
+                height as i32,
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )?;
+            Ok(())
+        }
+    }
+
+    fn set_size(&mut self, size: (u32, u32)) -> Result<(), Self::Error> {
+        unsafe {
+            SetWindowPos(
+                self.hwnd(),
+                None,
+                0,
+                0,
+                size.0 as i32,
+                size.1 as i32,
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )?;
+            Ok(())
+        }
+    }
+
+    // --- 区域查询 ---
+
+    fn get_client_size(&self) -> Result<(u32, u32), Self::Error> {
+        unsafe {
+            let mut rect = RECT::default();
+            GetClientRect(self.hwnd(), &mut rect)?;
+            // GetClientRect 的 left/top 永远是 0
+            Ok((rect.right as u32, rect.bottom as u32))
+        }
+    }
+
+    fn get_client_rect(&self) -> Result<(i32, i32, u32, u32), Self::Error> {
+        unsafe {
+            // 1. 获取大小
+            let mut rect = RECT::default();
+            GetClientRect(self.hwnd(), &mut rect)?;
+            let width = rect.right as u32;
+            let height = rect.bottom as u32;
+
+            // 2. 获取屏幕位置
+            // ClientToScreen 会把 rect 的 left/top (0,0) 转换成屏幕坐标
+            let mut point = POINT { x: 0, y: 0 };
+            ClientToScreen(self.hwnd(), &mut point).ok()?;
+
+            Ok((point.x, point.y, width, height))
+        }
+    }
+
+    fn get_window_rect(&self) -> Result<(i32, i32, u32, u32), Self::Error> {
+        unsafe {
+            let mut rect = RECT::default();
+            GetWindowRect(self.hwnd(), &mut rect)?;
+
+            // rect.right/bottom 是坐标，不是宽高，需要相减
+            let width = (rect.right - rect.left) as u32;
+            let height = (rect.bottom - rect.top) as u32;
+
+            Ok((rect.left, rect.top, width, height))
+        }
+    }
+
+    fn destroy(&self) -> Result<(), Self::Error> {
+        unsafe {
+            DestroyWindow(self.hwnd())?;
+            Ok(())
+        }
+    }
+}

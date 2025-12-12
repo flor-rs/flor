@@ -1,0 +1,49 @@
+[package]
+name = "flor"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = """
+TODO
+"""
+homepage.workspace = true
+repository.workspace = true
+readme = "./README.md"
+keywords.workspace = true
+license.workspace = true
+categories.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["direct2d"]
+glow = []
+direct2d = ["dep:flor-graphics-direct2d", "gpu-render-backend"]
+cpu-render-backend = []
+gpu-render-backend = []
+signal-tracing = []
+layout-flex = ["taffy/flexbox"]
+layout-grid = ["taffy/grid"]
+layout-block = ["taffy/block_layout"]
+
+# 顶层 SVG 虚拟特性（用户只需要启用这个）
+svg = [
+    "flor-graphics-direct2d?/svg"
+]
+
+[dependencies]
+log = { workspace = true }
+once_cell = { workspace = true }
+rustc-hash = { workspace = true }
+thiserror = { workspace = true }
+flor-graphics-base = { workspace = true }
+#graphics-opengl = { workspace = true, optional = true }
+flor-graphics-direct2d = { workspace = true, optional = true }
+flor-platform-base = { workspace = true }
+taffy = { workspace = true }
+parking_lot = "0.12"
+slotmap = "1.0"
+dashmap = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+flor-platform-windows = { workspace = true }

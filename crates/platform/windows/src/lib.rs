@@ -1,0 +1,69 @@
+use std::time::Duration;
+use log::{debug, info, trace};
+use windows::Win32::UI::WindowsAndMessaging::{
+    DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostQuitMessage, TranslateMessage,
+    MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
+};
+
+mod conversions;
+mod drop_target;
+mod proc_handler;
+mod util;
+mod window_id;
+mod window;
+mod window_proc;
+
+pub mod base {
+    pub use flor_platform_base::*;
+}
+
+pub mod events {
+    use crate::window_id::WindowId;
+    use flor_platform_base::HandleResult;
+    use flor_platform_base::Message;
+
+    pub type EventMessageHandler = fn(window_id: WindowId, message: Message) -> HandleResult;
+}
+
+pub use {proc_handler::*, window_id::WindowId,windows::core::Error};
+
+#[inline]
+pub fn handler_wait(timeout: Option<Duration>) {
+    info!("lazy wait: {:?}", timeout);
+    let millis = match timeout {
+        None => u32::MAX, // 无限等待，对应纯静态
+        Some(d) => d.as_millis().min(u32::MAX as u128) as u32,
+    };
+    unsafe {
+        MsgWaitForMultipleObjectsEx(None, millis, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    }
+}
+
+#[inline]
+pub fn handler_message() {
+    unsafe {
+        let mut msg = MSG::default();
+        while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+            // if msg.message == WM_QUIT { return; }
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        // MsgWaitForMultipleObjectsEx(None, u32::MAX, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        // let mut msg = MSG::default();
+        // trace!("msg");
+        // if PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+        //     trace!("PeekMessageW");
+        //     let _ = TranslateMessage(&msg);
+        //     trace!("TranslateMessage");
+        //     DispatchMessageW(&msg);
+        //     trace!("DispatchMessageW");
+        // }
+    }
+}
+
+pub fn exit() {
+    unsafe {
+        PostQuitMessage(0);
+    }
+}
