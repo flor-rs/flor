@@ -34,7 +34,26 @@ use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
     D2D_POINT_2U, D2D_RECT_F, D2D_RECT_U, D2D_SIZE_F, D2D_SIZE_U,
 };
-use windows::Win32::Graphics::Direct2D::{CLSID_D2D1Crop, CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow, D2D1CreateFactory, ID2D1Bitmap1, ID2D1Brush, ID2D1CommandList, ID2D1DeviceContext, ID2D1DeviceContext5, ID2D1Effect, ID2D1Factory2, ID2D1Geometry, ID2D1HwndRenderTarget, ID2D1Image, ID2D1ImageBrush, ID2D1Layer, ID2D1PathGeometry1, ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_OPTIONS_NONE, D2D1_BITMAP_PROPERTIES1, D2D1_BRUSH_PROPERTIES, D2D1_BUFFER_PRECISION_8BPC_UNORM, D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED, D2D1_COLOR_SPACE_SRGB, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_CROP_PROP_RECT, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_MULTI_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_IMAGE_BRUSH_PROPERTIES, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS1_NONE, D2D1_LAYER_PARAMETERS1, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_PRESENT_OPTIONS_NONE, D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_QUADRATIC_BEZIER_SEGMENT, D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE};
+use windows::Win32::Graphics::Direct2D::{
+    CLSID_D2D1Crop, CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow, D2D1CreateFactory, ID2D1Bitmap1,
+    ID2D1Brush, ID2D1CommandList, ID2D1DeviceContext, ID2D1DeviceContext5, ID2D1Effect,
+    ID2D1Factory2, ID2D1Geometry, ID2D1HwndRenderTarget, ID2D1Image, ID2D1ImageBrush, ID2D1Layer,
+    ID2D1PathGeometry1, ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+    D2D1_BITMAP_OPTIONS_NONE, D2D1_BITMAP_PROPERTIES1, D2D1_BRUSH_PROPERTIES,
+    D2D1_BUFFER_PRECISION_8BPC_UNORM, D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED,
+    D2D1_COLOR_SPACE_SRGB, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_CROP_PROP_RECT,
+    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_MULTI_THREADED,
+    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE,
+    D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_HWND_RENDER_TARGET_PROPERTIES,
+    D2D1_IMAGE_BRUSH_PROPERTIES, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS1_NONE,
+    D2D1_LAYER_PARAMETERS1, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
+    D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_PRESENT_OPTIONS_NONE, D2D1_PROPERTY_TYPE_ENUM,
+    D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_QUADRATIC_BEZIER_SEGMENT,
+    D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+    D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
+    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
+};
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
     DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_LINE_SPACING_METHOD_DEFAULT,
@@ -2203,6 +2222,8 @@ impl D2DRender {
 
             // 标记当前是否有打开的 Figure (图形段)
             let mut is_figure_started = false;
+            // 跟踪当前点位置 (Start point for next command)
+            let mut current_point = Vector2 { X: 0.0, Y: 0.0 };
 
             for cmd in path.commands() {
                 match cmd {
@@ -2212,12 +2233,16 @@ impl D2DRender {
                             sink.EndFigure(D2D1_FIGURE_END_OPEN);
                         }
                         // 开始新段
-                        sink.BeginFigure(Vector2 { X: *x, Y: *y }, D2D1_FIGURE_BEGIN_FILLED);
+                        let pt = Vector2 { X: *x, Y: *y };
+                        sink.BeginFigure(pt, D2D1_FIGURE_BEGIN_FILLED);
                         is_figure_started = true;
+                        current_point = pt;
                     }
                     PathCommand::LineTo(x, y) => {
                         if is_figure_started {
-                            sink.AddLine(Vector2 { X: *x, Y: *y });
+                            let pt = Vector2 { X: *x, Y: *y };
+                            sink.AddLine(pt);
+                            current_point = pt;
                         }
                     }
                     PathCommand::Bezier(points) => {
@@ -2236,6 +2261,7 @@ impl D2DRender {
                                     }, // End
                                 };
                                 sink.AddQuadraticBezier(&bezier);
+                                current_point = bezier.point2;
                             } else if points.len() == 3 {
                                 // 三次贝塞尔 (2 控制点 + 1 终点)
                                 let bezier = D2D1_BEZIER_SEGMENT {
@@ -2253,8 +2279,27 @@ impl D2DRender {
                                     }, // End
                                 };
                                 sink.AddBezier(&bezier);
+                                current_point = bezier.point3;
+                            } else if points.len() > 3 {
+                                // === 无限贝塞尔 (High-Order Bezier) ===
+                                // 1. 构建完整的控制点列表 (Start + Points)
+                                let mut control_points = Vec::with_capacity(points.len() + 1);
+                                control_points.push(current_point);
+                                for p in points {
+                                    control_points.push(Vector2 { X: p.0, Y: p.1 });
+                                }
+
+                                // 2. 离散化 (Discretize)
+                                // 步数可以根据曲线长度动态计算，这里暂定固定 100 段
+                                let steps = 100;
+                                for i in 1..=steps {
+                                    let t = i as f32 / steps as f32;
+                                    let next_pt = calculate_bezier_point(t, &control_points);
+                                    sink.AddLine(next_pt);
+                                    current_point = next_pt;
+                                }
                             } else {
-                                // 暂不支持其他阶数的贝塞尔，可以选择 panic 或忽略
+                                // 点数 < 2 的情况 (不合法)
                                 eprintln!("Unsupported Bezier points count: {}", points.len());
                             }
                         }
@@ -2626,4 +2671,35 @@ fn compute_path_cache_key(path: &Path, stroke_width: f32, is_stroke: bool) -> u6
         "PATH_FILL".hash(&mut s);
     }
     s.finish()
+}
+
+/// De Casteljau 算法计算贝塞尔曲线上的点
+/// points: 包含起点的所有控制点
+fn calculate_bezier_point(t: f32, points: &[Vector2]) -> Vector2 {
+    if points.is_empty() {
+        return Vector2 { X: 0.0, Y: 0.0 };
+    }
+    if points.len() == 1 {
+        return points[0];
+    }
+
+    // 我们可以复用 buffer 避免每次递归都 alloc，但简单的递归/循环更容易理解
+    // 这里使用迭代版 De Casteljau
+    let mut temp = points.to_vec();
+    let n = temp.len();
+
+    // 每一层减少一个点
+    for k in 1..n {
+        for i in 0..(n - k) {
+            // Linear Interpolation: P_i = (1-t)*P_i + t*P_{i+1}
+            let p0 = temp[i];
+            let p1 = temp[i + 1];
+            temp[i] = Vector2 {
+                X: (1.0 - t) * p0.X + t * p1.X,
+                Y: (1.0 - t) * p0.Y + t * p1.Y,
+            };
+        }
+    }
+
+    temp[0]
 }
