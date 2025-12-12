@@ -26,7 +26,7 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::OnceLock;
 use std::{fmt, slice};
-use windows::core::{w, Interface, GUID, HSTRING, PCWSTR};
+use windows::core::{w, Interface, HSTRING, PCWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_BORDER_MODE, D2D1_BORDER_MODE_HARD,
@@ -34,27 +34,7 @@ use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
     D2D_POINT_2U, D2D_RECT_F, D2D_RECT_U, D2D_SIZE_F, D2D_SIZE_U,
 };
-use windows::Win32::Graphics::Direct2D::{
-    CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow, D2D1CreateFactory, ID2D1Bitmap1, ID2D1Brush,
-    ID2D1CommandList, ID2D1DeviceContext, ID2D1DeviceContext5, ID2D1Effect, ID2D1Factory2,
-    ID2D1Geometry, ID2D1HwndRenderTarget, ID2D1Image, ID2D1ImageBrush, ID2D1Layer,
-    ID2D1PathGeometry1, ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_ALIASED,
-    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-    D2D1_BITMAP_OPTIONS_NONE, D2D1_BITMAP_PROPERTIES1, D2D1_BRUSH_PROPERTIES,
-    D2D1_BUFFER_PRECISION_8BPC_UNORM, D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED,
-    D2D1_COLOR_SPACE_SRGB, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_NONE,
-    D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_MULTI_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION,
-    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_IMAGE_BRUSH_PROPERTIES,
-    D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS1_NONE, D2D1_LAYER_PARAMETERS1,
-    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_PRESENT_OPTIONS_IMMEDIATELY,
-    D2D1_PRESENT_OPTIONS_NONE, D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_FLOAT,
-    D2D1_PROPERTY_TYPE_VECTOR4, D2D1_QUADRATIC_BEZIER_SEGMENT,
-    D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
-    D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
-    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
-};
+use windows::Win32::Graphics::Direct2D::{CLSID_D2D1Crop, CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow, D2D1CreateFactory, ID2D1Bitmap1, ID2D1Brush, ID2D1CommandList, ID2D1DeviceContext, ID2D1DeviceContext5, ID2D1Effect, ID2D1Factory2, ID2D1Geometry, ID2D1HwndRenderTarget, ID2D1Image, ID2D1ImageBrush, ID2D1Layer, ID2D1PathGeometry1, ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_OPTIONS_NONE, D2D1_BITMAP_PROPERTIES1, D2D1_BRUSH_PROPERTIES, D2D1_BUFFER_PRECISION_8BPC_UNORM, D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED, D2D1_COLOR_SPACE_SRGB, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_CROP_PROP_RECT, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_MULTI_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_IMAGE_BRUSH_PROPERTIES, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS1_NONE, D2D1_LAYER_PARAMETERS1, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_PRESENT_OPTIONS_NONE, D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_QUADRATIC_BEZIER_SEGMENT, D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE};
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
     DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_LINE_SPACING_METHOD_DEFAULT,
@@ -67,12 +47,7 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_WORD_WRAPPING_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
-use windows::Win32::Graphics::Imaging::{
-    CLSID_WICImagingFactory, GUID_ContainerFormatGif, GUID_WICPixelFormat32bppPBGRA,
-    IWICImagingFactory, IWICMetadataQueryReader, WICBitmapDitherTypeNone,
-    WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnLoad,
-};
-use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PROPVARIANT};
+use windows::Win32::Graphics::Imaging::{CLSID_WICImagingFactory, IWICImagingFactory};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 #[cfg(feature = "svg")]
 use windows::{
@@ -203,7 +178,6 @@ impl RenderFactory {
                     },
                 },
             )?;
-            dbg!(&render);
             render.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             render.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
             let current_render = render.cast::<ID2D1DeviceContext>()?;
@@ -216,6 +190,8 @@ impl RenderFactory {
                 scratch_brush,
                 cached_shadow_effect: None,
                 cached_blur_effect: None,
+                cached_crop_effect: None,
+                cached_blur_bitmap: None,
                 last_blur_radius: 0.0,
                 lur: LruCache::new(NonZeroUsize::new(512).unwrap_or_else(|| unreachable!())),
                 layer_pool: vec![],
@@ -232,6 +208,8 @@ pub struct D2DRender {
     pub scratch_brush: ID2D1SolidColorBrush,
     pub cached_shadow_effect: Option<ID2D1Effect>,
     pub cached_blur_effect: Option<ID2D1Effect>, // 缓存 ID2D1Effect 对象
+    pub cached_crop_effect: Option<ID2D1Effect>, // 缓存 Crop, 避免模糊时采样到脏数据
+    pub cached_blur_bitmap: Option<ID2D1Bitmap1>, // 缓存用于截屏的 Bitmap (Scratch Bitmap)
     pub last_blur_radius: f32,                   // 缓存上次使用的半径
     pub lur: LruCache<u64, ID2D1CommandList>,
     pub layer_pool: Vec<ID2D1Layer>,
@@ -385,12 +363,20 @@ impl RenderContext for D2DRender {
     fn set_render_target(&mut self, surface_id: &Self::SurfaceId) -> Result<(), Self::Error> {
         self.current_render = surface_id.raw().cast::<ID2D1DeviceContext>()?;
         self.cached_shadow_effect = None;
+        self.cached_blur_effect = None;
+        self.cached_crop_effect = None;
+        self.cached_blur_bitmap = None;
+        self.last_blur_radius = -1.0;
         Ok(())
     }
 
     fn reset_render_target(&mut self) -> Result<(), Self::Error> {
         self.current_render = self.hwnd_render.cast::<ID2D1DeviceContext>()?;
         self.cached_shadow_effect = None;
+        self.cached_blur_effect = None;
+        self.cached_crop_effect = None;
+        self.cached_blur_bitmap = None;
+        self.last_blur_radius = -1.0;
         Ok(())
     }
 
@@ -2296,8 +2282,81 @@ impl D2DRender {
 
     /// 内部通用逻辑：执行截屏、模糊并返回画笔和物理位置
     /// 返回: (模糊后的画笔, 物理包围盒左上角偏移)
+    // 内部 helper：获取可复用的 Blur Effect
+    fn get_or_create_blur_effect(&mut self) -> Result<ID2D1Effect, D2DBackendError> {
+        if let Some(effect) = &self.cached_blur_effect {
+            return Ok(effect.clone());
+        }
+
+        let effect = unsafe {
+            let effect = self.current_render.CreateEffect(&CLSID_D2D1GaussianBlur)?;
+            self.cached_blur_effect = Some(effect.clone());
+            effect
+        };
+
+        Ok(effect)
+    }
+
+    // 内部 helper：获取可复用的 Bitmap (Scratch Bitmap)
+    fn get_scratch_bitmap(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<ID2D1Bitmap1, D2DBackendError> {
+        unsafe {
+            let need_create = if let Some(current_bmp) = &self.cached_blur_bitmap {
+                let size = current_bmp.GetPixelSize();
+                size.width < width || size.height < height
+            } else {
+                true
+            };
+
+            if need_create {
+                let pixel_format = self.current_render.GetPixelFormat();
+                let mut dpi_x = 0.0;
+                let mut dpi_y = 0.0;
+                self.current_render.GetDpi(&mut dpi_x, &mut dpi_y);
+
+                let bitmap_props = D2D1_BITMAP_PROPERTIES1 {
+                    pixelFormat: pixel_format,
+                    dpiX: dpi_x,
+                    dpiY: dpi_y,
+                    bitmapOptions: D2D1_BITMAP_OPTIONS_NONE,
+                    colorContext: ManuallyDrop::new(None),
+                };
+
+                let new_bmp = self.current_render.CreateBitmap(
+                    D2D_SIZE_U { width, height },
+                    None,
+                    0,
+                    &bitmap_props,
+                )?;
+                self.cached_blur_bitmap = Some(new_bmp);
+            }
+
+            Ok(self.cached_blur_bitmap.as_ref().unwrap().clone())
+        }
+    }
+
+    // 内部 helper：获取可复用的 Crop Effect
+    fn get_or_create_crop_effect(&mut self) -> Result<ID2D1Effect, D2DBackendError> {
+        if let Some(effect) = &self.cached_crop_effect {
+            return Ok(effect.clone());
+        }
+
+        let effect = unsafe {
+            let effect = self.current_render.CreateEffect(&CLSID_D2D1Crop)?;
+            self.cached_crop_effect = Some(effect.clone());
+            effect
+        };
+
+        Ok(effect)
+    }
+
+    /// 内部通用逻辑：执行截屏、模糊并返回画笔和物理位置
+    /// 返回: (模糊后的画笔, 物理包围盒左上角偏移)
     fn create_blur_brush_for_geometry(
-        &self,
+        &mut self,
         geometry: &ID2D1Geometry,
         blur_radius: f32,
         world_transform: &Matrix3x2,
@@ -2314,29 +2373,10 @@ impl D2DRender {
             let width_u = (right_u - left_u).max(1) as u32;
             let height_u = (bottom_u - top_u).max(1) as u32;
 
-            let pixel_format = self.current_render.GetPixelFormat();
-            let mut dpi_x = 0.0;
-            let mut dpi_y = 0.0;
-            self.current_render.GetDpi(&mut dpi_x, &mut dpi_y);
+            // 1. 获取复用的 Bitmap
+            let snapshot = self.get_scratch_bitmap(width_u, height_u)?;
 
-            let bitmap_props = D2D1_BITMAP_PROPERTIES1 {
-                pixelFormat: pixel_format,
-                dpiX: dpi_x,
-                dpiY: dpi_y,
-                bitmapOptions: D2D1_BITMAP_OPTIONS_NONE,
-                colorContext: ManuallyDrop::new(None),
-            };
-
-            let snapshot: ID2D1Bitmap1 = self.current_render.CreateBitmap(
-                D2D_SIZE_U {
-                    width: width_u,
-                    height: height_u,
-                },
-                None,
-                0,
-                &bitmap_props,
-            )?;
-
+            // 2. 将屏幕内容拷贝到 Bitmap 的 (0,0) 位置
             let dest_point = D2D_POINT_2U { x: 0, y: 0 };
             let src_rect = D2D_RECT_U {
                 left: left_u as u32,
@@ -2344,31 +2384,61 @@ impl D2DRender {
                 right: (left_u as u32) + width_u,
                 bottom: (top_u as u32) + height_u,
             };
+
+            // 注意：CopyFromRenderTarget 会把 src_rect 区域拷贝到 bitmap 的 dest_point
             snapshot.CopyFromRenderTarget(
                 Some(&dest_point),
                 &self.current_render,
                 Some(&src_rect),
             )?;
 
-            let blur_effect = self.current_render.CreateEffect(&CLSID_D2D1GaussianBlur)?;
-            blur_effect.SetInput(0, &snapshot, true);
-            blur_effect.SetValue(
-                D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0 as u32,
-                D2D1_PROPERTY_TYPE_FLOAT,
-                &blur_radius.to_ne_bytes(),
+            // 3. 使用 Crop Effect 裁剪出有效区域 (避免 Blur 采样到右侧/下侧的脏数据)
+            let crop_effect = self.get_or_create_crop_effect()?;
+            crop_effect.SetInput(0, &snapshot, true);
+
+            let crop_rect = D2D_RECT_F {
+                left: 0.0,
+                top: 0.0,
+                right: width_u as f32,
+                bottom: height_u as f32,
+            };
+            crop_effect.SetValue(
+                D2D1_CROP_PROP_RECT.0 as u32,
+                D2D1_PROPERTY_TYPE_VECTOR4,
+                slice::from_raw_parts(&crop_rect as *const _ as *const u8, size_of::<D2D_RECT_F>()),
             )?;
-            let border_mode = D2D1_BORDER_MODE_HARD;
-            blur_effect.SetValue(
-                D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0 as u32,
-                D2D1_PROPERTY_TYPE_ENUM,
-                slice::from_raw_parts(
-                    &border_mode as *const _ as *const u8,
-                    size_of::<D2D1_BORDER_MODE>(),
-                ),
-            )?;
+
+            // 4. 获取复用的 Blur Effect，连接到 Crop
+            let blur_effect = self.get_or_create_blur_effect()?;
+
+            // 链接: Blur -> Input(Crop output)
+            // 注意: GetOutput 会增加引用计数，记得这只是个临时 Image 接口
+            let crop_output = crop_effect.GetOutput()?;
+            blur_effect.SetInput(0, &crop_output, true);
+
+            // 设置参数 (如果半径变了)
+            if (self.last_blur_radius - blur_radius).abs() > 0.001 {
+                blur_effect.SetValue(
+                    D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0 as u32,
+                    D2D1_PROPERTY_TYPE_FLOAT,
+                    &blur_radius.to_ne_bytes(),
+                )?;
+                // Border mode 只需要设置一次，但我懒得加 cached_border_mode 了，且开销很小
+                let border_mode = D2D1_BORDER_MODE_HARD;
+                blur_effect.SetValue(
+                    D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0 as u32,
+                    D2D1_PROPERTY_TYPE_ENUM,
+                    slice::from_raw_parts(
+                        &border_mode as *const _ as *const u8,
+                        size_of::<D2D1_BORDER_MODE>(),
+                    ),
+                )?;
+                self.last_blur_radius = blur_radius;
+            }
 
             let output_image: ID2D1Image = blur_effect.GetOutput()?;
 
+            // 4. 创建画笔 (画笔创建比较轻量，可以保留每次创建，或者也想办法缓存？目前先保留创建)
             let brush_props = D2D1_IMAGE_BRUSH_PROPERTIES {
                 sourceRectangle: D2D_RECT_F {
                     left: 0.0,
@@ -2557,71 +2627,3 @@ fn compute_path_cache_key(path: &Path, stroke_width: f32, is_stroke: bool) -> u6
     }
     s.finish()
 }
-//
-// /// 尝试从 WIC Decoder 中安全地读取所有帧的延迟信息（毫秒）。
-// /// 如果图片不是 GIF，或者元数据不存在，则返回一个默认延迟数组。
-// pub fn read_frame_delays(
-//     decoder: &IWICBitmapDecoder,
-//     frame_count: u32,
-// ) -> Result<Vec<u32>, D2DBackendError> {
-//     if frame_count <= 1 {
-//         // 如果只有一帧，则不需要延迟信息
-//         return Ok(vec![]);
-//     }
-//
-//     let mut delays_ms = Vec::with_capacity(frame_count as usize);
-//
-//     unsafe {
-//         // 尝试获取 MetadataQueryReader
-//         let query_reader = match decoder.GetMetadataQueryReader() {
-//             Ok(reader) => reader,
-//             Err(_) => {
-//                 // 如果没有元数据读取器，则返回默认延迟 (例如 30ms / 30fps)
-//                 return Ok(vec![30; frame_count as usize]);
-//             }
-//         };
-//
-//         let mut prop_variant = PROPVARIANT::default();
-//
-//         // 尝试读取 GIF Delay 信息。如果路径不存在，这里会返回错误，被 match 捕获。
-//         // Metadata path for GIF frame delays: "/grctlext/Delay"
-//         query_reader.GetMetadataByName(w!("/grctlext/Delay"), &mut prop_variant)?;
-//
-//         // 元数据读取成功，现在检查类型
-//         if prop_variant.Anonymous.Anonymous.vt == VT_UI2 {
-//             // 确认类型是 VT_UI2 (u16 数组)
-//
-//             // VT_UI2 对应 CAUI (cElems: count, pElems: ptr to u16)
-//             let ptr = prop_variant.Anonymous.Anonymous.Anonymous.caui.pElems;
-//             let count = prop_variant.Anonymous.Anonymous.Anonymous.caui.cElems as usize;
-//
-//             // 确保数据指针有效且数量匹配
-//             if !ptr.is_null() && count == frame_count as usize {
-//                 let delays_cs: &[u16] = slice::from_raw_parts(ptr, count);
-//
-//                 for &delay in delays_cs {
-//                     let mut delay_val = delay as u32;
-//
-//                     // ⚠️ 关键修正：遵循浏览器标准
-//                     // 如果延迟值 <= 1 (也就是 <= 10ms)，强制改为 10 (100ms)
-//                     if delay_val <= 1 {
-//                         delay_val = 10;
-//                     }
-//
-//                     let ms = delay_val * 10;
-//                     delays_ms.push(ms);
-//                 }
-//             }
-//         }
-//
-//         // 关键：读取完成后必须清理 PROPVARIANT 结构体，否则可能内存泄露
-//         PropVariantClear(&mut prop_variant)?;
-//     }
-//
-//     if delays_ms.len() == frame_count as usize {
-//         Ok(delays_ms)
-//     } else {
-//         // 如果读取失败（例如不是 GIF，或者元数据格式/数量不对），返回默认延迟
-//         Ok(vec![30; frame_count as usize])
-//     }
-// }
