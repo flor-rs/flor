@@ -54,13 +54,7 @@ pub fn render<'a>(window_id: WindowId) -> Option<Ref<'a, WindowId, Arc<RwLock<Fl
 pub fn render_from_view_id<'a>(
     view_id: ViewId,
 ) -> Option<Ref<'a, WindowId, Arc<RwLock<FlorRender>>>> {
-    debug!(
-        "VIEW_STORAGE.window_ids = {:?}",
-        VIEW_STORAGE.window_ids.read().deref()
-    );
-    let x = VIEW_STORAGE.window_ids.read();
-
-    let ret = x.get(view_id).and_then(|window_id| RENDERS.get(&window_id));
+    let ret = VIEW_STORAGE.window_ids.read().get(view_id).and_then(|window_id| RENDERS.get(&window_id));
     ret
 }
 

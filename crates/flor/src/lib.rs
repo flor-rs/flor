@@ -46,8 +46,10 @@ impl FlorGui {
     }
 
     pub fn exit(&self) {
-        platform::exit();
-        EXIT.store(true, Ordering::Relaxed);
+        if ALLOW_NO_WINDOWS_LOOP.load(Ordering::Acquire) {
+            platform::exit();
+            EXIT.store(true, Ordering::Release);
+        }
     }
 
     pub fn event_loop(&self) {
@@ -62,10 +64,10 @@ impl FlorGui {
         loop {
             platform::handler_message();
 
-            let allow = ALLOW_NO_WINDOWS_LOOP.load(Ordering::Relaxed);
+            let allow = ALLOW_NO_WINDOWS_LOOP.load(Ordering::Acquire);
             trace!("allow_no_windows_loop: {}", allow);
 
-            if !allow && EXIT.load(Ordering::Relaxed) {
+            if !allow && EXIT.load(Ordering::Acquire) {
                 info!("application exit.");
                 break;
             }
@@ -144,7 +146,7 @@ impl FlorGui {
     pub fn allow_no_windows_loop(&self, allow_no_windows_loop: impl Fn() -> bool + 'static) {
         create_updater(
             move || allow_no_windows_loop(),
-            |value| ALLOW_NO_WINDOWS_LOOP.store(value, Ordering::Relaxed),
+            |value| ALLOW_NO_WINDOWS_LOOP.store(value, Ordering::Release),
         );
     }
 }

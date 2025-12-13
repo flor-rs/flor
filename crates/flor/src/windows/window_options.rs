@@ -18,7 +18,7 @@ pub struct WindowOption {
     pub width: u32,
     pub height: u32,
     pub wait_v_sync: bool,
-    pub continuous_rendering:bool,
+    pub continuous_rendering: bool,
     pub view_fn: Option<Box<dyn Fn(WindowId) -> Box<dyn View + Send + Sync>>>,
 }
 
@@ -51,7 +51,7 @@ impl WindowOption {
         let render = FlorRender::create(window_id, width, height, self.wait_v_sync)
             .expect("Failed to create renderer");
 
-        let view_id = WindowEntry::new(window_id,self.continuous_rendering);
+        let view_id = WindowEntry::new(window_id, self.continuous_rendering);
 
         VIEW_STORAGE
             .views
@@ -63,7 +63,10 @@ impl WindowOption {
 
         let root_dyn_view = create_updater(
             move || view_fn(window_id),
-            move |view| view_id.update_state(Box::new(view)),
+            move |view| {
+                view_id.update_state(Box::new(view));
+                VIEW_STORAGE.sweep_orphan_views();
+            },
         );
 
         trace!("window root view: {:?}", root_dyn_view);

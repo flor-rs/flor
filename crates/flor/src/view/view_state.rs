@@ -8,6 +8,7 @@ pub struct ViewState {
     pub layout: Layout,
     pub node_id: Option<NodeId>,
     pub layout_style: LayoutStateSelector,
+    pub dirty_children: bool,
     pub disable: bool,
     // 事件处理器
     pub click_handler: Option<Arc<dyn Fn() + Send + Sync>>,
@@ -38,6 +39,7 @@ impl ViewState {
             layout: Layout::default(),
             node_id: None,
             layout_style: LayoutStateSelector::default(),
+            dirty_children: false,
             disable: false,
             click_handler: None,
             double_click_handler: None,

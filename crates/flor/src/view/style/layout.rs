@@ -84,7 +84,7 @@ pub enum Layout {
 
     // Block container properties
     /// How items elements should aligned in the inline axis
-    #[cfg(feature = "block_layout")]
+    #[cfg(feature = "layout-block")]
     TextAlign(TextAlign),
 
     // Flexbox container properties
@@ -166,7 +166,7 @@ pub enum LayoutKey {
     JustifyContent,
     #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
     Gap,
-    #[cfg(feature = "block_layout")]
+    #[cfg(feature = "layout-block")]
     TextAlign,
     #[cfg(feature = "layout-flex")]
     FlexDirection,
@@ -223,7 +223,7 @@ pub trait LayoutStateSelectorExt: Sized {
     fn justify_content(self, value: JustifyContent) -> Self;
     #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
     fn gap(self, value: Size<LengthPercentage>) -> Self;
-    #[cfg(feature = "block_layout")]
+    #[cfg(feature = "layout-block")]
     fn text_align(self, value: TextAlign) -> Self;
     #[cfg(feature = "layout-flex")]
     fn flex_direction(self, value: FlexDirection) -> Self;
@@ -343,7 +343,7 @@ impl LayoutStateSelectorExt for StateSelector<LayoutKey, Layout> {
         self.push(LayoutKey::Gap, Layout::Gap(value));
         self
     }
-    #[cfg(feature = "block_layout")]
+    #[cfg(feature = "layout-block")]
     fn text_align(mut self, value: TextAlign) -> Self {
         self.push(LayoutKey::TextAlign, Layout::TextAlign(value));
         self
@@ -417,13 +417,29 @@ use crate::view::style::style_selector::StateSelector;
 pub type LayoutStateSelector = StateSelector<LayoutKey, Layout>;
 
 pub trait CalcTaffyStyle {
-    fn calc_taffy_style(&self, control_state: ControlState) -> taffy::Style;
+    fn calc_taffy_style(&self, control_state: ControlState) -> Option<taffy::Style>;
 }
 
 impl CalcTaffyStyle for LayoutStateSelector {
-    fn calc_taffy_style(&self, control_state: ControlState) -> taffy::Style {
+    fn calc_taffy_style(&self, control_state: ControlState) -> Option<taffy::Style> {
+        if !self.is_dirty(control_state) {
+            return None;
+        }
         let mut layout_style = taffy::Style::default();
-        if let Some(map) = self.styles.get(&control_state) {
+
+        // #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Default)]
+        // pub enum ControlState {
+        //     #[default]
+        //     Normal,
+        //     Focus,
+        //     Hover,
+        //     Active,
+        //     Disable,
+        // }
+
+        // 这里少逻辑了。 如果访问的不是normal map，继承成normalmap的数据+新的数据覆盖进来
+
+        if let Some(map) = self.get_style(control_state) {
             for layout in map.values() {
                 match layout {
                     Layout::Display(v) => layout_style.display = *v,
@@ -454,7 +470,7 @@ impl CalcTaffyStyle for LayoutStateSelector {
                     Layout::JustifyContent(v) => layout_style.justify_content = Some(*v),
                     #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
                     Layout::Gap(v) => layout_style.gap = *v,
-                    #[cfg(feature = "block_layout")]
+                    #[cfg(feature = "layout-block")]
                     Layout::TextAlign(v) => layout_style.text_align = *v,
                     #[cfg(feature = "layout-flex")]
                     Layout::FlexDirection(v) => layout_style.flex_direction = *v,
@@ -485,6 +501,6 @@ impl CalcTaffyStyle for LayoutStateSelector {
                 }
             }
         }
-        layout_style
+        Some(layout_style)
     }
 }

@@ -4,6 +4,7 @@ use crate::view::View;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use platform::WindowId;
+use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::{SecondaryMap, SlotMap};
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -21,11 +22,12 @@ pub struct ViewStorage {
     /// 父子关系存储
     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,
     /// 视图树储存
-    pub views: RwLock<SecondaryMap<ViewId, RwLock<Box<dyn View + Send + Sync+ 'static>>>>,
+    pub views: RwLock<SecondaryMap<ViewId, RwLock<Box<dyn View + Send + Sync + 'static>>>>,
     /// 储存当前视图所在窗口id todo
     pub window_ids: RwLock<SecondaryMap<ViewId, WindowId>>,
     /// 储存父级关系
     pub parent_view_id: RwLock<SecondaryMap<ViewId, ViewId>>,
+    pub main_view_ids: RwLock<FxHashMap<WindowId, ViewId>>,
 }
 
 impl ViewStorage {
@@ -37,6 +39,7 @@ impl ViewStorage {
             views: Default::default(),
             window_ids: Default::default(),
             parent_view_id: Default::default(),
+            main_view_ids: Default::default(),
         }
     }
 
@@ -62,7 +65,7 @@ impl ViewStorage {
         {
             let mut child_ids = self.child_ids.write();
 
-            self.parent_view_id.write().insert(child.view_id(),parent);
+            self.parent_view_id.write().insert(child.view_id(), parent);
             if let Some(children) = child_ids.get_mut(parent) {
                 children.push(child.view_id());
             } else {
@@ -72,9 +75,11 @@ impl ViewStorage {
 
         let child_view_id = child.view_id();
 
-        self.views
-            .write()
-            .insert(child_view_id, RwLock::new(child));
+        self.views.write().insert(child_view_id, RwLock::new(child));
+        if let Some(view_state) = VIEW_STORAGE.states.read().get(parent) {
+            view_state.write().dirty_children = true;
+        }
+
         // 关联窗口检索
         let x = { VIEW_STORAGE.window_ids.read().get(parent).cloned() };
         if let Some(window_id) = x {
@@ -94,53 +99,85 @@ impl ViewStorage {
         }
     }
 
-    /// 移除视图及其所有子视图
-    pub fn remove_view(&self, view_id: ViewId) {
+    pub fn dispose_view(&self, view_id: ViewId) {
+        if !self.states.read().contains_key(view_id) {
+            return;
+        }
+
         let children = {
-            let child_ids = self.child_ids.read();
-            child_ids.get(view_id).map(|c| c.clone())
+            let mut child_ids = self.child_ids.write();
+            child_ids.remove(view_id)
         };
 
-        // 先递归移除所有子视图
         if let Some(children) = children {
             for child in children {
-                self.remove_view(child);
+                self.dispose_view(child);
             }
         }
 
-        // 只需要移除 view_id，其他关联数据会自动清理
-        self.view_ids.lock().remove(view_id);
-    }
+        if let Some(parent) = view_id.parent_view_id() {
+            {
+                let mut child_ids = self.child_ids.write();
+                if let Some(children) = child_ids.get_mut(parent) {
+                    children.retain(|&id| id != view_id);
+                }
+            }
 
-    pub fn dispose_view(&self, view_id: ViewId) {
-        // 1. 递归删除子控件
-        let children = {
-            let mut child_map = self.child_ids.write();
-            child_map.remove(view_id)
-        };
-
-        if let Some(children) = children {
-            for child_id in children {
-                self.remove_view(child_id);
+            if let Some(parent_state) = self.states.write().get(parent) {
+                parent_state.write().dirty_children = true;
             }
         }
 
-        // 2. 从父节点 child 列表中移除自己
-        {
-            let mut child_map = self.child_ids.write();
-            for (_, children) in child_map.iter_mut() {
-                children.retain(|&id| id != view_id);
-            }
-        }
-
-        // 3. 删除 SecondaryMap 条目
         self.states.write().remove(view_id);
         self.views.write().remove(view_id);
         self.window_ids.write().remove(view_id);
-        self.child_ids.write().remove(view_id); // 再清理一次防止残留
 
-        // 4. 最后删除 SlotMap 中的 view_id
+        // 6. 最后移除 ID
         self.view_ids.lock().remove(view_id);
+    }
+
+    pub fn sweep_orphan_views(&self) {
+        use rustc_hash::FxHashSet;
+
+        let all_views = self.states.read().keys().collect::<FxHashSet<ViewId>>();
+
+        let mut alive = FxHashSet::default();
+
+        {
+            let child_ids = self.child_ids.read();
+            let main_roots = self.main_view_ids.read();
+
+            fn mark(
+                view_id: ViewId,
+                child_ids: &SecondaryMap<ViewId, Vec<ViewId>>,
+                alive: &mut FxHashSet<ViewId>,
+            ) {
+                if !alive.insert(view_id) {
+                    return;
+                }
+
+                if let Some(children) = child_ids.get(view_id) {
+                    for &child in children {
+                        mark(child, child_ids, alive);
+                    }
+                }
+            }
+
+            // --- 核心修改点：遍历所有窗口的根节点 ---
+            for &root_id in main_roots.values() {
+                if all_views.contains(&root_id) {
+                    mark(root_id, &child_ids, &mut alive);
+                }
+            }
+        }
+
+        let dead_views = all_views.difference(&alive).copied().collect::<Vec<ViewId>>();
+
+        if !dead_views.is_empty() {
+            for dead_view_id in dead_views {
+                self.dispose_view(dead_view_id);
+            }
+        }
     }
 }
 

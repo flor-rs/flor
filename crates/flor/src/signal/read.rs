@@ -27,7 +27,11 @@ pub trait Read<T> {
         RUNTIME
             .values
             .get(&self.id())
-            .expect("invalid signal id")
+            .expect(
+                "invalid signal id: this signal has likely been destroyed.\n\
+                    Signals in this system may be manually cleaned up or reclaimed.\n\
+                    If the signal lifetime is not guaranteed, use `try_get()` instead of `get()`.",
+            )
             .get::<T>()
             .expect("to downcast signal type fail")
             .clone()

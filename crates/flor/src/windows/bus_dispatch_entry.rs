@@ -1,19 +1,17 @@
 use crate::error::Error;
 use crate::log_error::LogError;
-use crate::render::FlorRender;
-use crate::view::style::layout::CalcTaffyStyle;
 use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
+use crate::view::{collect_layout_children, View};
 use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::RenderContext;
 use flor_platform_base::{MousePosition, WindowOperations};
 use flor_platform_base::{KeyCode, KeyState};
 use log::{trace, warn};
 use platform::WindowId;
-use slotmap::Key;
 use std::ops::DerefMut;
 use std::time::{Duration, Instant};
 use taffy::{AvailableSpace, Size, Style};
+use crate::view::style::layout::CalcTaffyStyle;
 use crate::windows::bus::{render, render_from_view_id};
 
 /// 总线的事件分发入口，给窗口用的
@@ -40,47 +38,65 @@ impl WindowBusDispatchEntry for WindowId {
     fn bus_refresh_layout_entry(&self) -> Result<(), Error> {
         trace!("enter relayout");
 
-        let Some(entry_ref) = self.entry() else {
+        let Some(window_entry) = self.entry() else {
             warn!("window not found entry in re_layout_entry function.");
             return Ok(());
         };
-        let layout_tree = &mut entry_ref.taffy_tree.write();
-        let view_id = entry_ref.view_id;
 
-        trace!("let states = VIEW_STORAGE.states.read()");
+        let layout_tree = &mut window_entry.taffy_tree.write();
+        let view_id = window_entry.view_id;
+
         let states = VIEW_STORAGE.states.read();
-        let Some(view_state) = states.get(view_id) else {
+        let Some(view_state_cell) = states.get(view_id) else {
             panic!("View storage's states not found view_id:{view_id:?}");
         };
-        let self_style = view_state
-            .read()
+
+        let view_state = view_state_cell.read();
+        let old_node_id = view_state.node_id;
+
+        let mut style_update = view_state
             .layout_style
             .calc_taffy_style(view_id.control_state());
 
-        let root_node_id = if let Some(childs) = { VIEW_STORAGE.child_ids.read().get(view_id) } {
-            let mut node_ids = Vec::new();
-            for child_view_id in childs {
-                if let Some(dyn_view) = { VIEW_STORAGE.views.read().get(*child_view_id) } {
-                    node_ids.push(dyn_view.write().bus_layout_node(layout_tree)?);
+        // 这里的特殊逻辑：如果 style 有更新，必须强制加上 100% 的尺寸限制
+        if let Some(s) = &mut style_update {
+            s.size = Size::from_percent(1.0, 1.0);
+        }
+
+        drop(view_state);
+
+
+        let children = collect_layout_children(view_id, layout_tree)?;
+
+        let root_node_id = match (old_node_id, style_update) {
+            (Some(node_id), None) => {
+                if !children.is_empty() {
+                    layout_tree.set_children(node_id, &children)?;
+                }
+                node_id
+            }
+            (Some(node_id), Some(new_style)) => {
+                layout_tree.set_style(node_id, new_style)?;
+                if !children.is_empty() {
+                    layout_tree.set_children(node_id, &children)?;
+                }
+                node_id
+            }
+            (None, style_opt) => {
+                let style = style_opt.unwrap_or_else(|| Style {
+                    size: Size::from_percent(1.0, 1.0),
+                    ..Default::default()
+                });
+                if children.is_empty() {
+                    layout_tree.new_leaf_with_context(style, view_id)?
+                } else {
+                    layout_tree.new_with_children(style, &children)?
                 }
             }
-            layout_tree.new_with_children(
-                Style {
-                    size: Size::from_percent(1.0, 1.0),
-                    ..self_style.clone()
-                },
-                &node_ids,
-            )?
-        } else {
-            layout_tree.new_leaf(self_style.clone())?
         };
 
-        // 更新node_id
-        if let Some(view_state) = VIEW_STORAGE.states.read().get(view_id) {
-            let mut view_state = view_state.write();
-            if let Some(old_node_id) = view_state.node_id.take() {
-                layout_tree.remove(old_node_id)?;
-            }
+        if old_node_id != Some(root_node_id) {
+            let mut view_state = view_state_cell.write();
             view_state.node_id = Some(root_node_id);
         }
 
@@ -91,20 +107,14 @@ impl WindowBusDispatchEntry for WindowId {
                 height: AvailableSpace::Definite(client_size.1 as f32),
                 width: AvailableSpace::Definite(client_size.0 as f32),
             },
-            |known_dimensions, available_space, _node_id, view_id, style| {
-                trace!("view_id: {:?}, available_space: {available_space:?}, known_dimensions: {known_dimensions:?}, style: {style:?}",view_id.as_ref().map(|v|v.data()));
-                if let Some(view_id) = view_id {
+            |known_dimensions, available_space, _node_id, node_context_view_id, style| {
+                if let Some(view_id) = node_context_view_id {
                     if let Some(dyn_view) = VIEW_STORAGE.views.read().get(*view_id) {
-                        trace!("find view");
                         if let Some(render) = render_from_view_id(*view_id).as_deref() {
-                            trace!("find view_bus");
                             let mut render = render.write();
                             let render = render.deref_mut();
-
-                            let mut view = dyn_view
-                                .write();
-                            return
-                                view.measure(known_dimensions, available_space, style, render)
+                            let mut view = dyn_view.write();
+                            return view.measure(known_dimensions, available_space, style, render)
                                 .unwrap_or(Size::ZERO);
                         }
                     }
@@ -112,18 +122,15 @@ impl WindowBusDispatchEntry for WindowId {
                 Size::ZERO
             },
         )?;
-        // dbg!(self.get_height(),self.get_width());
-        // dbg!(self.layout_tree.layout(root_node)?);
+
         {
             trace!("bus_update_layout begin");
-            // 直接从view发起访问
             if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
                 view.write().bus_update_layout(layout_tree)?;
             }
             trace!("bus_update_layout end");
         }
-        // entry_ref.clear_layout_dirty();
-        // self.request_redraw();
+
         Ok(())
     }
 

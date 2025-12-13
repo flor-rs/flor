@@ -13,7 +13,7 @@ use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::{RenderContext, SurfaceId};
 use once_cell::sync::Lazy;
 use platform::WindowId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::{new_key_type, Key};
 use std::any::Any;
 use std::fmt::{Display, Formatter};
