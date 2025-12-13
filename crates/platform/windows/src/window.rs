@@ -2,14 +2,16 @@ use crate::util::encode_wide::encode_wide;
 use crate::window_id::WindowId;
 use flor_platform_base::{WindowMode, WindowOperations};
 use once_cell::sync::Lazy;
-use windows::Win32::Foundation::{HINSTANCE, HWND, POINT, RECT};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{ClientToScreen, InvalidateRect, UpdateWindow};
+use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, GetClientRect, GetWindowPlacement, GetWindowRect, LoadCursorW,
-    RegisterClassExW, SetWindowPos, ShowWindow, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-    HMENU, IDC_ARROW, SHOW_WINDOW_CMD, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED,
-    WINDOWPLACEMENT, WINDOW_EX_STYLE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+    RegisterClassExW, SendMessageW, SetWindowPos, ShowWindow, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW,
+    CW_USEDEFAULT, HMENU, HTCAPTION, IDC_ARROW, SC_MOVE, SHOW_WINDOW_CMD, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
+    SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, WINDOWPLACEMENT, WINDOW_EX_STYLE, WM_SYSCOMMAND,
+    WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 use windows_core::{Error, PCWSTR};
 
@@ -289,6 +291,19 @@ impl WindowOperations for WindowId {
             let height = (rect.bottom - rect.top) as u32;
 
             Ok((rect.left, rect.top, width, height))
+        }
+    }
+
+    fn drag_window(&self) -> Result<(), Self::Error> {
+        unsafe {
+            ReleaseCapture()?;
+            SendMessageW(
+                self.hwnd(),
+                WM_SYSCOMMAND,
+                Some(WPARAM((SC_MOVE | HTCAPTION) as usize)),
+                Some(LPARAM(0)),
+            );
+            Ok(())
         }
     }
 

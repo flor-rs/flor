@@ -93,14 +93,14 @@ impl ViewId {
     }
 
     //     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,
-    pub fn push_child_ids(self, child_ids: impl IntoIterator<Item = ViewId>) {
-        let mut child_ids_read = VIEW_STORAGE.child_ids.write();
-        if let Some(view_ids) = child_ids_read.get_mut(self) {
-            view_ids.extend(child_ids);
-        } else {
-            child_ids_read.insert(self, child_ids.into_iter().collect());
-        }
-    }
+    // pub fn push_child_ids(self, child_ids: impl IntoIterator<Item = ViewId>) {
+    //     let mut child_ids_read = VIEW_STORAGE.child_ids.write();
+    //     if let Some(view_ids) = child_ids_read.get_mut(self) {
+    //         view_ids.extend(child_ids);
+    //     } else {
+    //         child_ids_read.insert(self, child_ids.into_iter().collect());
+    //     }
+    // }
 
     #[inline]
     pub fn push_view(self, view: Box<dyn View + Send + Sync + 'static>) {
@@ -129,7 +129,7 @@ impl ViewId {
     pub fn is_hover(self) -> bool {
         if let Some(win_id) = self.window_id() {
             if let Some(entry) = win_id.entry() {
-                return entry.active_id == Some(self);
+                return entry.hover_id == Some(self);
             }
         }
         false
@@ -188,6 +188,14 @@ impl ViewId {
             if let Some(mut entry) = win_id.entry_mut() {
                 entry.focus_manager.update_focused(self, focus_index);
             }
+        }
+    }
+    pub fn update_z_index(self, z_index: i32) {
+        let _ = self.with_state_mut(|state|{
+            state.z_index = z_index;
+        });
+        if let Some(window_id) = self.window_id() {
+            VIEW_STORAGE.rebuild_render_cache(window_id)
         }
     }
 

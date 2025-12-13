@@ -1,32 +1,35 @@
 use crate::error::Error;
 use crate::log_error::LogError;
+use crate::view::style::layout::CalcTaffyStyle;
+use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::{collect_layout_children, View};
+use crate::windows::bus::{render, render_from_view_id};
 use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::RenderContext;
-use flor_platform_base::{MousePosition, WindowOperations};
 use flor_platform_base::{KeyCode, KeyState};
+use flor_platform_base::{MousePosition, WindowOperations};
 use log::{trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
 use std::time::{Duration, Instant};
 use taffy::{AvailableSpace, Size, Style};
-use crate::view::style::layout::CalcTaffyStyle;
-use crate::windows::bus::{render, render_from_view_id};
 
 /// 总线的事件分发入口，给窗口用的
 pub trait WindowBusDispatchEntry {
-    fn create_entry(&mut self) -> Result<(), Error>;
+    fn create_entry(&self) -> Result<(), Error>;
     fn bus_refresh_layout_entry(&self) -> Result<(), Error>;
     fn bus_re_draw_entry(&self) -> Result<(), Error>;
+    fn bus_hit_test_entry(&self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId;
     fn bus_frame_entry(&self) -> Result<Option<Duration>, Error>;
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_mouse_leave(&self);
     fn bus_key_down_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool);
     fn bus_key_up_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool);
 }
 
 impl WindowBusDispatchEntry for WindowId {
-    fn create_entry(&mut self) -> Result<(), Error> {
+    fn create_entry(&self) -> Result<(), Error> {
         let view_id = self.view_id();
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write().bus_create()?;
@@ -34,7 +37,6 @@ impl WindowBusDispatchEntry for WindowId {
         Ok(())
     }
 
-    // todo 脏布局检测
     fn bus_refresh_layout_entry(&self) -> Result<(), Error> {
         trace!("enter relayout");
 
@@ -64,7 +66,6 @@ impl WindowBusDispatchEntry for WindowId {
         }
 
         drop(view_state);
-
 
         let children = collect_layout_children(view_id, layout_tree)?;
 
@@ -114,7 +115,8 @@ impl WindowBusDispatchEntry for WindowId {
                             let mut render = render.write();
                             let render = render.deref_mut();
                             let mut view = dyn_view.write();
-                            return view.measure(known_dimensions, available_space, style, render)
+                            return view
+                                .measure(known_dimensions, available_space, style, render)
                                 .unwrap_or(Size::ZERO);
                         }
                     }
@@ -150,6 +152,21 @@ impl WindowBusDispatchEntry for WindowId {
         Ok(())
     }
 
+    fn bus_hit_test_entry(&self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId {
+        let cache_guard = VIEW_STORAGE.z_index_sort.read();
+
+        if let Some(render_list) = cache_guard.get(self) {
+            for &view_id in render_list.iter().rev() {
+                if let Some(view_lock) = VIEW_STORAGE.views.read().get(view_id) {
+                    if view_lock.read().on_hit_test(mouse_pos, key_state) {
+                        return view_id;
+                    }
+                }
+            }
+        }
+        self.view_id()
+    }
+
     fn bus_frame_entry(&self) -> Result<Option<Duration>, Error> {
         if let Some(view) = VIEW_STORAGE.views.read().get(self.view_id()) {
             return view.write().bus_frame(Instant::now());
@@ -158,10 +175,62 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.view_id();
-        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-            view.write().bus_mouse_move(key_state, mouse_position);
+        // 1. 【获取新 ID】: 必定是一个有效的 ViewId (最差也是窗口自己)
+        let new_hovered_id = self.bus_hit_test_entry(mouse_position, key_state);
+
+        // 2. 【获取旧 ID】: 可能是 None (如果刚从窗口外移入)
+        let old_hovered_id = self.entry().and_then(|v| v.hover_id);
+
+        let views = VIEW_STORAGE.views.read();
+
+        // =========================================================
+        // 逻辑 A: 处理【离开】(MouseLeave)
+        // 条件：之前有东西，且那个东西不是现在这个
+        // =========================================================
+        if let Some(old_id) = old_hovered_id {
+            if old_id != new_hovered_id {
+                if let Some(view_lock) = views.get(old_id) {
+                    // 旧的离开
+                    view_lock.write().on_mouse_leave(key_state, mouse_position);
+                }
+            }
         }
+
+        // =========================================================
+        // 逻辑 B: 处理【进入】(MouseEnter)
+        // 条件：旧的是 None，或者 旧的 != 新的
+        // =========================================================
+        // 注意：这里不需要unwrap new_hovered_id，因为它就是 ViewId
+        if old_hovered_id != Some(new_hovered_id) {
+            if let Some(view_lock) = views.get(new_hovered_id) {
+                // 新的进入
+                view_lock.write().on_mouse_enter(key_state, mouse_position);
+            }
+        }
+
+        // =========================================================
+        // 逻辑 C: 处理【移动】(MouseMove)
+        // 条件：只要在窗口内，当前命中的这个 View 就要持续收到 Move
+        // =========================================================
+        if let Some(view_lock) = views.get(new_hovered_id) {
+            view_lock.write().on_mouse_move(key_state, mouse_position);
+        }
+
+        // =========================================================
+        // 3. 更新状态
+        // =========================================================
+        if let Some(mut entry) = self.entry_mut() {
+            trace!("update hovered id {:?}", new_hovered_id);
+            // 更新为 Some(ViewId)
+            entry.hover_id = Some(new_hovered_id);
+        }
+    }
+
+    fn bus_mouse_leave(&self) {
+        self.entry_mut().map(|mut v| {
+            v.hover_id = None;
+        });
+        self.request_redraw().expect("request_redraw error");
     }
 
     fn bus_key_down_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {

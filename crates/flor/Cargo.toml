@@ -44,6 +44,7 @@ taffy = { workspace = true }
 parking_lot = "0.12"
 slotmap = "1.0"
 dashmap = { workspace = true }
+result = "1.0.0"
 
 [target.'cfg(windows)'.dependencies]
 flor-platform-windows = { workspace = true }

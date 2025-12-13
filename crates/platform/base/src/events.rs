@@ -106,6 +106,7 @@ pub enum Message<'a> {
         is_ctrl: bool,
         is_shift: bool,
     },
+    MouseLeave,
     DragEnter,
     DragOver {
         key_state: KeyState,

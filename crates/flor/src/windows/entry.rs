@@ -17,7 +17,7 @@ pub struct WindowEntry {
     pub view_id: ViewId,
     pub taffy_tree: RwLock<TaffyTree<ViewId>>,
     // If the mouse moves out of the window, the IDs below will be set to None.
-    pub active_id: Option<ViewId>,
+    pub hover_id: Option<ViewId>,
     pub focus_id: Option<ViewId>,
     pub focus_manager: FocusManager,
     pub continuous_rendering: bool,
@@ -33,7 +33,7 @@ impl WindowEntry {
         let window_entry = Self {
             view_id,
             taffy_tree: RwLock::new(TaffyTree::new()),
-            active_id: None,
+            hover_id: None,
             focus_id: None,
             focus_manager: Default::default(),
             continuous_rendering,

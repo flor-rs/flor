@@ -1,16 +1,18 @@
-use log::{debug, trace};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use log::{debug, info, trace};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VIRTUAL_KEY, VK_1, VK_CONTROL, VK_LSHIFT, VK_MENU, VK_SHIFT};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use flor_platform_base::{KeyCode, Message};
-use flor_platform_base::HandleResult;
 use crate::conversions::key_code::FromVkCode;
 use crate::conversions::key_state::IntoKeyState;
 use crate::conversions::mouse_position::IntoMousePosition;
 use crate::proc_handler::proc;
 use crate::util::{hiword, loword};
+use flor_platform_base::HandleResult;
+use flor_platform_base::{KeyCode, Message};
+
+static IDT_MOUSE_CHECK_TIMER: usize = 999;
 
 pub(crate) unsafe extern "system" fn window_proc(
     hwnd: HWND,
@@ -18,7 +20,7 @@ pub(crate) unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    // trace!("window proc {:?}",(hwnd, msg, wparam, lparam));
+    info!("window proc {:?}", (hwnd, msg, wparam, lparam));
     // if let Some(proc_handler) = USER_PROC_HANDLER {
     //     if let HandlerResult::Handled(result) = proc_handler(hwnd, msg, wparam, lparam) {
     //         debug!("user proc handler {:?}",result);
@@ -157,10 +159,23 @@ pub(crate) unsafe extern "system" fn window_proc(
                     mouse_position: lparam.0.into_mouse_position(),
                 },
             ) {
+                info!("set timer ");
+                let mut tme = TRACKMOUSEEVENT {
+                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: Default::default(),
+                    dwHoverTime: 500,
+                };
+
+                // 告诉系统："看着点，如果鼠标走了叫我"
+                unsafe { TrackMouseEvent(&mut tme).ok() };
                 return LRESULT(0);
             }
         }
-
+        WM_NCMOUSELEAVE => {
+            info!("WM_NCMOUSELEAVE ");
+            let _ = proc().window_proc(hwnd.into(), Message::MouseLeave);
+        }
         WM_DESTROY => {
             debug!("WM_DESTROY",);
             let _ = proc().window_proc(hwnd.into(), Message::WindowDestroy);
@@ -192,9 +207,19 @@ pub(crate) unsafe extern "system" fn window_proc(
 
             let code = KeyCode::from_vk(vk);
             let msg = if is_down {
-                Message::KeyDown { code, is_alt, is_ctrl, is_shift }
+                Message::KeyDown {
+                    code,
+                    is_alt,
+                    is_ctrl,
+                    is_shift,
+                }
             } else {
-                Message::KeyUp { code, is_alt, is_ctrl, is_shift }
+                Message::KeyUp {
+                    code,
+                    is_alt,
+                    is_ctrl,
+                    is_shift,
+                }
             };
 
             let _ = proc().window_proc(hwnd.into(), msg);

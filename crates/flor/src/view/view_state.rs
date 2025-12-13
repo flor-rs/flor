@@ -10,6 +10,7 @@ pub struct ViewState {
     pub layout_style: LayoutStateSelector,
     pub dirty_children: bool,
     pub disable: bool,
+    pub z_index: i32,
     // 事件处理器
     pub click_handler: Option<Arc<dyn Fn() + Send + Sync>>,
     pub double_click_handler: Option<Arc<dyn Fn() + Send + Sync>>,
@@ -41,6 +42,7 @@ impl ViewState {
             layout_style: LayoutStateSelector::default(),
             dirty_children: false,
             disable: false,
+            z_index: 0,
             click_handler: None,
             double_click_handler: None,
             mouse_enter_handler: None,

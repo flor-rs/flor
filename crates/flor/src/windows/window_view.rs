@@ -63,3 +63,13 @@ impl View for WindowId {
         Ok(())
     }
 }
+
+pub trait TryViewId {
+    fn try_view_id(&self) -> Option<ViewId>;
+}
+
+impl TryViewId for WindowId {
+    fn try_view_id(&self) -> Option<ViewId> {
+        Some(WINDOW_ENTRY_MAP.get(self)?.value().view_id)
+    }
+}

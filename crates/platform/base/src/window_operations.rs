@@ -7,7 +7,8 @@ pub trait WindowOperations {
     /// title: 窗口标题
     /// width, height: 初始客户区大小 (逻辑像素或物理像素，取决于你的框架约定，通常建议物理像素)
     fn create_window(title: &str, width: u32, height: u32) -> Result<Self, Self::Error>
-    where Self: Sized;
+    where
+        Self: Sized;
 
     // --- 核心绘制 ---
 
@@ -81,6 +82,8 @@ pub trait WindowOperations {
     /// 用途：保存窗口位置配置、对齐其他窗口
     /// 返回：(screen_x, screen_y, width, height)
     fn get_window_rect(&self) -> Result<(i32, i32, u32, u32), Self::Error>;
+
+    fn drag_window(&self) -> Result<(), Self::Error>;
 
     // --- 生命周期 ---
 

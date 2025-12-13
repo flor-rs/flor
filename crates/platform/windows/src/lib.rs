@@ -44,21 +44,9 @@ pub fn handler_message() {
     unsafe {
         let mut msg = MSG::default();
         while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-            // if msg.message == WM_QUIT { return; }
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
-
-        // MsgWaitForMultipleObjectsEx(None, u32::MAX, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-        // let mut msg = MSG::default();
-        // trace!("msg");
-        // if PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-        //     trace!("PeekMessageW");
-        //     let _ = TranslateMessage(&msg);
-        //     trace!("TranslateMessage");
-        //     DispatchMessageW(&msg);
-        //     trace!("DispatchMessageW");
-        // }
     }
 }
 

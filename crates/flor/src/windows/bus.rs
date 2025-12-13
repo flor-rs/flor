@@ -133,6 +133,9 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
         } => {
             window_id.bus_key_up_entry(code, is_alt, is_ctrl, is_shift);
         }
+        Message::MouseLeave => {
+            window_id.bus_mouse_leave();
+        }
         Message::Close => {
             return Ok(HandleResult::WindowClose(true));
         }

@@ -1,19 +1,19 @@
-use std::any::Any;
-use std::time::{Duration, Instant};
-use log::trace;
-use taffy::{AvailableSpace, Layout, NodeId, Size, Style, TaffyTree};
-use flor_graphics_base::RenderContext;
-use flor_platform_base::{KeyCode, KeyState, MousePosition};
 use crate::error::Error;
 use crate::min_wait_time::MinWaitTime;
-use crate::render::{FlorImageHandle, FlorRender, FlorRenderError, LoadRenderResource};
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
+use crate::render::{FlorImageHandle, FlorRender, FlorRenderError, LoadRenderResource};
 use crate::view::style::layout::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render_from_view_id;
 use crate::windows::entry::WindowEntryVisit;
+use flor_graphics_base::RenderContext;
+use flor_platform_base::{KeyCode, KeyState, MousePosition};
+use log::trace;
+use std::any::Any;
+use std::time::{Duration, Instant};
+use taffy::{AvailableSpace, Layout, NodeId, Size, Style, TaffyTree};
 
 /// View特征定义了所有UI组件的基本行为
 pub trait View {
@@ -141,12 +141,8 @@ pub trait View {
         Ok(())
     }
 
-    // 总线调度
-    fn bus_mouse_move(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.view_id();
-        let views = VIEW_STORAGE.views.read();
-
-        let layout = view_id.layout();
+    fn on_hit_test(&self, mouse_position: MousePosition, key_state: KeyState) -> bool {
+        let layout = self.view_id().layout();
         // 当前控件布局
         let x = layout.location.x;
         let y = layout.location.y;
@@ -156,32 +152,9 @@ pub trait View {
         // 鼠标位置
         let mx = mouse_position.x as f32;
         let my = mouse_position.y as f32;
-        trace!(
-            "x: {}, y: {}, w: {}, h: {}, mx: {},my: {}",
-            x,
-            y,
-            w,
-            h,
-            mx,
-            my
-        );
-        if mx >= x && mx < x + w && my >= y && my < y + h {
-            if let Some(win_id) = view_id.window_id() {
-                if let Some(mut entry) = win_id.entry_mut() {
-                    trace!("set active view_id:{view_id:?}");
-                    entry.active_id = Some(view_id);
-                }
-            }
-        }
 
-        self.on_mouse_move(key_state, mouse_position);
-        if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(view_id) {
-            for child_id in child_view_ids {
-                if let Some(view) = views.get(*child_id) {
-                    view.write().bus_mouse_move(key_state, mouse_position);
-                }
-            }
-        }
+        // 鼠标在不在范围内
+        mx >= x && mx < x + w && my >= y && my < y + h
     }
 
     fn on_create(&mut self) -> Result<(), Error> {
@@ -214,12 +187,16 @@ pub trait View {
         Ok(Size::ZERO)
     }
 
-    // 鼠标进入，用户方法
+    #[allow(unused_variables)]
+    fn on_mouse_enter(&mut self, key_state: KeyState, mouse_position: MousePosition) {}
     #[allow(unused_variables)]
     fn on_mouse_move(&mut self, key_state: KeyState, mouse_position: MousePosition) {}
+    #[allow(unused_variables)]
+    fn on_mouse_leave(&mut self, key_state: KeyState, mouse_position: MousePosition) {}
 
     #[allow(unused_variables)]
-    fn on_key_down(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {}
+    fn on_key_down(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
+    }
     #[allow(unused_variables)]
     fn on_key_up(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {}
 

@@ -1,10 +1,12 @@
 use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
 use crate::view::View;
+use crate::windows::entry::WINDOW_ENTRY_MAP;
+use crate::windows::window_view::TryViewId;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use platform::WindowId;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use slotmap::{SecondaryMap, SlotMap};
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -27,7 +29,7 @@ pub struct ViewStorage {
     pub window_ids: RwLock<SecondaryMap<ViewId, WindowId>>,
     /// 储存父级关系
     pub parent_view_id: RwLock<SecondaryMap<ViewId, ViewId>>,
-    pub main_view_ids: RwLock<FxHashMap<WindowId, ViewId>>,
+    pub z_index_sort: RwLock<FxHashMap<WindowId, Vec<ViewId>>>,
 }
 
 impl ViewStorage {
@@ -39,7 +41,8 @@ impl ViewStorage {
             views: Default::default(),
             window_ids: Default::default(),
             parent_view_id: Default::default(),
-            main_view_ids: Default::default(),
+            // main_view_ids: Default::default(),
+            z_index_sort: Default::default(),
         }
     }
 
@@ -84,6 +87,10 @@ impl ViewStorage {
         let x = { VIEW_STORAGE.window_ids.read().get(parent).cloned() };
         if let Some(window_id) = x {
             Self::set_all_child_window_id(child_view_id, window_id);
+        }
+
+        if let Some(window_id) = parent.window_id() {
+            self.rebuild_render_cache(window_id)
         }
     }
 
@@ -145,7 +152,10 @@ impl ViewStorage {
 
         {
             let child_ids = self.child_ids.read();
-            let main_roots = self.main_view_ids.read();
+            let main_roots = WINDOW_ENTRY_MAP
+                .iter()
+                .map(|v| v.value().view_id)
+                .collect::<Vec<ViewId>>();
 
             fn mark(
                 view_id: ViewId,
@@ -164,18 +174,86 @@ impl ViewStorage {
             }
 
             // --- 核心修改点：遍历所有窗口的根节点 ---
-            for &root_id in main_roots.values() {
-                if all_views.contains(&root_id) {
-                    mark(root_id, &child_ids, &mut alive);
+            for root_view_id in main_roots {
+                if all_views.contains(&root_view_id) {
+                    mark(root_view_id, &child_ids, &mut alive);
                 }
             }
         }
 
-        let dead_views = all_views.difference(&alive).copied().collect::<Vec<ViewId>>();
+        let dead_views = all_views
+            .difference(&alive)
+            .copied()
+            .collect::<Vec<ViewId>>();
 
         if !dead_views.is_empty() {
             for dead_view_id in dead_views {
                 self.dispose_view(dead_view_id);
+            }
+        }
+    }
+
+    /// 【写操作】重建指定窗口的渲染缓存
+    /// 当布局变化、增删节点、修改 z-index 后调用此方法
+    pub fn rebuild_render_cache(&self, window_id: WindowId) {
+        // 1. 复用之前的递归排序逻辑生成列表
+        let sorted_list = self.generate_sorted_list_internal(window_id);
+
+        // 2. 获取写锁并更新缓存
+        // FxHashMap 插入非常快
+        self.z_index_sort.write().insert(window_id, sorted_list);
+
+        // log::trace!("Window {:?} render cache updated.", window_id);
+    }
+
+    /// 内部私有方法：生成排序列表（逻辑同上一个回答，只是搬到了这里）
+    fn generate_sorted_list_internal(&self, window_id: WindowId) -> Vec<ViewId> {
+        let Some(root_id) = window_id.try_view_id() else {
+            return vec![];
+        };
+
+        // 预估容量
+        let mut list = Vec::with_capacity(128);
+
+        // 获取读锁（注意死锁：这里只获取读锁，外面 rebuild_render_cache 获取的是 cache 的写锁，互不冲突）
+        let child_map = self.child_ids.read();
+        let state_map = self.states.read();
+
+        self.build_recursive(root_id, &child_map, &state_map, &mut list);
+        list
+    }
+
+    // 递归构建（同上一个回答）
+    fn build_recursive(
+        &self,
+        current_id: ViewId,
+        child_map: &SecondaryMap<ViewId, Vec<ViewId>>,
+        state_map: &SecondaryMap<ViewId, RwLock<ViewState>>,
+        result: &mut Vec<ViewId>,
+    ) {
+        result.push(current_id); // 先入列（背景）
+
+        if let Some(children) = child_map.get(current_id) {
+            if children.is_empty() {
+                return;
+            }
+
+            // 提取 (id, z_index, original_index)
+            let mut sortable: Vec<(ViewId, i32, usize)> = children
+                .iter()
+                .enumerate()
+                .map(|(idx, &id)| {
+                    let z = state_map.get(id).map(|s| s.read().z_index).unwrap_or(0);
+                    (id, z, idx)
+                })
+                .collect();
+
+            // 稳定排序
+            sortable.sort_by(|a, b| a.1.cmp(&b.1).then(a.2.cmp(&b.2)));
+
+            // 递归
+            for (id, _, _) in sortable {
+                self.build_recursive(id, child_map, state_map, result);
             }
         }
     }
