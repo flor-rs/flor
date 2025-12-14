@@ -107,6 +107,10 @@ pub enum Message<'a> {
         is_shift: bool,
     },
     MouseLeave,
+    DpiChange {
+        dpi_x: f32,
+        dpi_y: f32,
+    },
     DragEnter,
     DragOver {
         key_state: KeyState,

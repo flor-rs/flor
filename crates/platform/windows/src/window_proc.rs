@@ -1,7 +1,10 @@
 use log::{debug, info, trace};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyState, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VIRTUAL_KEY, VK_CONTROL, VK_MENU,
+    VK_SHIFT,
+};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::conversions::key_code::FromVkCode;
@@ -30,7 +33,6 @@ pub(crate) unsafe extern "system" fn window_proc(
     //     }
     // }
     match msg {
-        WM_CREATE => {}
         WM_PAINT => {
             debug!("WM_PAINT");
             // todo 两次绘制，第二次绘制加入裁剪，试试能不能让分层窗口支持传统组件。比如webview
@@ -50,6 +52,13 @@ pub(crate) unsafe extern "system" fn window_proc(
             ) {
                 return LRESULT(0);
             }
+        }
+        WM_DPICHANGED => {
+            // 1. 分别提取 X 和 Y 的 DPI
+            let dpi_x = (wparam.0 & 0xFFFF) as f32;
+            let dpi_y = ((wparam.0 >> 16) & 0xFFFF) as f32;
+
+            let _ = proc().window_proc(hwnd.into(), Message::DpiChange { dpi_x, dpi_y });
         }
         WM_LBUTTONDBLCLK => {
             if let HandleResult::Default = proc().window_proc(

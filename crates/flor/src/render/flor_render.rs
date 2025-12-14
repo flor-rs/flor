@@ -107,6 +107,16 @@ impl RenderContext for FlorRender {
         Ok(())
     }
 
+    fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.set_scale_factor(dpi_x, dpi_y)?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.set_scale_factor(dpi_x, dpi_y)?,
+        };
+        Ok(())
+    }
+
     fn create_surface(&mut self, width: u32, height: u32) -> Result<Self::SurfaceId, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]

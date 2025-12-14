@@ -364,6 +364,13 @@ impl RenderContext for D2DRender {
         Ok(())
     }
 
+    fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
+        unsafe {
+            self.current_render.SetDpi(dpi_x, dpi_y);
+            Ok(())
+        }
+    }
+
     fn create_surface(&mut self, width: u32, height: u32) -> Result<Self::SurfaceId, Self::Error> {
         let render = unsafe {
             self.hwnd_render.CreateCompatibleRenderTarget(

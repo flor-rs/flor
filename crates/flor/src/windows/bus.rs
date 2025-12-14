@@ -3,6 +3,7 @@ use crate::log_error::LogError;
 use crate::render::FlorRender;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
+use crate::view::View;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::{WindowEntryVisit, WINDOW_ENTRY_MAP};
 use crate::FlorGui;
@@ -10,13 +11,13 @@ use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use flor_graphics_base::RenderContext;
 use flor_platform_base::{KeyCode, WindowOperations};
-use log::{debug, trace};
+use log::{debug, info, trace};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use platform::base::HandleResult;
 use platform::base::Message;
 use platform::WindowId;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 /// 总线存储结构
@@ -54,7 +55,11 @@ pub fn render<'a>(window_id: WindowId) -> Option<Ref<'a, WindowId, Arc<RwLock<Fl
 pub fn render_from_view_id<'a>(
     view_id: ViewId,
 ) -> Option<Ref<'a, WindowId, Arc<RwLock<FlorRender>>>> {
-    let ret = VIEW_STORAGE.window_ids.read().get(view_id).and_then(|window_id| RENDERS.get(&window_id));
+    let ret = VIEW_STORAGE
+        .window_ids
+        .read()
+        .get(view_id)
+        .and_then(|window_id| RENDERS.get(&window_id));
     ret
 }
 
@@ -93,6 +98,12 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
             {
                 window_id.bus_re_draw_entry().log_error("fail draw");
             }
+        }
+        Message::DpiChange { dpi_x, dpi_y } => {
+            let Some(render_lock) = render(window_id) else {
+                return Ok(HandleResult::Default);
+            };
+            render_lock.write().set_scale_factor(dpi_x, dpi_y)?;
         }
         Message::WindowDestroy => {
             trace!("event::WindowDestroy::remove_window");
