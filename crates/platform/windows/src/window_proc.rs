@@ -1,8 +1,8 @@
 use log::{debug, info, trace};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VIRTUAL_KEY, VK_CONTROL, VK_MENU,
+    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_MENU,
     VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -14,8 +14,6 @@ use crate::proc_handler::proc;
 use crate::util::{hiword, loword};
 use flor_platform_base::HandleResult;
 use flor_platform_base::{KeyCode, Message};
-
-static IDT_MOUSE_CHECK_TIMER: usize = 999;
 
 pub(crate) unsafe extern "system" fn window_proc(
     hwnd: HWND,
@@ -54,6 +52,7 @@ pub(crate) unsafe extern "system" fn window_proc(
             }
         }
         WM_DPICHANGED => {
+            debug!("WM_DPICHANGED");
             // 1. 分别提取 X 和 Y 的 DPI
             let dpi_x = (wparam.0 & 0xFFFF) as f32;
             let dpi_y = ((wparam.0 >> 16) & 0xFFFF) as f32;
@@ -168,21 +167,11 @@ pub(crate) unsafe extern "system" fn window_proc(
                     mouse_position: lparam.0.into_mouse_position(),
                 },
             ) {
-                info!("set timer ");
-                let mut tme = TRACKMOUSEEVENT {
-                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
-                    dwFlags: TME_LEAVE,
-                    hwndTrack: Default::default(),
-                    dwHoverTime: 500,
-                };
-
-                // 告诉系统："看着点，如果鼠标走了叫我"
-                unsafe { TrackMouseEvent(&mut tme).ok() };
                 return LRESULT(0);
             }
         }
         WM_NCMOUSELEAVE => {
-            info!("WM_NCMOUSELEAVE ");
+            info!("WM_NCMOUSELEAVE");
             let _ = proc().window_proc(hwnd.into(), Message::MouseLeave);
         }
         WM_DESTROY => {

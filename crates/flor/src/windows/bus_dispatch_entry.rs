@@ -228,9 +228,12 @@ impl WindowBusDispatchEntry for WindowId {
 
     fn bus_mouse_leave(&self) {
         self.entry_mut().map(|mut v| {
-            v.hover_id = None;
+            if v.hover_id != None {
+                dbg!("call");
+                v.hover_id = None;
+                self.request_redraw().expect("request_redraw error");
+            }
         });
-        self.request_redraw().expect("request_redraw error");
     }
 
     fn bus_key_down_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {

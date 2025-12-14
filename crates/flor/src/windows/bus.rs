@@ -115,7 +115,7 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
             mouse_position,
         } => {
             window_id.bus_mouse_move_entry(key_state, mouse_position);
-            window_id.request_redraw()?;
+            // window_id.request_redraw()?;
         }
         Message::KeyDown {
             code,
