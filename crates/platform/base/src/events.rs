@@ -42,9 +42,32 @@ impl dyn EventMsg {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum InputEvent {
+    /// 正在组合中 (Preedit)。
+    /// 必须用 String，因为拼音可能很长，且长度不定，堆分配不可避免。
+    /// 但 IME 事件频率远低于 CPU 处理速度，这里不是瓶颈。
+    ImeIng(String),
+
+    /// 组合结束 (Result) 或 粘贴文本。
+    /// 同样必须用 String。
+    ImeEnd(String),
+
+    /// 普通字符输入 (WM_CHAR)。
+    /// ✅ 性能关键点：直接在栈上存储 char (4字节)，无堆内存分配 (No Heap Alloc)。
+    Char(char),
+
+    /// 控制字符 (如 Backspace \x08, Enter \r)。
+    /// 同样无堆分配。
+    Control(char),
+}
+
 #[derive(Debug)]
 pub enum Message<'a> {
     WindowDestroy,
+    ImeStart,
+    ImeInput(InputEvent),
+    ImeEnd,
     Close,
     Draw,
     /// 传递时，每个组件收到的是自己的可用宽高

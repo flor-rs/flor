@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::log_error::LogError;
+use crate::log_error::ResultLogExt;
 use crate::view::style::layout::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
@@ -7,7 +7,7 @@ use crate::view::{collect_layout_children, View};
 use crate::windows::bus::{render, render_from_view_id};
 use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::RenderContext;
-use flor_platform_base::{KeyCode, KeyState};
+use flor_platform_base::{InputEvent, KeyCode, KeyState};
 use flor_platform_base::{MousePosition, WindowOperations};
 use log::{trace, warn};
 use platform::WindowId;
@@ -17,24 +17,116 @@ use taffy::{AvailableSpace, Size, Style};
 
 /// 总线的事件分发入口，给窗口用的
 pub trait WindowBusDispatchEntry {
-    fn create_entry(&self) -> Result<(), Error>;
-    fn bus_refresh_layout_entry(&self) -> Result<(), Error>;
-    fn bus_re_draw_entry(&self) -> Result<(), Error>;
-    fn bus_hit_test_entry(&self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId;
+    // 1. 生命周期与核心循环 (Lifecycle & Core Loop)
+    fn bus_create_entry(&self) -> Result<(), Error>;
+
+    /// 初始化焦点管理器
+    fn bus_init_focus_manager_entry(&mut self) -> Result<(), Error>;
+
+    /// 帧逻辑通常在输入处理之后、渲染之前执行
     fn bus_frame_entry(&self) -> Result<Option<Duration>, Error>;
+
+    // 2. 布局与渲染 (Layout & Rendering)
+    fn bus_refresh_layout_entry(&self) -> Result<(), Error>;
+
+    fn bus_re_draw_entry(&self) -> Result<(), Error>;
+
+    // 3. 命中测试 (Hit Testing)
+    /// 交互事件的前置条件，确定事件归属
+    fn bus_hit_test_entry(&self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId;
+
+    // 4. 鼠标事件 (Mouse Events)
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_mouse_leave(&self);
+
+    fn bus_mouse_leave_entry(&self);
+
+    // ========================================================================
+    // [新增] 鼠标按键事件 (Mouse Button Events)
+    // 对应 LButton, RButton, MButton 的 Down, Up, DoubleClick
+    // 统一使用 &mut self，因为点击通常伴随状态变更(Focus等)
+    // ========================================================================
+
+    // ---- 左键 (Left Button) ----
+    fn bus_l_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_l_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_l_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+
+    // ---- 右键 (Right Button) ----
+    fn bus_r_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_r_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_r_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+
+    // ---- 中键 (Middle Button) ----
+    fn bus_m_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_m_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_m_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+
+    // 5. 键盘事件 (Keyboard Events)
     fn bus_key_down_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool);
+
     fn bus_key_up_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool);
+
+    // 6. 输入法事件 (IME Events) [New]
+    fn bus_ime_start_entry(&self);
+
+    fn bus_ime_input_entry(&self, input_event: InputEvent);
+
+    /// 对应 WM_IME_ENDCOMPOSITION
+    fn bus_ime_end_entry(&self);
 }
 
 impl WindowBusDispatchEntry for WindowId {
-    fn create_entry(&self) -> Result<(), Error> {
+    fn bus_create_entry(&self) -> Result<(), Error> {
         let view_id = self.view_id();
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write().bus_create()?;
         }
         Ok(())
+    }
+
+    fn bus_init_focus_manager_entry(&mut self) -> Result<(), Error> {
+        let view_id = self.view_id();
+        // 帮我写一下实现。
+        // 遍历所有的child_ids 然后根据view_id
+        let mut all_child_view_ids = Vec::new();
+        let mut queue = vec![view_id];
+
+        // 使用代码块限制 read 锁的生命周期
+        {
+            let child_ids_guard = VIEW_STORAGE.child_ids.read();
+
+            while let Some(current_id) = queue.pop() {
+                // 将当前节点加入列表
+                all_child_view_ids.push(current_id);
+
+                // 如果有子节点，将子节点加入队列待处理
+                if let Some(children) = child_ids_guard.get(current_id) {
+                    queue.extend_from_slice(children);
+                }
+            }
+        }
+
+        let mut focus_index = VIEW_STORAGE.focus_index.write();
+
+        let mut focus_list = vec![];
+
+        for child_view_id in all_child_view_ids {
+            if let Some(focus_index) = focus_index.remove(child_view_id) {
+                focus_list.push((focus_index, child_view_id));
+            }
+        }
+
+        self.entry_mut()
+            .map(|mut v| v.focus_manager.set_focus_list(focus_list));
+
+        Ok(())
+    }
+
+    fn bus_frame_entry(&self) -> Result<Option<Duration>, Error> {
+        if let Some(view) = VIEW_STORAGE.views.read().get(self.view_id()) {
+            return view.write().bus_frame(Instant::now());
+        }
+        Ok(None)
     }
 
     fn bus_refresh_layout_entry(&self) -> Result<(), Error> {
@@ -50,7 +142,8 @@ impl WindowBusDispatchEntry for WindowId {
 
         let states = VIEW_STORAGE.states.read();
         let Some(view_state_cell) = states.get(view_id) else {
-            panic!("View storage's states not found view_id:{view_id:?}");
+            warn!("View storage's states not found view_id:{view_id:?}");
+            return Ok(());
         };
 
         let view_state = view_state_cell.read();
@@ -141,14 +234,14 @@ impl WindowBusDispatchEntry for WindowId {
             return Ok(());
         };
         let mut render = render.write();
-        render.begin().log_error("fail begin render");
+        render.begin().error_on_err("fail begin render");
         let view_id = self.view_id();
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
-                .bus_draw(&mut render)
-                .log_error(format!("draw({:?}) error", view_id));
+                .bus_draw(&mut render, (0f32, 0f32))
+                .error_on_err(format!("draw({:?}) error", view_id));
         }
-        render.end().log_error("fail end render");
+        render.end().error_on_err("fail end render");
         Ok(())
     }
 
@@ -165,13 +258,6 @@ impl WindowBusDispatchEntry for WindowId {
             }
         }
         self.view_id()
-    }
-
-    fn bus_frame_entry(&self) -> Result<Option<Duration>, Error> {
-        if let Some(view) = VIEW_STORAGE.views.read().get(self.view_id()) {
-            return view.write().bus_frame(Instant::now());
-        }
-        Ok(None)
     }
 
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {
@@ -191,7 +277,13 @@ impl WindowBusDispatchEntry for WindowId {
             if old_id != new_hovered_id {
                 if let Some(view_lock) = views.get(old_id) {
                     // 旧的离开
-                    view_lock.write().on_mouse_leave(key_state, mouse_position);
+                    view_lock
+                        .write()
+                        .on_mouse_leave(key_state, mouse_position)
+                        .error_on_err(format!(
+                            "on_mouse_leave {{ key_state: {:?}, mouse_position: {:?} }}",
+                            key_state, mouse_position
+                        ));
                 }
             }
         }
@@ -204,7 +296,13 @@ impl WindowBusDispatchEntry for WindowId {
         if old_hovered_id != Some(new_hovered_id) {
             if let Some(view_lock) = views.get(new_hovered_id) {
                 // 新的进入
-                view_lock.write().on_mouse_enter(key_state, mouse_position);
+                view_lock
+                    .write()
+                    .on_mouse_enter(key_state, mouse_position)
+                    .error_on_err(format!(
+                        "on_mouse_enter {{ key_state: {:?}, mouse_position: {:?} }}",
+                        key_state, mouse_position
+                    ));
             }
         }
 
@@ -213,7 +311,13 @@ impl WindowBusDispatchEntry for WindowId {
         // 条件：只要在窗口内，当前命中的这个 View 就要持续收到 Move
         // =========================================================
         if let Some(view_lock) = views.get(new_hovered_id) {
-            view_lock.write().on_mouse_move(key_state, mouse_position);
+            view_lock
+                .write()
+                .on_mouse_move(key_state, mouse_position)
+                .error_on_err(format!(
+                    "on_mouse_move {{ key_state: {:?}, mouse_position: {:?} }}",
+                    key_state, mouse_position
+                ));
         }
 
         // =========================================================
@@ -226,14 +330,130 @@ impl WindowBusDispatchEntry for WindowId {
         }
     }
 
-    fn bus_mouse_leave(&self) {
+    fn bus_mouse_leave_entry(&self) {
         self.entry_mut().map(|mut v| {
             if v.hover_id != None {
                 dbg!("call");
                 v.hover_id = None;
-                self.request_redraw().expect("request_redraw error");
+                self.request_redraw().warn_on_err("request_redraw fail");
             }
         });
+    }
+
+    // ==================== 左键 (Left Button) ====================
+
+    fn bus_l_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            self.entry_mut()
+                .map(|mut v| v.l_down_view_id = Some(view_id));
+            view.write()
+                .on_l_button_down(key_state, mouse_position)
+                .error_on_err(format!("on_l_button_down {{ view_id:{} }}]", view_id));
+        }
+    }
+
+    fn bus_l_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            if let Some(spawn_click) = self.entry().map(|v| v.l_down_view_id == Some(view_id)) {
+                if spawn_click {
+                    view.write()
+                        .on_l_button_click(key_state, mouse_position)
+                        .error_on_err(format!("on_l_button_click {{ view_id:{} }}]", view_id));
+                    view_id.set_focus();
+                }
+            }
+
+            view.write()
+                .on_l_button_up(key_state, mouse_position)
+                .error_on_err(format!("on_l_button_up {{ view_id:{} }}]", view_id));
+        }
+    }
+
+    fn bus_l_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            view.write()
+                .on_l_button_dbl_click(key_state, mouse_position)
+                .error_on_err(format!("on_l_button_dbl_click {{ view_id:{} }}]", view_id));
+        }
+    }
+
+    // ==================== 右键 (Right Button) ====================
+
+    fn bus_r_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            self.entry_mut()
+                .map(|mut v| v.r_down_view_id = Some(view_id));
+            view.write()
+                .on_r_button_down(key_state, mouse_position)
+                .error_on_err(format!("on_r_button_down {{ view_id:{} }}]", view_id));
+        }
+    }
+
+    fn bus_r_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            if let Some(spawn_click) = self.entry().map(|v| v.r_down_view_id == Some(view_id)) {
+                if spawn_click {
+                    view.write()
+                        .on_r_button_click(key_state, mouse_position)
+                        .error_on_err(format!("on_r_button_click {{ view_id:{} }}]", view_id));
+                }
+            }
+            view.write()
+                .on_r_button_up(key_state, mouse_position)
+                .error_on_err(format!("on_r_button_up {{ view_id:{} }}]", view_id));
+        }
+    }
+
+    fn bus_r_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            view.write()
+                .on_r_button_dbl_click(key_state, mouse_position)
+                .error_on_err(format!("on_r_button_dbl_click {{ view_id:{} }}]", view_id));
+        }
+    }
+
+    // ==================== 中键 (Middle Button) ====================
+
+    fn bus_m_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            self.entry_mut()
+                .map(|mut v| v.m_down_view_id = Some(view_id));
+            view.write()
+                .on_m_button_down(key_state, mouse_position)
+                .error_on_err(format!("on_m_button_down {{ view_id:{} }}]", view_id));
+        }
+    }
+
+    fn bus_m_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            if let Some(spawn_click) = self.entry().map(|v| v.m_down_view_id == Some(view_id)) {
+                if spawn_click {
+                    view.write()
+                        .on_m_button_click(key_state, mouse_position)
+                        .error_on_err(format!("on_m_button_click {{ view_id:{} }}]", view_id));
+                }
+            }
+            view.write()
+                .on_m_button_up(key_state, mouse_position)
+                .error_on_err(format!("on_m_button_up {{ view_id:{} }}]", view_id));
+        }
+    }
+
+    fn bus_m_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            view.write()
+                .on_m_button_dbl_click(key_state, mouse_position)
+                .error_on_err(format!("on_m_button_dbl_click {{ view_id:{} }}]", view_id));
+        }
     }
 
     fn bus_key_down_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
@@ -244,12 +464,21 @@ impl WindowBusDispatchEntry for WindowId {
             .and_then(|entry| entry.focus_manager.current_view_id())
         {
             if let Some(view) = views.get(view_id) {
-                view.write().on_key_down(code, is_alt, is_ctrl, is_shift);
+                view.write()
+                    .on_key_down(code, is_alt, is_ctrl, is_shift)
+                    .error_on_err(format!(
+                        "on_key_down {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+                        code, is_alt, is_ctrl, is_shift
+                    ));
                 return;
             }
         }
 
-        self.on_key_down(code, is_alt, is_ctrl, is_shift);
+        self.on_key_down(code, is_alt, is_ctrl, is_shift)
+            .error_on_err(format!(
+                "on_key_down {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+                code, is_alt, is_ctrl, is_shift
+            ));
     }
 
     fn bus_key_up_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
@@ -260,11 +489,65 @@ impl WindowBusDispatchEntry for WindowId {
             .and_then(|entry| entry.focus_manager.current_view_id())
         {
             if let Some(view) = views.get(view_id) {
-                view.write().on_key_up(code, is_alt, is_ctrl, is_shift);
+                view.write()
+                    .on_key_up(code, is_alt, is_ctrl, is_shift)
+                    .error_on_err(format!(
+                        "on_key_up {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+                        code, is_alt, is_ctrl, is_shift
+                    ));
                 return;
             }
         }
 
-        self.on_key_up(code, is_alt, is_ctrl, is_shift);
+        self.on_key_up(code, is_alt, is_ctrl, is_shift)
+            .error_on_err(format!(
+                "on_key_up {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+                code, is_alt, is_ctrl, is_shift
+            ));
+    }
+
+    fn bus_ime_start_entry(&self) {
+        if let Some(view_id) = self
+            .entry()
+            .map(|v| v.focus_manager.current_view_id())
+            .flatten()
+        {
+            if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+                view.write()
+                    .on_ime_start()
+                    .error_on_err(format!("on_ime_start {{ view_id:{} }}]", view_id));
+            }
+        }
+    }
+
+    fn bus_ime_input_entry(&self, input_event: InputEvent) {
+        if let Some(view_id) = self
+            .entry()
+            .map(|v| v.focus_manager.current_view_id())
+            .flatten()
+        {
+            if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+                view.write()
+                    .on_ime_input(&input_event)
+                    .error_on_err(format!(
+                        "on_ime_input {{ {:?} }}]",
+                        input_event
+                    ));
+            }
+        }
+    }
+
+    fn bus_ime_end_entry(&self) {
+        if let Some(view_id) = self
+            .entry()
+            .map(|v| v.focus_manager.current_view_id())
+            .flatten()
+        {
+            if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+                view.write()
+                    .on_ime_end()
+                    .error_on_err(format!("on_ime_end {{ view_id:{} }}]", view_id));
+            }
+        }
     }
 }

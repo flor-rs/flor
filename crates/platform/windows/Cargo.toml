@@ -25,7 +25,7 @@ flor-platform-base = { workspace = true }
 winapi = { version = "0.3.9", features = ["windowsx"] }
 windows-core = { workspace = true }
 windows = { workspace = true, features = [
-    "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi",
-    "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemServices", "Win32_System_Com", "Win32_System_Ole","System_Implementation", "Win32_Graphics_Gdi","Win32_System_Com_StructuredStorage"
+    "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_Ime",
+    "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemServices", "Win32_System_Com", "Win32_System_Ole", "System_Implementation", "Win32_System_Com_StructuredStorage"
 ] }
 parking_lot = "0.12"

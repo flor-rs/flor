@@ -25,7 +25,7 @@ pub mod signal;
 pub mod view;
 pub mod windows;
 
-use crate::log_error::LogError;
+use crate::log_error::ResultLogExt;
 use crate::min_wait_time::MinWaitTime;
 use crate::signal::effect::updater_effect::create_updater;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
@@ -85,7 +85,7 @@ impl FlorGui {
                 if !entry.continuous_rendering {
                     entry.fps.store(0, Ordering::Release);
                     continue;
-                }else{
+                } else {
                     entry.fps.store(last_frame_count, Ordering::Release);
                 }
                 re_draw_window_ids.push(window_id);
@@ -97,7 +97,7 @@ impl FlorGui {
                 let child_wait_time = window_id.bus_frame_entry();
 
                 if child_wait_time.is_err() {
-                    child_wait_time.log_error("bus frame entry error");
+                    child_wait_time.error_on_err("bus frame entry error");
                     continue;
                 }
 
@@ -111,13 +111,13 @@ impl FlorGui {
             for window_id in re_layout_window_ids {
                 window_id
                     .bus_refresh_layout_entry()
-                    .log_error("bus refresh layout error")
+                    .error_on_err("bus refresh layout error")
             }
 
             for window_id in re_draw_window_ids {
                 window_id
                     .bus_re_draw_entry()
-                    .log_error("bus draw entry error");
+                    .error_on_err("bus draw entry error");
             }
 
             // --- 新增 FPS 统计逻辑 ---

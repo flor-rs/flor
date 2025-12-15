@@ -85,6 +85,11 @@ pub trait WindowOperations {
 
     fn drag_window(&self) -> Result<(), Self::Error>;
 
+    // ime
+    fn set_ime_window_location(&self, rect: (i32, i32, u32, u32)) -> Result<(), Self::Error>;
+    fn set_ime_open_state(&self, is_open: bool) -> Result<(), Self::Error>;
+    fn set_ime_allowed(&self, allow: bool) -> Result<(), Self::Error>;
+
     // --- 生命周期 ---
 
     fn destroy(&self) -> Result<(), Self::Error>;

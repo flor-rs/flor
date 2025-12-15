@@ -10,6 +10,20 @@ pub struct FocusManager {
 }
 
 impl FocusManager {
+    pub fn set_focus_list(&mut self, focus_list: Vec<(u32, ViewId)>) {
+        self.focus_list = focus_list;
+        if self.focus_list.len() > 0 {
+            self.focus_list.sort_by_key(|(idx, vid)| (*idx, *vid));
+            // 重新索引
+            self.view_index_map = self
+                .focus_list
+                .iter()
+                .enumerate()
+                .map(|(idx, (_, vid))| (*vid, idx))
+                .collect();
+        }
+    }
+
     /// 更新或插入焦点顺序
     pub fn update_focused(&mut self, view_id: ViewId, focus_index: u32) {
         // 记录旧的view_id
@@ -103,6 +117,23 @@ impl FocusManager {
         }
         if let Some(view_id) = new_view_id {
             view_id.on_focus_gained();
+        }
+    }
+
+    pub fn set_focus(&mut self, view_id: ViewId) {
+        let new_index = match self.view_index_map.get(&view_id).copied() {
+            Some(idx) => idx,
+            None => return,
+        };
+        let old_view_id = self.index_to_view_id(self.current);
+        let new_view_id = self.index_to_view_id(Some(new_index));
+        if old_view_id == new_view_id {
+            return;
+        }
+        self.current = Some(new_index);
+
+        if new_view_id.is_some() {
+            self.switch_focus(old_view_id, new_view_id);
         }
     }
 }

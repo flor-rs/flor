@@ -2075,7 +2075,7 @@ impl RenderContext for D2DRender {
         unsafe {
             // 1. 获取 Render Target
             let render_target = match surface_id {
-                None => self.hwnd_render.cast::<ID2D1RenderTarget>()?,
+                None => self.current_render.cast::<ID2D1RenderTarget>()?,
                 Some(surface_id) => surface_id.raw().cast::<ID2D1RenderTarget>()?,
             };
 

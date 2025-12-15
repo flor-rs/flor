@@ -1,9 +1,13 @@
 use log::{debug, info, trace};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
+use windows::Win32::UI::Input::Ime::{
+    ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR,
+    GCS_RESULTSTR, HIMC, IME_COMPOSITION_STRING,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_MENU,
-    VK_SHIFT,
+    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -12,7 +16,7 @@ use crate::conversions::key_state::IntoKeyState;
 use crate::conversions::mouse_position::IntoMousePosition;
 use crate::proc_handler::proc;
 use crate::util::{hiword, loword};
-use flor_platform_base::HandleResult;
+use flor_platform_base::{HandleResult, InputEvent};
 use flor_platform_base::{KeyCode, Message};
 
 pub(crate) unsafe extern "system" fn window_proc(
@@ -30,25 +34,77 @@ pub(crate) unsafe extern "system" fn window_proc(
     //         trace!("user proc handler not handled. continue process.");
     //     }
     // }
-    match msg {
+    let handle_result = match msg {
         WM_PAINT => {
             debug!("WM_PAINT");
+            let mut ps = PAINTSTRUCT::default();
+            BeginPaint(hwnd, &mut ps);
             // todo 两次绘制，第二次绘制加入裁剪，试试能不能让分层窗口支持传统组件。比如webview
-            let _ = proc().window_proc(hwnd.into(), Message::Draw);
+            let r = proc().window_proc(hwnd.into(), Message::Draw);
+            let _ = EndPaint(hwnd, &mut ps);
             trace!("事件已通过自定义处理完成");
+            r
         }
         WM_SIZE => {
             debug!("WM_SIZE");
             let width = loword(lparam.0 as u32);
             let height = hiword(lparam.0 as u32);
-            if let HandleResult::Default = proc().window_proc(
+            proc().window_proc(
                 hwnd.into(),
                 Message::Resize {
                     width: width as u32,
                     height: height as u32,
                 },
-            ) {
-                return LRESULT(0);
+            )
+        }
+        WM_IME_STARTCOMPOSITION => proc().window_proc(hwnd.into(), Message::ImeStart),
+        WM_IME_COMPOSITION => {
+            let mut handle_result = HandleResult::Default;
+            let h_imc = unsafe { ImmGetContext(hwnd) };
+            // 为空就走默认
+            if !h_imc.is_invalid() {
+                if (lparam.0 & GCS_RESULTSTR.0 as isize) != 0 {
+                    let text = get_composition_string(h_imc, GCS_RESULTSTR);
+                    handle_result = proc()
+                        .window_proc(hwnd.into(), Message::ImeInput(InputEvent::ImeEnd(text)));
+                }
+                if (lparam.0 & GCS_COMPSTR.0 as isize) != 0 {
+                    let preedit = get_composition_string(h_imc, GCS_COMPSTR);
+                    handle_result = proc()
+                        .window_proc(hwnd.into(), Message::ImeInput(InputEvent::ImeIng(preedit)));
+                }
+                unsafe {
+                    // 这里有异常返回，如何处理好？这里没法 ? 因为是回调函数
+                    let _ = ImmReleaseContext(hwnd, h_imc);
+                };
+            }
+            handle_result
+        }
+        WM_IME_ENDCOMPOSITION => proc().window_proc(hwnd.into(), Message::ImeEnd),
+        WM_CHAR => {
+            // 1. 从 wparam 获取 UTF-32 字符代码
+            let char_code = wparam.0 as u32;
+            // 2. 转换为 Rust char
+            if let Some(ch) = std::char::from_u32(char_code) {
+                // 3. 区分普通字符和控制字符
+                // Windows 下 \r (回车) 和 \t (Tab) 也是 Control，
+                // 但通常文本框需要处理它们，所以视情况归类。
+                let input_state = if ch.is_control() {
+                    // 特殊处理：保留回车(\r) 和 Tab(\t) 作为普通输入，
+                    // 其他的 (如 Backspace \x08, Esc \x1b) 归为 Control
+                    match ch {
+                        '\r' | '\t' => InputEvent::Char(ch),
+                        _ => InputEvent::Control(ch),
+                    }
+                } else {
+                    InputEvent::Char(ch)
+                };
+
+                // 4. 发送消息
+                // 注意：这里没有 String::new()，完全在栈上操作，性能最高
+                proc().window_proc(hwnd.into(), Message::ImeInput(input_state))
+            } else {
+                HandleResult::Default
             }
         }
         WM_DPICHANGED => {
@@ -57,127 +113,88 @@ pub(crate) unsafe extern "system" fn window_proc(
             let dpi_x = (wparam.0 & 0xFFFF) as f32;
             let dpi_y = ((wparam.0 >> 16) & 0xFFFF) as f32;
 
-            let _ = proc().window_proc(hwnd.into(), Message::DpiChange { dpi_x, dpi_y });
+            proc().window_proc(hwnd.into(), Message::DpiChange { dpi_x, dpi_y })
         }
-        WM_LBUTTONDBLCLK => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::LButtonDoubleClick {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
-        WM_LBUTTONDOWN => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::LButtonDown {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
-        WM_LBUTTONUP => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::LButtonUp {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
-        WM_RBUTTONDBLCLK => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::RButtonDoubleClick {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
-        WM_RBUTTONDOWN => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::RButtonDown {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
-        WM_RBUTTONUP => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::RButtonUp {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
-        WM_MBUTTONDBLCLK => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::MButtonDoubleClick {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
-        WM_MBUTTONDOWN => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::MButtonDown {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
-        WM_MBUTTONUP => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::MButtonUp {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
+        WM_LBUTTONDBLCLK => proc().window_proc(
+            hwnd.into(),
+            Message::LButtonDoubleClick {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
+        WM_LBUTTONDOWN => proc().window_proc(
+            hwnd.into(),
+            Message::LButtonDown {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
+        WM_LBUTTONUP => proc().window_proc(
+            hwnd.into(),
+            Message::LButtonUp {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
+        WM_RBUTTONDBLCLK => proc().window_proc(
+            hwnd.into(),
+            Message::RButtonDoubleClick {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
+        WM_RBUTTONDOWN => proc().window_proc(
+            hwnd.into(),
+            Message::RButtonDown {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
+        WM_RBUTTONUP => proc().window_proc(
+            hwnd.into(),
+            Message::RButtonUp {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
+        WM_MBUTTONDBLCLK => proc().window_proc(
+            hwnd.into(),
+            Message::MButtonDoubleClick {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
+        WM_MBUTTONDOWN => proc().window_proc(
+            hwnd.into(),
+            Message::MButtonDown {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
+        WM_MBUTTONUP => proc().window_proc(
+            hwnd.into(),
+            Message::MButtonUp {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
         // todo x系列按钮暂时不写
-        WM_MOUSEMOVE => {
-            if let HandleResult::Default = proc().window_proc(
-                hwnd.into(),
-                Message::MouseMove {
-                    key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
-                    mouse_position: lparam.0.into_mouse_position(),
-                },
-            ) {
-                return LRESULT(0);
-            }
-        }
+        WM_MOUSEMOVE => proc().window_proc(
+            hwnd.into(),
+            Message::MouseMove {
+                key_state: MODIFIERKEYS_FLAGS(wparam.0 as u32).into_key_state(),
+                mouse_position: lparam.0.into_mouse_position(),
+            },
+        ),
         WM_NCMOUSELEAVE => {
             info!("WM_NCMOUSELEAVE");
-            let _ = proc().window_proc(hwnd.into(), Message::MouseLeave);
+            proc().window_proc(hwnd.into(), Message::MouseLeave)
         }
         WM_DESTROY => {
             debug!("WM_DESTROY",);
-            let _ = proc().window_proc(hwnd.into(), Message::WindowDestroy);
+            let r = proc().window_proc(hwnd.into(), Message::WindowDestroy);
             trace!("WM_DESTROY execute end.");
+            r
         }
         WM_CLOSE => {
             debug!("WM_CLOSE");
@@ -189,6 +206,7 @@ pub(crate) unsafe extern "system" fn window_proc(
                     return LRESULT(0);
                 }
             }
+            HandleResult::Default
         }
         WM_KEYDOWN | WM_KEYUP => {
             let is_down = msg == WM_KEYDOWN;
@@ -220,12 +238,30 @@ pub(crate) unsafe extern "system" fn window_proc(
                 }
             };
 
-            let _ = proc().window_proc(hwnd.into(), msg);
+            proc().window_proc(hwnd.into(), msg)
         }
 
-        _ => {}
+        _ => HandleResult::Default,
+    };
+    if let HandleResult::Handled = handle_result {
+        return LRESULT(0);
     }
+
     let def_result = DefWindowProcW(hwnd, msg, wparam, lparam);
     trace!("事件通过默认处理器结果： {:?}", def_result);
     def_result
+}
+
+fn get_composition_string(h_imc: HIMC, flag: IME_COMPOSITION_STRING) -> String {
+    // 第一次调用传 0，获取需要的字节长度
+    let len = unsafe { ImmGetCompositionStringW(h_imc, flag, None, 0) };
+    if len <= 0 {
+        return String::new();
+    }
+
+    let mut buf = vec![0u16; (len / 2) as usize];
+    // 第二次调用，真正把数据拷出来
+    unsafe { ImmGetCompositionStringW(h_imc, flag, Some(buf.as_mut_ptr() as _), len as u32) };
+
+    String::from_utf16_lossy(&buf)
 }

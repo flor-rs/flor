@@ -12,7 +12,7 @@ impl<V: View> FocusIndexBuilder for V {
             move || focus_index(),
             move |v| view_id.update_focus_index(v),
         );
-        view_id.update_focus_index(focus_index);
+        view_id.init_focus_index(focus_index);
         self
     }
 }

@@ -7,9 +7,8 @@ use crate::view::style::layout::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render_from_view_id;
-use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::RenderContext;
-use flor_platform_base::{KeyCode, KeyState, MousePosition};
+use flor_platform_base::{InputEvent, KeyCode, KeyState, MousePosition};
 use log::trace;
 use std::any::Any;
 use std::time::{Duration, Instant};
@@ -123,26 +122,33 @@ pub trait View {
         Ok(min_wait_time)
     }
 
-    fn bus_draw(&mut self, render: &mut FlorRender) -> Result<(), Error> {
+    fn bus_draw(&mut self, render: &mut FlorRender, abs_location: (f32, f32)) -> Result<(), Error> {
         let view_id = self.view_id();
         let views = VIEW_STORAGE.views.read();
-        let layout = view_id.with_state(|state| state.layout)?;
+        let layout = view_id.layout()?;
+        let abs_location = (
+            abs_location.0 + layout.location.x,
+            abs_location.1 + layout.location.y,
+        );
         // 自身处理
         trace!("self_view.draw");
-        self.on_draw(render, layout)?;
+        self.on_draw(render, abs_location, layout)?;
         // 绘制子控件
         if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(view_id) {
             for child_id in child_view_ids {
                 if let Some(view) = views.get(*child_id) {
-                    view.write().bus_draw(render)?;
+                    view.write().bus_draw(render, abs_location)?;
                 }
             }
         }
         Ok(())
     }
 
+    #[allow(unused_variables)]
     fn on_hit_test(&self, mouse_position: MousePosition, key_state: KeyState) -> bool {
-        let layout = self.view_id().layout();
+        let Ok(layout) = self.view_id().layout() else {
+            return false;
+        };
         // 当前控件布局
         let x = layout.location.x;
         let y = layout.location.y;
@@ -171,7 +177,12 @@ pub trait View {
 
     /// 重绘视图
     #[allow(unused_variables)]
-    fn on_draw(&mut self, render: &mut FlorRender, layout: Layout) -> Result<(), Error> {
+    fn on_draw(
+        &mut self,
+        render: &mut FlorRender,
+        abs_location: (f32, f32),
+        layout: Layout,
+    ) -> Result<(), Error> {
         Ok(())
     }
 
@@ -188,20 +199,180 @@ pub trait View {
     }
 
     #[allow(unused_variables)]
-    fn on_mouse_enter(&mut self, key_state: KeyState, mouse_position: MousePosition) {}
-    #[allow(unused_variables)]
-    fn on_mouse_move(&mut self, key_state: KeyState, mouse_position: MousePosition) {}
-    #[allow(unused_variables)]
-    fn on_mouse_leave(&mut self, key_state: KeyState, mouse_position: MousePosition) {}
-
-    #[allow(unused_variables)]
-    fn on_key_down(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
+    fn on_mouse_enter(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
     }
     #[allow(unused_variables)]
-    fn on_key_up(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {}
+    fn on_mouse_move(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_mouse_leave(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 
-    fn on_focus_gained(&mut self) {}
-    fn on_focus_lost(&mut self) {}
+    // ========================================================================
+    // [新增] 鼠标按键事件 (Mouse Button Events)
+    // 对应 LButton, RButton, MButton 的 Down, Up, DoubleClick
+    // 统一使用 &mut self，因为点击通常伴随状态变更(Focus等)
+    // ========================================================================
+
+    // ---- 左键 (Left Button) ----
+    #[allow(unused_variables)]
+    fn on_l_button_down(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_l_button_up(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_l_button_click(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_l_button_dbl_click(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    // ---- 右键 (Right Button) ----
+    #[allow(unused_variables)]
+    fn on_r_button_down(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_r_button_up(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_r_button_click(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_r_button_dbl_click(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    // ---- 中键 (Middle Button) ----
+    #[allow(unused_variables)]
+    fn on_m_button_down(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_m_button_up(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_m_button_click(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_m_button_dbl_click(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_key_down(
+        &mut self,
+        code: KeyCode,
+        is_alt: bool,
+        is_ctrl: bool,
+        is_shift: bool,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_key_up(
+        &mut self,
+        code: KeyCode,
+        is_alt: bool,
+        is_ctrl: bool,
+        is_shift: bool,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn on_focus_gained(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+    fn on_focus_lost(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_ime_start(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_ime_input(&mut self, input_event: &InputEvent) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_ime_end(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 impl<T: View> LoadRenderResource for T {

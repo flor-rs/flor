@@ -4,6 +4,10 @@ use flor_platform_base::{WindowMode, WindowOperations};
 use once_cell::sync::Lazy;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{ClientToScreen, InvalidateRect, UpdateWindow};
+use windows::Win32::UI::Input::Ime::{
+    ImmAssociateContext, ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow,
+    ImmSetOpenStatus, CFS_POINT, COMPOSITIONFORM, HIMC,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, GetClientRect, GetWindowPlacement, GetWindowRect, LoadCursorW,
@@ -36,6 +40,7 @@ static CLASS_NAME: Lazy<Vec<u16>> = Lazy::new(|| {
     }
     class_name
 });
+
 impl WindowOperations for WindowId {
     type Error = Error;
 
@@ -305,6 +310,63 @@ impl WindowOperations for WindowId {
             );
             Ok(())
         }
+    }
+
+    fn set_ime_window_location(&self, rect: (i32, i32, u32, u32)) -> Result<(), Self::Error> {
+        let (x, y, w, h) = rect;
+        let hwnd = self.hwnd(); // 假设你能拿到 HWND
+
+        unsafe {
+            let h_imc = ImmGetContext(hwnd);
+            if h_imc.is_invalid() {
+                return Ok(()); // 或者返回 Error，视你策略而定
+            }
+
+            let mut form = COMPOSITIONFORM {
+                dwStyle: CFS_POINT, // 使用点定位，但利用 rcArea 做避让参考
+                ptCurrentPos: POINT { x, y },
+                rcArea: RECT {
+                    left: x,
+                    top: y,
+                    right: x + w as i32,
+                    bottom: y + h as i32, // 【关键】告诉 IME 这里是底部，别遮挡
+                },
+            };
+
+            // 发送给系统
+            let _ = ImmSetCompositionWindow(h_imc, &mut form);
+
+            // 别忘了释放
+            let _ = ImmReleaseContext(hwnd, h_imc);
+        }
+        Ok(())
+    }
+
+    fn set_ime_open_state(&self, is_open: bool) -> Result<(), Self::Error> {
+        let hwnd = self.hwnd();
+        unsafe {
+            let h_imc = ImmGetContext(hwnd);
+            if !h_imc.is_invalid() {
+                // true = 打开输入法, false = 关闭
+                let _ = ImmSetOpenStatus(h_imc, is_open.into());
+                let _ = ImmReleaseContext(hwnd, h_imc);
+            }
+        }
+        Ok(())
+    }
+
+    fn set_ime_allowed(&self, allow: bool) -> Result<(), Self::Error> {
+        unsafe {
+            if allow {
+                let h_imc = ImmGetContext(self.hwnd());
+                dbg!(h_imc.is_invalid());
+                dbg!(h_imc.0);
+                ImmAssociateContext(self.hwnd(), h_imc);
+            } else {
+                ImmAssociateContext(self.hwnd(), HIMC::default());
+            }
+        }
+        Ok(())
     }
 
     fn destroy(&self) -> Result<(), Self::Error> {

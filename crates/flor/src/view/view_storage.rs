@@ -30,6 +30,7 @@ pub struct ViewStorage {
     /// 储存父级关系
     pub parent_view_id: RwLock<SecondaryMap<ViewId, ViewId>>,
     pub z_index_sort: RwLock<FxHashMap<WindowId, Vec<ViewId>>>,
+    pub focus_index: RwLock<SecondaryMap<ViewId, u32>>,
 }
 
 impl ViewStorage {
@@ -43,6 +44,7 @@ impl ViewStorage {
             parent_view_id: Default::default(),
             // main_view_ids: Default::default(),
             z_index_sort: Default::default(),
+            focus_index: Default::default(),
         }
     }
 

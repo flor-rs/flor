@@ -18,12 +18,14 @@ pub struct WindowEntry {
     pub taffy_tree: RwLock<TaffyTree<ViewId>>,
     // If the mouse moves out of the window, the IDs below will be set to None.
     pub hover_id: Option<ViewId>,
-    pub focus_id: Option<ViewId>,
     pub focus_manager: FocusManager,
     pub continuous_rendering: bool,
     pub fps: AtomicU32,
     pub show_fps: bool,
     pub layout_dirty: AtomicBool,
+    pub l_down_view_id: Option<ViewId>,
+    pub r_down_view_id: Option<ViewId>,
+    pub m_down_view_id: Option<ViewId>,
 }
 
 impl WindowEntry {
@@ -34,12 +36,14 @@ impl WindowEntry {
             view_id,
             taffy_tree: RwLock::new(TaffyTree::new()),
             hover_id: None,
-            focus_id: None,
             focus_manager: Default::default(),
             continuous_rendering,
             fps: AtomicU32::new(0),
             show_fps: false,
             layout_dirty: AtomicBool::new(false),
+            l_down_view_id: None,
+            r_down_view_id: None,
+            m_down_view_id: None,
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id

@@ -11,6 +11,7 @@ use crate::view::View;
 use crate::windows::bus::render_from_view_id;
 use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::{RenderContext, SurfaceId};
+use flor_platform_base::WindowOperations;
 use once_cell::sync::Lazy;
 use platform::WindowId;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -52,14 +53,8 @@ impl ViewId {
     }
 
     //     pub states: RwLock<SecondaryMap<ViewId, RwLock<ViewState>>>,
-    pub fn layout(self) -> taffy::Layout {
-        VIEW_STORAGE
-            .states
-            .read()
-            .get(self)
-            .expect(&format!("view[{self}] not found WindowId"))
-            .read()
-            .layout
+    pub fn layout(self) -> Result<taffy::Layout, Error> {
+        self.with_state(|state| state.layout)
     }
 
     pub fn with_state<R>(self, getter: impl FnOnce(&ViewState) -> R) -> Result<R, Error> {
@@ -190,8 +185,21 @@ impl ViewId {
             }
         }
     }
+
+    pub fn init_focus_index(self, focus_index: u32) {
+        VIEW_STORAGE.focus_index.write().insert(self, focus_index);
+    }
+
+    pub fn set_focus(self){
+        if let Some(win_id) = self.window_id() {
+            if let Some(mut entry) = win_id.entry_mut() {
+                entry.focus_manager.set_focus(self);
+            }
+        }
+    }
+
     pub fn update_z_index(self, z_index: i32) {
-        let _ = self.with_state_mut(|state|{
+        let _ = self.with_state_mut(|state| {
             state.z_index = z_index;
         });
         if let Some(window_id) = self.window_id() {
@@ -206,7 +214,7 @@ impl ViewId {
     }
     pub fn on_focus_lost(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write().on_focus_gained();
+            view.write().on_focus_lost();
         }
     }
 
@@ -217,6 +225,37 @@ impl ViewId {
             }
         }
         false
+    }
+
+    pub fn abs_location(&self) -> Result<(f32, f32), Error> {
+        // 1. 先获取自己相对于父级的偏移量
+        let my_layout = self.layout()?;
+        let mut x = my_layout.location.x;
+        let mut y = my_layout.location.y;
+
+        // 2. 获取父节点，准备开始向上遍历
+        let mut current_node = self.parent_view_id();
+
+        // 3. 循环向上爬树
+        while let Some(node_id) = current_node {
+            let parent_layout = node_id.layout()?;
+
+            // 累加父节点的相对位置
+            x += parent_layout.location.x;
+            y += parent_layout.location.y;
+
+            // ⚠️ 关键点：将当前节点更新为父节点的父节点 (继续向上爬)
+            current_node = node_id.parent_view_id();
+        }
+
+        Ok((x, y))
+    }
+
+    pub fn request_redraw(self) -> Result<(), Error> {
+        self.window_id()
+            .map(|window_id| window_id.request_redraw())
+            .transpose()?;
+        Ok(())
     }
 }
 

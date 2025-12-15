@@ -4,7 +4,7 @@ use log::trace;
 use parking_lot::RwLock;
 
 use crate::error::Error;
-use crate::log_error::LogError;
+use crate::log_error::ResultLogExt;
 use crate::render::FlorRender;
 use crate::signal::effect::updater_effect::create_updater;
 use crate::view::view_storage::VIEW_STORAGE;
@@ -48,8 +48,7 @@ impl WindowOption {
         let (width, height) = window_id.get_client_size()?;
         window_id.set_window_mode(WindowMode::Normal)?;
         // 创建渲染器
-        let render = FlorRender::create(window_id, width, height, self.wait_v_sync)
-            .expect("Failed to create renderer");
+        let render = FlorRender::create(window_id, width, height, self.wait_v_sync)?;
 
         let view_id = WindowEntry::new(window_id, self.continuous_rendering);
 
@@ -70,14 +69,13 @@ impl WindowOption {
         );
 
         trace!("window root view: {:?}", root_dyn_view);
-        {
-            VIEW_STORAGE.window_ids.write().insert(view_id, window_id);
-        }
+        VIEW_STORAGE.window_ids.write().insert(view_id, window_id);
         VIEW_STORAGE.add_child(view_id, root_dyn_view);
+        window_id.bus_init_focus_manager_entry()?;
 
-        bus::register_window(window_id, render);
+        bus::register_render(window_id, render);
 
-        window_id.bus_create().log_error("on_create has error");
+        window_id.bus_create().error_on_err("on_create has error");
         window_id
             .bus_refresh_layout_entry()
             .expect("Failed re_layout_entry");
