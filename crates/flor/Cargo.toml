@@ -31,6 +31,8 @@ svg = [
     "flor-graphics-direct2d?/svg"
 ]
 
+theme-change = ["flor-platform-windows/theme-change"]
+
 [dependencies]
 log = { workspace = true }
 once_cell = { workspace = true }

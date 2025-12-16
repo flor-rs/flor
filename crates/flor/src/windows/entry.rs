@@ -26,6 +26,7 @@ pub struct WindowEntry {
     pub l_down_view_id: Option<ViewId>,
     pub r_down_view_id: Option<ViewId>,
     pub m_down_view_id: Option<ViewId>,
+    pub capture_view_id: Option<ViewId>,
 }
 
 impl WindowEntry {
@@ -44,6 +45,7 @@ impl WindowEntry {
             l_down_view_id: None,
             r_down_view_id: None,
             m_down_view_id: None,
+            capture_view_id: None,
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id
@@ -74,15 +76,15 @@ impl WindowEntry {
 }
 
 pub trait WindowEntryVisit {
-    fn entry(&self) -> Option<Ref<WindowId, WindowEntry>>;
-    fn entry_mut(&self) -> Option<RefMut<WindowId, WindowEntry>>;
+    fn entry(&'_ self) -> Option<Ref<'_, WindowId, WindowEntry>>;
+    fn entry_mut(&'_ self) -> Option<RefMut<'_, WindowId, WindowEntry>>;
 }
 
 impl WindowEntryVisit for WindowId {
-    fn entry(&self) -> Option<Ref<WindowId, WindowEntry>> {
+    fn entry(&'_ self) -> Option<Ref<'_, WindowId, WindowEntry>> {
         WINDOW_ENTRY_MAP.get(self)
     }
-    fn entry_mut(&self) -> Option<RefMut<WindowId, WindowEntry>> {
+    fn entry_mut(&'_ self) -> Option<RefMut<'_, WindowId, WindowEntry>> {
         WINDOW_ENTRY_MAP.get_mut(self)
     }
 }

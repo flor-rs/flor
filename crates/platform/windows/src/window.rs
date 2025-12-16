@@ -1,6 +1,7 @@
+use crate::cursor::Cursor;
 use crate::util::encode_wide::encode_wide;
 use crate::window_id::WindowId;
-use flor_platform_base::{WindowMode, WindowOperations};
+use flor_platform_base::{CursorHandle, WindowApi, WindowMode, WindowOperations};
 use once_cell::sync::Lazy;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{ClientToScreen, InvalidateRect, UpdateWindow};
@@ -8,14 +9,14 @@ use windows::Win32::UI::Input::Ime::{
     ImmAssociateContext, ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow,
     ImmSetOpenStatus, CFS_POINT, COMPOSITIONFORM, HIMC,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, GetClientRect, GetWindowPlacement, GetWindowRect, LoadCursorW,
-    RegisterClassExW, SendMessageW, SetWindowPos, ShowWindow, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW,
-    CW_USEDEFAULT, HMENU, HTCAPTION, IDC_ARROW, SC_MOVE, SHOW_WINDOW_CMD, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
-    SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, WINDOWPLACEMENT, WINDOW_EX_STYLE, WM_SYSCOMMAND,
-    WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+    RegisterClassExW, SendMessageW, SetCursor, SetWindowPos, ShowWindow, CS_DBLCLKS, CS_HREDRAW,
+    CS_VREDRAW, CW_USEDEFAULT, HMENU, HTCAPTION, IDC_ARROW, SC_MOVE, SHOW_WINDOW_CMD,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
+    SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, WINDOWPLACEMENT, WINDOW_EX_STYLE,
+    WM_SYSCOMMAND, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 use windows_core::{Error, PCWSTR};
 
@@ -41,8 +42,9 @@ static CLASS_NAME: Lazy<Vec<u16>> = Lazy::new(|| {
     class_name
 });
 
-impl WindowOperations for WindowId {
+impl WindowApi for WindowId {
     type Error = Error;
+    type Cursor = Cursor;
 
     fn create_window(title: &str, width: u32, height: u32) -> Result<Self, Self::Error>
     where
@@ -64,13 +66,6 @@ impl WindowOperations for WindowId {
                 None,
             )?;
             Ok(hwnd.into())
-        }
-    }
-
-    fn request_redraw(&self) -> Result<(), Self::Error> {
-        unsafe {
-            InvalidateRect(Some(self.hwnd()), None, true).ok()?;
-            Ok(())
         }
     }
 
@@ -150,7 +145,7 @@ impl WindowOperations for WindowId {
 
     // --- 位置 Setters ---
 
-    fn set_left(&mut self, left: i32) -> Result<(), Self::Error> {
+    fn set_left(&self, left: i32) -> Result<(), Self::Error> {
         let (_, top, _, _) = self.get_window_rect()?;
         unsafe {
             SetWindowPos(
@@ -166,7 +161,7 @@ impl WindowOperations for WindowId {
         }
     }
 
-    fn set_top(&mut self, top: i32) -> Result<(), Self::Error> {
+    fn set_top(&self, top: i32) -> Result<(), Self::Error> {
         let (left, _, _, _) = self.get_window_rect()?;
         unsafe {
             SetWindowPos(
@@ -182,7 +177,7 @@ impl WindowOperations for WindowId {
         }
     }
 
-    fn set_position(&mut self, pos: (i32, i32)) -> Result<(), Self::Error> {
+    fn set_position(&self, pos: (i32, i32)) -> Result<(), Self::Error> {
         unsafe {
             SetWindowPos(
                 self.hwnd(),
@@ -211,7 +206,7 @@ impl WindowOperations for WindowId {
 
     // --- 尺寸 Setters ---
 
-    fn set_width(&mut self, width: u32) -> Result<(), Self::Error> {
+    fn set_width(&self, width: u32) -> Result<(), Self::Error> {
         let (_, _, _, height) = self.get_window_rect()?;
         unsafe {
             SetWindowPos(
@@ -227,7 +222,7 @@ impl WindowOperations for WindowId {
         }
     }
 
-    fn set_height(&mut self, height: u32) -> Result<(), Self::Error> {
+    fn set_height(&self, height: u32) -> Result<(), Self::Error> {
         let (_, _, width, _) = self.get_window_rect()?;
         unsafe {
             SetWindowPos(
@@ -243,7 +238,7 @@ impl WindowOperations for WindowId {
         }
     }
 
-    fn set_size(&mut self, size: (u32, u32)) -> Result<(), Self::Error> {
+    fn set_size(&self, size: (u32, u32)) -> Result<(), Self::Error> {
         unsafe {
             SetWindowPos(
                 self.hwnd(),
@@ -369,10 +364,42 @@ impl WindowOperations for WindowId {
         Ok(())
     }
 
+    fn set_cursor(cursor: Option<Self::Cursor>) -> Result<(), Self::Error> {
+        unsafe {
+            SetCursor(cursor.map(|v| v.handle()));
+        }
+        Ok(())
+    }
+
     fn destroy(&self) -> Result<(), Self::Error> {
         unsafe {
             DestroyWindow(self.hwnd())?;
             Ok(())
         }
+    }
+}
+
+impl WindowOperations for WindowId {
+    type Error = Error;
+
+    fn request_redraw(&self) -> Result<(), Self::Error> {
+        unsafe {
+            InvalidateRect(Some(self.hwnd()), None, true).ok()?;
+            Ok(())
+        }
+    }
+
+    fn capture_mouse(&self) -> Result<(), Self::Error> {
+        unsafe {
+            SetCapture(self.hwnd());
+        }
+        Ok(())
+    }
+
+    fn release_mouse(&self) -> Result<(), Self::Error> {
+        unsafe {
+            ReleaseCapture()?;
+        }
+        Ok(())
     }
 }

@@ -4,8 +4,6 @@ use crate::signal::id::Id;
 use crate::signal::value::Value;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-#[cfg(feature = "timer")]
-use platform::Timer;
 use rustc_hash::FxHashSet;
 use std::cell::Cell;
 
@@ -23,8 +21,6 @@ pub struct Runtime {
     pub(crate) effects: DashMap<Id, Box<dyn SignalEffect + Send + Sync>>,
     #[cfg(any(debug_assertions, feature = "signal-tracing"))]
     pub(crate) labels: DashMap<Id, String>,
-    #[cfg(feature = "timer")]
-    pub(crate) timers: DashMap<Id, Timer>,
 }
 
 impl Runtime {
@@ -77,7 +73,5 @@ impl Runtime {
         self.subscribe.remove(&signal_id);
         #[cfg(any(debug_assertions, feature = "signal-tracing"))]
         self.labels.remove(&signal_id);
-        #[cfg(feature = "timer")]
-        self.timers.remove(&signal_id);
     }
 }

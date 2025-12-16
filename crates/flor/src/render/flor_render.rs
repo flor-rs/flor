@@ -550,4 +550,14 @@ impl RenderContext for FlorRender {
             }
         };
     }
+
+    fn capture_snapshot(&mut self, rect: Option<(f32, f32, u32, u32)>) -> Result<Vec<u8>, Self::Error> {
+        let result = match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.capture_snapshot(rect)?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.capture_snapshot(rect)?,
+        };
+        Ok(result)
+    }
 }

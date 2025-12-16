@@ -1,17 +1,20 @@
+use log::info;
 use std::time::Duration;
-use log::{debug, info, trace};
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostQuitMessage, TranslateMessage,
     MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
 };
 
 mod conversions;
+mod cursor;
 mod drop_target;
 mod proc_handler;
 mod util;
-mod window_id;
 mod window;
+mod window_id;
 mod window_proc;
+#[cfg(feature = "monitor")]
+mod monitor;
 
 pub mod base {
     pub use flor_platform_base::*;
@@ -25,7 +28,7 @@ pub mod events {
     pub type EventMessageHandler = fn(window_id: WindowId, message: Message) -> HandleResult;
 }
 
-pub use {proc_handler::*, window_id::WindowId,windows::core::Error};
+pub use {proc_handler::*, window_id::WindowId, windows::core::Error};
 
 #[inline]
 pub fn handler_wait(timeout: Option<Duration>) {

@@ -3,8 +3,8 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::Input::Ime::{
-    ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR,
-    GCS_RESULTSTR, HIMC, IME_COMPOSITION_STRING,
+    ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR, GCS_RESULTSTR, HIMC,
+    IME_COMPOSITION_STRING,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT,
@@ -115,6 +115,7 @@ pub(crate) unsafe extern "system" fn window_proc(
 
             proc().window_proc(hwnd.into(), Message::DpiChange { dpi_x, dpi_y })
         }
+        WM_SETCURSOR => proc().window_proc(hwnd.into(), Message::Cursor),
         WM_LBUTTONDBLCLK => proc().window_proc(
             hwnd.into(),
             Message::LButtonDoubleClick {
@@ -240,7 +241,40 @@ pub(crate) unsafe extern "system" fn window_proc(
 
             proc().window_proc(hwnd.into(), msg)
         }
+        WM_SETTINGCHANGE => {
+            let spi_action = wparam.0 as u32;
+            #[cfg(feature = "theme-change")]
+            if is_lparam_str(lparam, "ImmersiveColorSet") {
+                // 分发事件，但忽略返回值（或者确保你的 Message::ThemeChanged 也是返回 Default）
+                // 这里假设我们只是为了通知框架层去更新状态，而不阻断系统消息
+                let _ = proc().window_proc(hwnd.into(), Message::ThemeChanged(get_current_theme()));
+            }
 
+            // 2. 检测工作区变化 (任务栏移动/分辨率)
+            // 注意：这里用 independent 'if' 比 'else if' 更稳健，虽然通常 wparam 和 lparam 不会同时有效
+            if SYSTEM_PARAMETERS_INFO_ACTION(spi_action) == SPI_SETWORKAREA {
+                let _ = proc().window_proc(hwnd.into(), Message::WorkAreaChanged);
+            }
+
+            // 3. 检测滚轮设置
+            if SYSTEM_PARAMETERS_INFO_ACTION(spi_action) == SPI_SETWHEELSCROLLLINES {
+                let mut lines: u32 = 3;
+                // 主动查询最新的设置值
+                unsafe {
+                    let _ = SystemParametersInfoW(
+                        SPI_GETWHEELSCROLLLINES,
+                        0,
+                        Some(&mut lines as *mut _ as *mut std::ffi::c_void),
+                        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+                    );
+                }
+                let _ = proc().window_proc(hwnd.into(), Message::WheelSettingsChanged(lines));
+            }
+
+            // 【关键】WM_SETTINGCHANGE 建议始终交给 DefWindowProc 处理后续
+            // 即使我们处理了，系统可能还有其他组件关心这个变化
+            HandleResult::Default
+        }
         _ => HandleResult::Default,
     };
     if let HandleResult::Handled = handle_result {
@@ -264,4 +298,58 @@ fn get_composition_string(h_imc: HIMC, flag: IME_COMPOSITION_STRING) -> String {
     unsafe { ImmGetCompositionStringW(h_imc, flag, Some(buf.as_mut_ptr() as _), len as u32) };
 
     String::from_utf16_lossy(&buf)
+}
+
+#[cfg(feature = "theme-change")]
+unsafe fn is_lparam_str(lparam: LPARAM, target: &str) -> bool {
+    let ptr = lparam.0 as *const u16;
+    if ptr.is_null() {
+        return false;
+    }
+
+    // 将 Rust str 转换为 utf-16 迭代器进行逐个比较
+    // 这种方式避免了分配 Vec<u16>，性能最高
+    let mut target_iter = target.encode_utf16();
+    let mut ptr_offset = 0;
+
+    while let Some(target_char) = target_iter.next() {
+        let mem_char = *ptr.add(ptr_offset);
+        if mem_char != target_char {
+            return false;
+        }
+        ptr_offset += 1;
+    }
+
+    // 检查 C 字符串结尾是否为 \0，确保不是前缀匹配
+    *ptr.add(ptr_offset) == 0
+}
+
+/// 查询当前注册表，判断是深色还是浅色
+#[cfg(feature = "theme-change")]
+fn get_current_theme() -> flor_platform_base::ThemeMode {
+    unsafe {
+        let mut value: u32 = 0;
+        let mut size = size_of::<u32>() as u32;
+        // 微软标准的深色模式注册表路径
+        let sub_key =
+            windows::core::w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
+        let value_name = windows::core::w!("AppsUseLightTheme");
+
+        let result = windows::Win32::System::Registry::RegGetValueW(
+            windows::Win32::System::Registry::HKEY_CURRENT_USER,
+            sub_key,
+            value_name,
+            windows::Win32::System::Registry::RRF_RT_REG_DWORD,
+            None,
+            Some(&mut value as *mut _ as *mut _),
+            Some(&mut size),
+        );
+
+        // 0 = Dark, 1 = Light. 读取失败默认 Light
+        if result.is_ok() && value == 0 {
+            flor_platform_base::ThemeMode::Dark
+        } else {
+            flor_platform_base::ThemeMode::Light
+        }
+    }
 }

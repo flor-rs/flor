@@ -47,11 +47,11 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_HWND_RENDER_TARGET_PROPERTIES,
     D2D1_IMAGE_BRUSH_PROPERTIES, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS1_NONE,
     D2D1_LAYER_PARAMETERS1, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
-    D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_PRESENT_OPTIONS_NONE, D2D1_PROPERTY_TYPE_ENUM,
-    D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_QUADRATIC_BEZIER_SEGMENT,
-    D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
-    D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
+    D2D1_MAP_OPTIONS_READ, D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_PRESENT_OPTIONS_NONE,
+    D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4,
+    D2D1_QUADRATIC_BEZIER_SEGMENT, D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
+    D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
     D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
 };
 use windows::Win32::Graphics::DirectWrite::{
@@ -2100,6 +2100,93 @@ impl RenderContext for D2DRender {
             }
         }
         Ok(())
+    }
+
+    fn capture_snapshot(
+        &mut self,
+        rect: Option<(f32, f32, u32, u32)>,
+    ) -> Result<Vec<u8>, Self::Error> {
+        unsafe {
+            // 1. 确定截取区域
+            let (x, y, w, h) = match rect {
+                Some((x, y, w, h)) => (x as u32, y as u32, w, h),
+                None => (0, 0, self.size.width, self.size.height),
+            };
+
+            if w == 0 || h == 0 {
+                return Ok(Vec::new());
+            }
+
+            // 4. 创建 Staging Bitmap
+            // 这里的 size 是我们要截取的大小
+            let staging_size = D2D_SIZE_U {
+                width: w,
+                height: h,
+            };
+            let staging_bitmap = self.current_render.CreateBitmap(
+                staging_size,
+                None, // 初始不给数据
+                0,
+                &RenderFactory::get().d2d1_bitmap_properties1,
+            )?;
+
+            // 5. 从当前 RenderTarget 复制数据到 Staging Bitmap
+            // dest_point: 复制到新位图的 (0,0) 位置
+            // src_rect: 从 RenderTarget 的 (x,y) 位置开始复制
+            let dest_point = D2D_POINT_2U { x: 0, y: 0 };
+            let src_rect = D2D_RECT_U {
+                left: x,
+                top: y,
+                right: x + w,
+                bottom: y + h,
+            };
+
+            // CopyFromRenderTarget 是关键 API，它能把 GPU 上的内容拉取到 Staging Bitmap
+            staging_bitmap.CopyFromRenderTarget(
+                Some(&dest_point),
+                &self.current_render,
+                Some(&src_rect),
+            )?;
+
+            // 6. 映射内存进行读取
+            let mapped_rect = staging_bitmap.Map(D2D1_MAP_OPTIONS_READ)?;
+
+            // 7. 将数据搬运到 Vec<u8>
+            // 注意：mapped_rect.pitch (步长) 可能大于 width * 4，因为有内存对齐填充。
+            // 我们需要一行一行地复制，去除填充字节。
+            let row_size = (w * 4) as usize; // 假设是 32 位颜色 (RGBA/BGRA)
+            let total_size = row_size * h as usize;
+            let mut buffer = Vec::with_capacity(total_size);
+
+            let src_ptr = mapped_rect.bits;
+            let pitch = mapped_rect.pitch as usize;
+
+            for row in 0..h as usize {
+                let start = src_ptr.add(row * pitch);
+                // 这是一个 unsafe 的切片读取
+                let row_slice = slice::from_raw_parts(start, row_size);
+
+                // 遍历每个像素 (4字节) 进行通道交换
+                // Direct2D (BGRA) -> Image Crate (RGBA)
+                for pixel in row_slice.chunks_exact(4) {
+                    let b = pixel[0];
+                    let g = pixel[1];
+                    let r = pixel[2];
+                    let a = pixel[3];
+
+                    // 重新排列推入 buffer
+                    buffer.push(r);
+                    buffer.push(g);
+                    buffer.push(b);
+                    buffer.push(a);
+                }
+            }
+
+            // 8. 解除映射
+            staging_bitmap.Unmap()?;
+
+            Ok(buffer)
+        }
     }
 }
 

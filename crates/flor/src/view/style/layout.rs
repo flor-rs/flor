@@ -2,9 +2,9 @@ use crate::view::control_state::ControlState;
 #[cfg(feature = "layout-block")]
 use taffy::TextAlign;
 #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
-use taffy::{AlignContent, AlignItems, AlignSelf, JustifyContent, JustifyItems};
+use taffy::{AlignContent, AlignItems, AlignSelf, JustifyContent};
 use taffy::{
-    BoxSizing, Dimension, Display, LengthPercentage, LengthPercentageAuto, Line, Overflow, Point,
+    BoxSizing, Dimension, Display, LengthPercentage, LengthPercentageAuto, Overflow, Point,
     Position, Rect, Size,
 };
 #[cfg(feature = "layout-flex")]

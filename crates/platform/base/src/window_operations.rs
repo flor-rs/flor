@@ -1,7 +1,8 @@
 use crate::WindowMode;
 
-pub trait WindowOperations {
+pub trait WindowApi {
     type Error;
+    type Cursor;
 
     /// 创建窗口
     /// title: 窗口标题
@@ -11,10 +12,6 @@ pub trait WindowOperations {
         Self: Sized;
 
     // --- 核心绘制 ---
-
-    /// 异步请求重绘 (推荐)
-    /// 所有平台通用：标记窗口为脏，等待下一次事件循环绘制
-    fn request_redraw(&self) -> Result<(), Self::Error>;
 
     /// 同步强制更新 (Windows 特供)
     /// Windows: 立即调用 WndProc 绘制 (用于初始化防白屏)
@@ -48,22 +45,22 @@ pub trait WindowOperations {
 
     fn get_left(&self) -> Result<i32, Self::Error>;
     fn get_top(&self) -> Result<i32, Self::Error>;
-    fn set_left(&mut self, left: i32) -> Result<(), Self::Error>;
-    fn set_top(&mut self, top: i32) -> Result<(), Self::Error>;
+    fn set_left(&self, left: i32) -> Result<(), Self::Error>;
+    fn set_top(&self, top: i32) -> Result<(), Self::Error>;
 
     /// 同时设置位置 (x, y)
-    fn set_position(&mut self, pos: (i32, i32)) -> Result<(), Self::Error>;
+    fn set_position(&self, pos: (i32, i32)) -> Result<(), Self::Error>;
 
     // --- 尺寸 (Size) - u32 ---
     // 物理尺寸不可能为负
 
     fn get_width(&self) -> Result<u32, Self::Error>;
     fn get_height(&self) -> Result<u32, Self::Error>;
-    fn set_width(&mut self, width: u32) -> Result<(), Self::Error>;
-    fn set_height(&mut self, height: u32) -> Result<(), Self::Error>;
+    fn set_width(&self, width: u32) -> Result<(), Self::Error>;
+    fn set_height(&self, height: u32) -> Result<(), Self::Error>;
 
     /// 同时设置大小 (width, height)
-    fn set_size(&mut self, size: (u32, u32)) -> Result<(), Self::Error>;
+    fn set_size(&self, size: (u32, u32)) -> Result<(), Self::Error>;
 
     // --- 区域查询 (Rects) ---
 
@@ -90,7 +87,21 @@ pub trait WindowOperations {
     fn set_ime_open_state(&self, is_open: bool) -> Result<(), Self::Error>;
     fn set_ime_allowed(&self, allow: bool) -> Result<(), Self::Error>;
 
+    // cursor
+
+    fn set_cursor(cursor: Option<Self::Cursor>) -> Result<(), Self::Error>;
+
     // --- 生命周期 ---
 
     fn destroy(&self) -> Result<(), Self::Error>;
+}
+
+pub trait WindowOperations {
+    type Error;
+    /// 异步请求重绘 (推荐)
+    /// 所有平台通用：标记窗口为脏，等待下一次事件循环绘制
+    fn request_redraw(&self) -> Result<(), Self::Error>;
+    // cursor
+    fn capture_mouse(&self) -> Result<(), Self::Error>;
+    fn release_mouse(&self) -> Result<(), Self::Error>;
 }

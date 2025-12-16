@@ -9,7 +9,6 @@ use platform::WindowId;
 use rustc_hash::FxHashMap;
 use slotmap::{SecondaryMap, SlotMap};
 use std::fmt::Debug;
-use std::sync::Arc;
 
 /// 全局视图存储
 /// 所有视图的状态都存储在这里，不再按窗口分类

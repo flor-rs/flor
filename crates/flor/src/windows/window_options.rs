@@ -1,5 +1,5 @@
 use crate::view::View;
-use flor_platform_base::{WindowMode, WindowOperations};
+use flor_platform_base::{WindowMode, WindowApi};
 use log::trace;
 use parking_lot::RwLock;
 

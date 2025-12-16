@@ -4,23 +4,24 @@ use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
 use crate::view::control_state::ControlState;
 use crate::view::draw_state::DrawState;
-use crate::view::style::layout::{Layout, LayoutKey, LayoutStateSelector};
+use crate::view::style::layout::LayoutStateSelector;
 use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
 use crate::windows::bus::render_from_view_id;
+use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WindowEntryVisit;
-use flor_graphics_base::{RenderContext, SurfaceId};
+use flor_graphics_base::RenderContext;
 use flor_platform_base::WindowOperations;
 use once_cell::sync::Lazy;
 use platform::WindowId;
-use rustc_hash::{FxHashMap, FxHashSet};
-use slotmap::{new_key_type, Key};
+use rustc_hash::FxHashMap;
+use slotmap::new_key_type;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
-use taffy::{LengthPercentage, Rect};
+use crate::log_error::ResultLogExt;
 
 new_key_type! {
     pub struct ViewId;
@@ -190,7 +191,7 @@ impl ViewId {
         VIEW_STORAGE.focus_index.write().insert(self, focus_index);
     }
 
-    pub fn set_focus(self){
+    pub fn set_focus(self) {
         if let Some(win_id) = self.window_id() {
             if let Some(mut entry) = win_id.entry_mut() {
                 entry.focus_manager.set_focus(self);
@@ -209,12 +210,13 @@ impl ViewId {
 
     pub fn on_focus_gained(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write().on_focus_gained();
+            view.write().on_focus_gained().error_on_err(format!("on_focus_gained {{ view_id: {} }}",self));
         }
     }
+
     pub fn on_focus_lost(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write().on_focus_lost();
+            view.write().on_focus_lost().error_on_err(format!("on_focus_lost {{ view_id: {} }}",self));
         }
     }
 
@@ -253,8 +255,27 @@ impl ViewId {
 
     pub fn request_redraw(self) -> Result<(), Error> {
         self.window_id()
-            .map(|window_id| window_id.request_redraw())
-            .transpose()?;
+            .map(|window_id| WindowBusDispatchEntry::request_redraw(&window_id));
+        Ok(())
+    }
+
+    pub fn capture_mouse(self) -> Result<(), Error> {
+        if let Some(window_id) = self.window_id() {
+            window_id
+                .entry_mut()
+                .map(|mut entry| entry.capture_view_id = Some(self));
+            window_id.capture_mouse()?;
+        }
+        Ok(())
+    }
+
+    pub fn release_mouse(&self) -> Result<(), Error> {
+        if let Some(window_id) = self.window_id() {
+            window_id
+                .entry_mut()
+                .map(|mut entry| entry.capture_view_id = None);
+            window_id.release_mouse()?;
+        }
         Ok(())
     }
 }

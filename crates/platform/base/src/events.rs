@@ -61,13 +61,18 @@ pub enum InputEvent {
     /// 同样无堆分配。
     Control(char),
 }
-
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ThemeMode {
+    Light,
+    Dark,
+}
 #[derive(Debug)]
 pub enum Message<'a> {
     WindowDestroy,
     ImeStart,
     ImeInput(InputEvent),
     ImeEnd,
+    CaptureChange,
     Close,
     Draw,
     /// 传递时，每个组件收到的是自己的可用宽高
@@ -129,11 +134,16 @@ pub enum Message<'a> {
         is_ctrl: bool,
         is_shift: bool,
     },
+    #[cfg(feature = "theme-change")]
+    ThemeChanged(ThemeMode),   // 需要重新检测深色模式
+    WorkAreaChanged,           // 任务栏/分辨率改变
+    WheelSettingsChanged(u32), // 滚轮行数改变 (携带新值)
     MouseLeave,
     DpiChange {
         dpi_x: f32,
         dpi_y: f32,
     },
+    Cursor,
     DragEnter,
     DragOver {
         key_state: KeyState,

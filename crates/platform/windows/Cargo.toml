@@ -14,6 +14,8 @@ license.workspace = true
 categories.workspace = true
 
 [features]
+theme-change = ["windows/Win32_System_Registry", "flor-platform-base/theme-change"]
+monitor = ["windows/Win32_UI_HiDpi", "flor-platform-base/monitor"]
 
 [dependencies]
 rustc-hash = { workspace = true }

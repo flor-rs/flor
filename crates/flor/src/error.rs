@@ -2,7 +2,6 @@ use crate::render::backend_error::FlorRenderError;
 use crate::view::view_id::ViewId;
 use flor_graphics_base::ColorParseError;
 use thiserror::Error;
-use crate::windows;
 
 #[derive(Error, Debug)]
 pub enum Error {

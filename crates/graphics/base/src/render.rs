@@ -187,7 +187,24 @@ pub trait RenderContext: Any {
     // ---- 剪裁 ----
     fn set_clip(
         &mut self,
-        suface_id: Option<&Self::SurfaceId>,
+        surface_id: Option<&Self::SurfaceId>,
         rect: Option<(f32, f32, f32, f32)>,
     ) -> Result<(), Self::Error>;
+
+    // ==================== 辅助/输出 ====================
+    /// 截取当前渲染目标的内容
+    ///
+    /// # 参数
+    /// - `rect`: 截图区域 `(x, y, width, height)`。
+    ///   - x, y: 逻辑坐标起始点
+    ///   - width, height: 逻辑尺寸
+    ///   - 如果为 `None`，则截取整个当前渲染目标。
+    ///
+    /// # 返回值
+    /// 返回 `Vec<u8>`，通常为 RGBA8 格式的原始像素数据。
+    /// 具体数据的步长(Stride)和排列取决于后端实现，但在跨平台层应尽量归一化为 RGBA。
+    fn capture_snapshot(
+        &mut self,
+        rect: Option<(f32, f32, u32, u32)>,
+    ) -> Result<Vec<u8>, Self::Error>;
 }

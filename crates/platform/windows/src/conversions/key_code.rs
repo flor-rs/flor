@@ -1,6 +1,12 @@
 // windows/mod.rs
 use crate::base::KeyCode;
-use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9, VK_A, VK_B, VK_BACK,
+    VK_C, VK_D, VK_DOWN, VK_E, VK_ESCAPE, VK_F, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4,
+    VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_G, VK_H, VK_I, VK_J, VK_K, VK_L, VK_LEFT, VK_M, VK_N,
+    VK_O, VK_P, VK_Q, VK_R, VK_RETURN, VK_RIGHT, VK_S, VK_SPACE, VK_T, VK_TAB, VK_U, VK_UP, VK_V,
+    VK_W, VK_X, VK_Y, VK_Z,
+};
 
 pub trait FromVkCode {
     fn from_vk(vk: VIRTUAL_KEY) -> KeyCode;
@@ -75,7 +81,7 @@ impl FromVkCode for KeyCode {
             VK_DOWN => KeyCode::Down,
 
             // 其他
-            other => KeyCode::Other(vk.0),
+            VIRTUAL_KEY(v) => KeyCode::Other(v),
         }
     }
 }

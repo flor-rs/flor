@@ -7,8 +7,8 @@ use crate::view::{collect_layout_children, View};
 use crate::windows::bus::{render, render_from_view_id};
 use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::RenderContext;
-use flor_platform_base::{InputEvent, KeyCode, KeyState};
-use flor_platform_base::{MousePosition, WindowOperations};
+use flor_platform_base::MousePosition;
+use flor_platform_base::{InputEvent, KeyCode, KeyState, WindowApi};
 use log::{trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
@@ -30,6 +30,19 @@ pub trait WindowBusDispatchEntry {
     fn bus_refresh_layout_entry(&self) -> Result<(), Error>;
 
     fn bus_re_draw_entry(&self) -> Result<(), Error>;
+
+    /// 系统主题变更 (深色/浅色)
+    /// 参数 theme: 当前最新的主题模式
+    #[cfg(feature = "theme-change")]
+    fn bus_theme_changed_entry(&mut self, theme: platform::base::ThemeMode);
+
+    /// 工作区/显示器可用区域变更 (如任务栏移动、分辨率改变)
+    /// 无参数：实现者应在收到此消息后，标记布局脏(Dirty)，并在 Layout 阶段主动查询当前显示器信息
+    fn bus_work_area_changed_entry(&mut self);
+
+    /// 鼠标滚轮设置变更
+    /// 参数 lines: 系统设置的一次滚动行数 (Windows 默认为 3)
+    fn bus_wheel_scroll_lines_changed_entry(&mut self, lines: u32);
 
     // 3. 命中测试 (Hit Testing)
     /// 交互事件的前置条件，确定事件归属
@@ -73,6 +86,9 @@ pub trait WindowBusDispatchEntry {
 
     /// 对应 WM_IME_ENDCOMPOSITION
     fn bus_ime_end_entry(&self);
+
+    /// 封装的WindowOperations
+    fn request_redraw(&self);
 }
 
 impl WindowBusDispatchEntry for WindowId {
@@ -245,6 +261,19 @@ impl WindowBusDispatchEntry for WindowId {
         Ok(())
     }
 
+    fn bus_work_area_changed_entry(&mut self) {
+
+    }
+
+    fn bus_wheel_scroll_lines_changed_entry(&mut self, lines: u32) {
+        let view_id = self.view_id();
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            view.write()
+                .bus_wheel_scroll_lines_changed_entry(lines)
+                .error_on_err(format!("draw({:?}) error", view_id));
+        }
+    }
+
     fn bus_hit_test_entry(&self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId {
         let cache_guard = VIEW_STORAGE.z_index_sort.read();
 
@@ -261,6 +290,18 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {
+        if let Some(view_id) = self.entry().map(|v| v.capture_view_id).flatten() {
+            if let Some(view) = VIEW_STORAGE.views.write().get(view_id) {
+                view.write()
+                    .on_mouse_leave(key_state, mouse_position)
+                    .error_on_err(format!(
+                        "on_mouse_leave {{ key_state: {:?}, mouse_position: {:?} }}",
+                        key_state, mouse_position
+                    ));
+                return;
+            }
+        }
+
         // 1. 【获取新 ID】: 必定是一个有效的 ViewId (最差也是窗口自己)
         let new_hovered_id = self.bus_hit_test_entry(mouse_position, key_state);
 
@@ -335,7 +376,7 @@ impl WindowBusDispatchEntry for WindowId {
             if v.hover_id != None {
                 dbg!("call");
                 v.hover_id = None;
-                self.request_redraw().warn_on_err("request_redraw fail");
+                self.request_redraw();
             }
         });
     }
@@ -343,7 +384,11 @@ impl WindowBusDispatchEntry for WindowId {
     // ==================== 左键 (Left Button) ====================
 
     fn bus_l_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             self.entry_mut()
                 .map(|mut v| v.l_down_view_id = Some(view_id));
@@ -354,7 +399,11 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_l_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             if let Some(spawn_click) = self.entry().map(|v| v.l_down_view_id == Some(view_id)) {
                 if spawn_click {
@@ -372,7 +421,11 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_l_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
                 .on_l_button_dbl_click(key_state, mouse_position)
@@ -383,7 +436,11 @@ impl WindowBusDispatchEntry for WindowId {
     // ==================== 右键 (Right Button) ====================
 
     fn bus_r_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             self.entry_mut()
                 .map(|mut v| v.r_down_view_id = Some(view_id));
@@ -394,7 +451,11 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_r_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             if let Some(spawn_click) = self.entry().map(|v| v.r_down_view_id == Some(view_id)) {
                 if spawn_click {
@@ -410,7 +471,11 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_r_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
                 .on_r_button_dbl_click(key_state, mouse_position)
@@ -421,7 +486,11 @@ impl WindowBusDispatchEntry for WindowId {
     // ==================== 中键 (Middle Button) ====================
 
     fn bus_m_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             self.entry_mut()
                 .map(|mut v| v.m_down_view_id = Some(view_id));
@@ -432,7 +501,11 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_m_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             if let Some(spawn_click) = self.entry().map(|v| v.m_down_view_id == Some(view_id)) {
                 if spawn_click {
@@ -448,7 +521,11 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_m_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
-        let view_id = self.bus_hit_test_entry(mouse_position, key_state);
+        let view_id = self
+            .entry()
+            .map(|v| v.capture_view_id)
+            .flatten()
+            .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
                 .on_m_button_dbl_click(key_state, mouse_position)
@@ -529,10 +606,7 @@ impl WindowBusDispatchEntry for WindowId {
             if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
                 view.write()
                     .on_ime_input(&input_event)
-                    .error_on_err(format!(
-                        "on_ime_input {{ {:?} }}]",
-                        input_event
-                    ));
+                    .error_on_err(format!("on_ime_input {{ {:?} }}]", input_event));
             }
         }
     }
@@ -549,5 +623,10 @@ impl WindowBusDispatchEntry for WindowId {
                     .error_on_err(format!("on_ime_end {{ view_id:{} }}]", view_id));
             }
         }
+    }
+
+    fn request_redraw(&self) {
+        flor_platform_base::WindowOperations::request_redraw(self)
+            .warn_on_err("request_redraw fail");
     }
 }

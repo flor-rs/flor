@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::log_error::ResultLogExt;
 use crate::min_wait_time::MinWaitTime;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
@@ -140,6 +141,24 @@ pub trait View {
                     view.write().bus_draw(render, abs_location)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn bus_wheel_scroll_lines_changed_entry(&mut self, lines: u32) -> Result<(), Error> {
+        let view_id = self.view_id();
+        self.on_wheel_scroll_lines_changed_entry(lines)
+            .error_on_err(format!(
+                "on_wheel_scroll_lines_changed_entry {{ view_id: {} }}",
+                view_id
+            ));
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            view.write()
+                .bus_wheel_scroll_lines_changed_entry(lines)
+                .error_on_err(format!(
+                    "on_wheel_scroll_lines_changed_entry {{ view_id: {} }}",
+                    view_id
+                ));
         }
         Ok(())
     }
@@ -361,7 +380,6 @@ pub trait View {
         Ok(())
     }
 
-    #[allow(unused_variables)]
     fn on_ime_start(&mut self) -> Result<(), Error> {
         Ok(())
     }
@@ -369,8 +387,12 @@ pub trait View {
     fn on_ime_input(&mut self, input_event: &InputEvent) -> Result<(), Error> {
         Ok(())
     }
-    #[allow(unused_variables)]
+
     fn on_ime_end(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn on_wheel_scroll_lines_changed_entry(&mut self, lines: u32) -> Result<(), Error> {
         Ok(())
     }
 }

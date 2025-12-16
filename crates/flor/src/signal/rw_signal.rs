@@ -2,7 +2,6 @@ use crate::signal::id::Id;
 use crate::signal::read::Read;
 use crate::signal::read_signal::ReadSignal;
 use crate::signal::runtime::RUNTIME;
-use crate::signal::rw_signal;
 use crate::signal::value::Value;
 use crate::signal::write::Write;
 use crate::signal::write_signal::WriteSignal;
