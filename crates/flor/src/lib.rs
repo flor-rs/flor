@@ -12,6 +12,8 @@ use log::{debug, info, trace};
 use once_cell::sync::Lazy;
 use platform::set_proc_handler;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "clipboard")]
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 pub mod device_kind;
@@ -25,11 +27,14 @@ pub mod signal;
 pub mod view;
 pub mod windows;
 
+use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::min_wait_time::MinWaitTime;
 use crate::signal::effect::updater_effect::create_updater;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WINDOW_ENTRY_MAP;
+#[cfg(feature = "clipboard")]
+pub use arboard;
 pub use slotmap;
 pub use taffy;
 
@@ -37,12 +42,23 @@ static ALLOW_NO_WINDOWS_LOOP: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(fa
 static EXIT: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 
 pub static CONFIG: Lazy<bool> = Lazy::new(|| false);
+#[cfg(feature = "clipboard")]
+static CLIPBOARD: OnceLock<arboard::Clipboard> = OnceLock::new();
+
 pub struct FlorGui;
 
 impl FlorGui {
     #[inline]
-    pub fn init(&self) {
+    pub fn init(&self) -> Result<(), Error> {
         set_proc_handler(Box::new(WindowsProcHandler::default()));
+        #[cfg(feature = "clipboard")]
+        let _ = CLIPBOARD.set(arboard::Clipboard::new()?);
+        Ok(())
+    }
+
+    #[cfg(feature = "clipboard")]
+    pub fn clipboard<'a>() -> &'a arboard::Clipboard {
+        CLIPBOARD.get().expect("Clipboard not initialized")
     }
 
     pub fn exit(&self) {

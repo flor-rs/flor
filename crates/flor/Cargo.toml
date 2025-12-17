@@ -27,11 +27,11 @@ layout-grid = ["taffy/grid"]
 layout-block = ["taffy/block_layout"]
 
 # 顶层 SVG 虚拟特性（用户只需要启用这个）
-svg = [
-    "flor-graphics-direct2d?/svg"
-]
+svg = ["flor-graphics-direct2d?/svg"]
 
 theme-change = ["flor-platform-windows/theme-change"]
+
+clipboard = ["arboard"]
 
 [dependencies]
 log = { workspace = true }
@@ -46,7 +46,8 @@ taffy = { workspace = true }
 parking_lot = "0.12"
 slotmap = "1.0"
 dashmap = { workspace = true }
-result = "1.0.0"
+arboard = { workspace = true, optional = true }
+
 
 [target.'cfg(windows)'.dependencies]
 flor-platform-windows = { workspace = true }

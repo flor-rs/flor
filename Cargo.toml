@@ -50,6 +50,7 @@ taffy = { version = "0.7.7", default-features = false, features = ["std", "taffy
 parking_lot = "0.12.4"
 lru = "0.16.2"
 tiny-skia = "0.11.4"
+arboard = "3.6"
 
 [workspace.lints.rust]
 #missing_docs = "warn"

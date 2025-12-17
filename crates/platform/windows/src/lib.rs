@@ -16,6 +16,7 @@ mod window;
 mod window_id;
 mod window_proc;
 
+#[cfg(feature = "monitor")]
 pub use monitor::*;
 
 pub mod base {

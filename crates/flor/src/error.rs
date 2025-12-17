@@ -20,4 +20,7 @@ pub enum Error {
     #[cfg(windows)]
     #[error("window operations error: `{0}`")]
     WindowError(#[from] platform::Error),
+    #[cfg(feature = "clipboard")]
+    #[error("clipboard error: `{0}`")]
+    ClipboardError(#[from] arboard::Error),
 }
