@@ -164,11 +164,17 @@ impl RenderContext for FlorRender {
         }
     }
 
-    fn create_image_from_raw_bytes(&mut self, raw_bytes: Vec<Vec<u8>>, width: u32, height: u32, delays: Vec<u16>) -> Result<Self::ImageHandle, Self::Error> {
+    fn create_image_from_raw_bytes(
+        &mut self,
+        raw_bytes: Vec<Vec<u8>>,
+        width: u32,
+        height: u32,
+        delays: Vec<u16>,
+    ) -> Result<Self::ImageHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => Ok(FlorImageHandle::D2DImageHandle(
-                g.create_image_from_raw_bytes(raw_bytes,width,height,delays)?,
+                g.create_image_from_raw_bytes(raw_bytes, width, height, delays)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
             FlorRender::CPU(c) => Ok(c.create_image_from_bytes(bytes)?),
@@ -521,37 +527,64 @@ impl RenderContext for FlorRender {
         Ok(())
     }
 
-    fn set_clip(
-        &mut self,
-        surface_id: Option<&Self::SurfaceId>,
-        rect: Option<(f32, f32, f32, f32)>,
-    ) -> Result<(), Self::Error> {
-        return match self {
+    fn push_clip(&mut self, rect: (f32, f32, f32, f32)) -> Result<(), Self::Error> {
+        match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => {
-                let d2d_surface_id = match surface_id {
-                    Some(FlorSurfaceId::D2DSurfaceId(inner)) => Some(inner),
-                    None => None,
-                    _ => return Err(FlorRenderError::RenderNotFound),
-                };
-                g.set_clip(d2d_surface_id, rect)?;
-                Ok(())
-            }
+            FlorRender::GPU(g) => g.push_clip(rect)?,
             #[cfg(feature = "cpu-render-backend")]
-            FlorRender::CPU(c) => {
-                let cpu_surface_id = match surface_id {
-                    Some(FlorSurfaceId::CPUSurfaceId(inner)) => Some(inner),
-                    None => None,
-                    _ => return Err(FlorRenderError::RenderNotFound),
-                };
-
-                c.set_clip(cpu_surface_id, rect)?;
-                Ok(())
-            }
+            FlorRender::CPU(c) => c.push_clip(rect)?,
         };
+        Ok(())
     }
 
-    fn capture_snapshot(&mut self, rect: Option<(f32, f32, u32, u32)>) -> Result<Vec<u8>, Self::Error> {
+    fn push_rounded_clip(
+        &mut self,
+        rect: (f32, f32, f32, f32),
+        radius: f32,
+    ) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.push_rounded_clip(rect, radius)?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.push_rounded_clip(rect, radius)?,
+        };
+        Ok(())
+    }
+
+    fn push_path_clip(&mut self, path: &Path) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.push_path_clip(path)?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.push_path_clip(path)?,
+        };
+        Ok(())
+    }
+
+    fn pop_clip(&mut self) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.pop_clip()?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.pop_clip()?,
+        };
+        Ok(())
+    }
+
+    fn pop_all_clip(&mut self) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.pop_all_clip()?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.pop_all_clip()?,
+        };
+        Ok(())
+    }
+
+    fn capture_snapshot(
+        &mut self,
+        rect: Option<(f32, f32, u32, u32)>,
+    ) -> Result<Vec<u8>, Self::Error> {
         let result = match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => g.capture_snapshot(rect)?,
