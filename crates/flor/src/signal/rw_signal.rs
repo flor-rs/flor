@@ -46,6 +46,7 @@ impl<T> RwSignal<T> {
         }
     }
 
+    #[allow(unused_variables)]
     pub fn set_label(&self, label: &str) {
         #[cfg(any(debug_assertions, feature = "signal-tracing"))]
         RUNTIME.labels.insert(self.id, label.into());
@@ -86,6 +87,7 @@ pub fn create_rw_signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)
     signal.split()
 }
 
+#[allow(unused_variables)]
 pub fn create_signal_with_label<T: 'static>(value: T, label: &str) -> RwSignal<T> {
     let rw_signal = create_signal(value);
     #[cfg(any(debug_assertions, feature = "signal-tracing"))]

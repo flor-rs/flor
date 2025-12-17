@@ -8,6 +8,8 @@ use crate::windows::bus::{render, render_from_view_id};
 use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::RenderContext;
 use flor_platform_base::MousePosition;
+#[cfg(feature = "theme-change")]
+use flor_platform_base::ThemeMode;
 use flor_platform_base::{InputEvent, KeyCode, KeyState, WindowApi};
 use log::{trace, warn};
 use platform::WindowId;
@@ -261,9 +263,11 @@ impl WindowBusDispatchEntry for WindowId {
         Ok(())
     }
 
-    fn bus_work_area_changed_entry(&mut self) {
+    #[cfg(feature = "theme-change")]
+    #[allow(unused_variables)]
+    fn bus_theme_changed_entry(&mut self, theme: ThemeMode) {}
 
-    }
+    fn bus_work_area_changed_entry(&mut self) {}
 
     fn bus_wheel_scroll_lines_changed_entry(&mut self, lines: u32) {
         let view_id = self.view_id();
