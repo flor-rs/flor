@@ -185,11 +185,26 @@ pub trait RenderContext: Any {
     ) -> Result<(), Self::Error>;
 
     // ---- 剪裁 ----
-    fn set_clip(
+    // 1. 基础矩形剪裁 (性能：极快)
+    // 对应 tiny-skia 的 clip_rect
+    // 对应 GL 的 glScissor
+    fn push_clip(&mut self, rect: (f32, f32, f32, f32)) -> Result<(), Self::Error>;
+
+    // 2. 圆角矩形剪裁 (性能：中等)
+    // 对应 tiny-skia 的 clip_path (但在 skia 中有专门的 RRect 优化)
+    fn push_rounded_clip(
         &mut self,
-        surface_id: Option<&Self::SurfaceId>,
-        rect: Option<(f32, f32, f32, f32)>,
+        rect: (f32, f32, f32, f32),
+        radius: f32,
     ) -> Result<(), Self::Error>;
+
+    // 3. 任意路径剪裁 (性能：慢)
+    // 对应 tiny-skia 的 clip_path
+    // 这是通用兜底方案，任何形状都能裁
+    fn push_path_clip(&mut self, path: &Path) -> Result<(), Self::Error>;
+
+    fn pop_clip(&mut self) -> Result<(), Self::Error>;
+    fn pop_all_clip(&mut self) -> Result<(), Self::Error>;
 
     // ==================== 辅助/输出 ====================
     /// 截取当前渲染目标的内容

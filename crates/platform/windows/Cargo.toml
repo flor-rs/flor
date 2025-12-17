@@ -18,13 +18,9 @@ theme-change = ["windows/Win32_System_Registry", "flor-platform-base/theme-chang
 monitor = ["windows/Win32_UI_HiDpi", "flor-platform-base/monitor"]
 
 [dependencies]
-rustc-hash = { workspace = true }
-dashmap = { workspace = true }
-thiserror = { workspace = true }
 once_cell = { workspace = true }
 log = { workspace = true }
 flor-platform-base = { workspace = true }
-winapi = { version = "0.3.9", features = ["windowsx"] }
 windows-core = { workspace = true }
 windows = { workspace = true, features = [
     "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_Ime",

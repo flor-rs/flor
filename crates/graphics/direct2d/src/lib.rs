@@ -38,7 +38,7 @@ use windows::Win32::Graphics::Direct2D::{
     CLSID_D2D1Crop, CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow, D2D1CreateFactory, ID2D1Bitmap1,
     ID2D1Brush, ID2D1CommandList, ID2D1DeviceContext, ID2D1DeviceContext5, ID2D1Effect,
     ID2D1Factory2, ID2D1Geometry, ID2D1HwndRenderTarget, ID2D1Image, ID2D1ImageBrush, ID2D1Layer,
-    ID2D1PathGeometry1, ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+    ID2D1PathGeometry1, ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
     D2D1_BITMAP_OPTIONS_NONE, D2D1_BITMAP_PROPERTIES1, D2D1_BRUSH_PROPERTIES,
     D2D1_BUFFER_PRECISION_8BPC_UNORM, D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED,
     D2D1_COLOR_SPACE_SRGB, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_CROP_PROP_RECT,
@@ -214,9 +214,16 @@ impl RenderFactory {
                 last_blur_radius: 0.0,
                 lur: LruCache::new(NonZeroUsize::new(512).unwrap_or_else(|| unreachable!())),
                 layer_pool: vec![],
+                clip_stack: vec![],
             })
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ClipType {
+    AxisAligned, // 普通矩形
+    Layer,       // 复杂形状 (圆角、Path)
 }
 
 pub struct D2DRender {
@@ -232,6 +239,7 @@ pub struct D2DRender {
     pub last_blur_radius: f32,                   // 缓存上次使用的半径
     pub lur: LruCache<u64, ID2D1CommandList>,
     pub layer_pool: Vec<ID2D1Layer>,
+    pub clip_stack: Vec<ClipType>,
 }
 impl Debug for D2DRender {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -2067,37 +2075,113 @@ impl RenderContext for D2DRender {
         }
     }
 
-    fn set_clip(
+    // =========================================================
+    // 1. 普通矩形剪裁 (使用 PushAxisAlignedClip)
+    // =========================================================
+    fn push_clip(&mut self, rect: (f32, f32, f32, f32)) -> Result<(), Self::Error> {
+        let d2d_rect = D2D_RECT_F {
+            left: rect.0,
+            top: rect.1,
+            right: rect.2,
+            bottom: rect.3,
+        };
+
+        unsafe {
+            self.current_render
+                .PushAxisAlignedClip(&d2d_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        }
+
+        // 记账：这一层是矩形
+        self.clip_stack.push(ClipType::AxisAligned);
+
+        Ok(())
+    }
+
+    // =========================================================
+    // 2. 圆角剪裁 (使用 PushLayer + Geometry)
+    // =========================================================
+    fn push_rounded_clip(
         &mut self,
-        surface_id: Option<&Self::SurfaceId>,
-        rect: Option<(f32, f32, f32, f32)>,
+        rect: (f32, f32, f32, f32),
+        radius: f32,
     ) -> Result<(), Self::Error> {
         unsafe {
-            // 1. 获取 Render Target
-            let render_target = match surface_id {
-                None => self.current_render.cast::<ID2D1RenderTarget>()?,
-                Some(surface_id) => surface_id.raw().cast::<ID2D1RenderTarget>()?,
+            // A. 创建圆角矩形几何体
+            let rounded_rect = D2D1_ROUNDED_RECT {
+                rect: D2D_RECT_F {
+                    left: rect.0,
+                    top: rect.1,
+                    right: rect.2,
+                    bottom: rect.3,
+                },
+                radiusX: radius,
+                radiusY: radius,
             };
+            let geometry = RenderFactory::get()
+                .factory
+                .CreateRoundedRectangleGeometry(&rounded_rect)?;
 
-            match rect {
-                // 开启裁剪：只 Push，不 Pop！
-                // 状态保留在 D2D 自己的栈里，直到你下次调用 set_clip(None)
-                Some((x, y, w, h)) => {
-                    let d2d_rect = D2D_RECT_F {
-                        left: x,
-                        top: y,
-                        right: x + w,
-                        bottom: y + h,
-                    };
-                    render_target.PushAxisAlignedClip(&d2d_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-                }
+            // B. 压入 Layer
+            self.push_layer_with_geometry(&geometry)?;
+        }
 
-                // 结束裁剪：执行 Pop
-                // 这里假设你之前一定调用过 Some(...)，否则 D2D 可能会报错
-                None => {
-                    render_target.PopAxisAlignedClip();
+        // 记账：这一层是 Layer
+        self.clip_stack.push(ClipType::Layer);
+
+        Ok(())
+    }
+
+    // =========================================================
+    // 3. 路径剪裁 (使用 PushLayer + Geometry)
+    // =========================================================
+    fn push_path_clip(&mut self, path: &Path) -> Result<(), Self::Error> {
+        // 注意：千万不要在这里调 PopAxisAlignedClip！
+        // D2D 的剪裁是自动取交集的。如果你在这里 Pop，就破坏了父级的剪裁限制。
+
+        unsafe {
+            // A. 将你的 Path 转换为 D2D Geometry
+            // 这里假设你有一个辅助方法 convert_path_to_d2d_geometry
+            let geometry = self.build_geometry(path)?;
+
+            // B. 压入 Layer
+            self.push_layer_with_geometry(&geometry)?;
+        }
+
+        // 记账：这一层是 Layer
+        self.clip_stack.push(ClipType::Layer);
+
+        Ok(())
+    }
+
+    // =========================================================
+    // 4. 弹出剪裁 (根据类型自动分发)
+    // =========================================================
+    fn pop_clip(&mut self) -> Result<(), Self::Error> {
+        // 1. 查看栈顶是什么类型
+        if let Some(clip_type) = self.clip_stack.pop() {
+            unsafe {
+                match clip_type {
+                    ClipType::AxisAligned => {
+                        self.current_render.PopAxisAlignedClip();
+                    }
+                    ClipType::Layer => {
+                        self.current_render.PopLayer();
+                    }
                 }
             }
+        } else {
+            // 栈为空时的防呆处理，可以选择 log 警告
+            // println!("Warning: Try to pop clip from empty stack");
+        }
+        Ok(())
+    }
+
+    // =========================================================
+    // 5. 清空剪裁 (帧结束时的兜底)
+    // =========================================================
+    fn pop_all_clip(&mut self) -> Result<(), Self::Error> {
+        while !self.clip_stack.is_empty() {
+            self.pop_clip()?;
         }
         Ok(())
     }
@@ -2305,6 +2389,38 @@ impl D2DRender {
         Ok(())
     }
 
+    unsafe fn push_layer_with_geometry<G: Interface>(
+        &self,
+        geometry: &G,
+    ) -> Result<(), D2DBackendError>
+    where
+        G: Into<ID2D1Geometry> + Clone,
+    {
+        // 1. 创建 Layer 资源 (D2D 中 Layer 是很重的资源，理想情况下应该缓存复用，但这里先每次创建)
+        let layer: ID2D1Layer = self.current_render.CreateLayer(None)?;
+
+        // 2. 配置 Layer 参数
+        let params = D2D1_LAYER_PARAMETERS1 {
+            contentBounds: D2D_RECT_F {
+                left: -f32::INFINITY,
+                top: -f32::INFINITY,
+                right: f32::INFINITY,
+                bottom: f32::INFINITY,
+            }, // 无限大
+            geometricMask: ManuallyDrop::new(Some(geometry.cast::<ID2D1Geometry>()?)), // 强转为 ID2D1Geometry
+            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            maskTransform: Matrix3x2::identity(), // 矩阵
+            opacity: 1.0,
+            opacityBrush: ManuallyDrop::new(None), // 不适用透明画刷
+            layerOptions: D2D1_LAYER_OPTIONS1_NONE,
+        };
+
+        // 3. 压栈
+        self.current_render.PushLayer(&params, &layer);
+
+        Ok(())
+    }
+
     /// 内部辅助：将 Path 转换为 Direct2D Geometry
     fn build_geometry(&self, path: &Path) -> Result<ID2D1PathGeometry1, D2DBackendError> {
         unsafe {
@@ -2333,11 +2449,13 @@ impl D2DRender {
                         current_point = pt;
                     }
                     PathCommand::LineTo(x, y) => {
-                        if is_figure_started {
-                            let pt = Vector2 { X: *x, Y: *y };
-                            sink.AddLine(pt);
-                            current_point = pt;
+                        if !is_figure_started {
+                            sink.BeginFigure(current_point, D2D1_FIGURE_BEGIN_FILLED);
+                            is_figure_started = true;
                         }
+                        let pt = Vector2 { X: *x, Y: *y };
+                        sink.AddLine(pt);
+                        current_point = pt;
                     }
                     PathCommand::Bezier(points) => {
                         if is_figure_started {
