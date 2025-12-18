@@ -5,8 +5,6 @@ use crate::handle::D2DTextFormatHandle;
 #[cfg(feature = "svg")]
 use crate::handle::{D2DSvgHandle, SvgShadowCache};
 use crate::into_d2d_transform::IntoD2DTransform;
-use crate::util::color::AsD2dColor;
-use crate::util::encode::encode_unicode;
 use flor_graphics_base::{
     Color, Error, Gradient, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
     PathDrawOptions, Render, RenderContext, ScaleMode, TextAlignment, TextDrawOptions,
@@ -87,15 +85,18 @@ compile_error!("The 'direct2d' feature is only supported on Windows platforms.")
 mod brush;
 mod error;
 
-mod util;
 pub mod base {
     pub use flor_graphics_base::*;
 }
 pub mod into_d2d_transform;
 
 pub mod handle;
+pub mod color;
+pub mod encode;
 
-pub use {error::*, util::*};
+use crate::color::AsD2dColor;
+use crate::encode::encode_unicode;
+pub use error::*;
 
 pub static RENDER_FACTORY: OnceLock<RenderFactory> = OnceLock::new();
 

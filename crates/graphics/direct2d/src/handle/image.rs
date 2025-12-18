@@ -1,5 +1,5 @@
-use crate::handle::FrameMetadata;
-use crate::{D2DBackendError, RenderFactory};
+mod frame_metadata;
+
 use flor_graphics_base::ImageHandle;
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -23,6 +23,7 @@ use windows::Win32::Graphics::Imaging::{
     GUID_ContainerFormatGif, GUID_WICPixelFormat32bppPBGRA, IWICBitmapDecoder,
     WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnLoad,
 };
+pub use {crate::*, frame_metadata::*};
 
 #[derive(Debug, Clone)]
 pub struct D2DImageHandle {
@@ -380,7 +381,7 @@ impl D2DImageHandle {
             colorContext: ManuallyDrop::new(None),
         };
 
-        let mut bitmaps = Vec::with_capacity(frame_count as usize);
+        let mut bitmaps = Vec::with_capacity(frame_count);
 
         for frame_data in raw_bytes {
             let bitmap = unsafe {
