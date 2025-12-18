@@ -10,6 +10,8 @@ use flor_graphics_base::RenderContext;
 use flor_platform_base::MousePosition;
 #[cfg(feature = "theme-change")]
 use flor_platform_base::ThemeMode;
+#[cfg(feature = "drag-drop")]
+use flor_platform_base::{DragData, DragFormat, DropEffect};
 use flor_platform_base::{InputEvent, KeyCode, KeyState, WindowApi};
 use log::{trace, warn};
 use platform::WindowId;
@@ -88,6 +90,41 @@ pub trait WindowBusDispatchEntry {
 
     /// 对应 WM_IME_ENDCOMPOSITION
     fn bus_ime_end_entry(&self);
+
+    // 7. 拖放事件 (Drag & Drop Events)
+    // 对应系统层的 DragEnter, DragOver, DragLeave, Drop
+    // 注意：Enter 和 Over 通常需要返回 DragOperation (None/Copy/Move/Link) 以更新系统光标样式
+
+    /// 拖拽进入窗口区域
+    #[cfg(feature = "drag-drop")]
+    fn bus_drag_enter_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> DropEffect;
+
+    /// 拖拽在窗口内移动 (高频触发)
+    #[cfg(feature = "drag-drop")]
+    fn bus_drag_over_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> DropEffect;
+
+    /// 拖拽离开窗口区域或被取消
+    #[cfg(feature = "drag-drop")]
+    fn bus_drag_leave_entry(&mut self);
+
+    /// 并在有效区域释放鼠标
+    #[cfg(feature = "drag-drop")]
+    fn bus_drop_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        data: &DragData,
+    ) -> DropEffect;
 
     /// 封装的WindowOperations
     fn request_redraw(&self);
@@ -627,6 +664,121 @@ impl WindowBusDispatchEntry for WindowId {
                     .error_on_err(format!("on_ime_end {{ view_id:{} }}]", view_id));
             }
         }
+    }
+
+    #[cfg(feature = "drag-drop")]
+    // 1. [DragEnter] 鼠标首次进入窗口
+    fn bus_drag_enter_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> DropEffect {
+        // 1. 命中测试
+        let target_id = self.bus_hit_test_entry(mouse_position, key_state);
+
+        // 2. 更新状态：记录当前 ViewId
+        if let Some(mut entry) = self.entry_mut() {
+            entry.current_drag_target = Some(target_id);
+        }
+
+        // 3. 投递给目标控件
+        target_id.on_drag_enter(key_state, mouse_position, format)
+    }
+
+    // 2. [DragOver] 核心状态机：负责分发 Enter/Leave/Over
+    #[cfg(feature = "drag-drop")]
+    fn bus_drag_over_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> DropEffect {
+        // 1. 计算新目标
+        let new_target_id = self.bus_hit_test_entry(mouse_position, key_state);
+
+        // 2. 获取旧目标
+        let old_target_id = self.entry().and_then(|v| v.current_drag_target);
+
+        // 3. 状态判断
+        if Some(new_target_id) != old_target_id {
+            // Case A: 目标切换 (A -> B)
+
+            // A-1: 通知旧控件 Leave
+            if let Some(old_id) = old_target_id {
+                if let Some(view) = VIEW_STORAGE.views.read().get(old_id) {
+                    // Leave 不需要返回值，直接链式调用
+                    view.write()
+                        .on_drag_leave()
+                        .error_on_err(format!("on_drag_leave {{ view_id:{} }}", old_id));
+                }
+            }
+
+            // A-2: 更新状态
+            if let Some(mut entry) = self.entry_mut() {
+                entry.current_drag_target = Some(new_target_id);
+            }
+
+            // A-3: 通知新控件 Enter (合成事件)
+            new_target_id.on_drag_enter(key_state, mouse_position, format)
+        } else {
+            // Case B: 目标未变 (在 A 内部移动)
+
+            // 直接通知 Over
+            if let Some(view) = VIEW_STORAGE.views.read().get(new_target_id) {
+                return view
+                    .write()
+                    .on_drag_over(key_state, mouse_position, format)
+                    .log_err(format!("on_drag_over {{ view_id:{} }}", new_target_id))
+                    .unwrap_or(DropEffect::None);
+            }
+            DropEffect::None
+        }
+    }
+
+    // 3. [DragLeave] 鼠标离开窗口
+    #[cfg(feature = "drag-drop")]
+    fn bus_drag_leave_entry(&mut self) {
+        // 获取旧目标
+        let old_target_id = self.entry().and_then(|v| v.current_drag_target);
+
+        // 1. 通知 Leave
+        if let Some(old_id) = old_target_id {
+            old_id.on_drag_leave();
+        }
+
+        // 2. 清理状态
+        if let Some(mut entry) = self.entry_mut() {
+            entry.current_drag_target = None;
+        }
+    }
+
+    // 4. [Drop] 鼠标松开
+    #[cfg(feature = "drag-drop")]
+    fn bus_drop_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        data: &DragData,
+    ) -> DropEffect {
+        // 1. 再次命中测试
+        let target_id = self.bus_hit_test_entry(mouse_position, key_state);
+
+        // 2. 清理状态
+        if let Some(mut entry) = self.entry_mut() {
+            entry.current_drag_target = None;
+        }
+
+        // 3. 投递 Drop
+        if let Some(view) = VIEW_STORAGE.views.read().get(target_id) {
+            return view
+                .write()
+                .on_drop(key_state, mouse_position, data)
+                .log_err(format!("on_drop {{ view_id:{} }}", target_id))
+                .unwrap_or(DropEffect::None);
+        }
+
+        DropEffect::None
     }
 
     fn request_redraw(&self) {

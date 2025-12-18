@@ -199,15 +199,19 @@ pub(crate) unsafe extern "system" fn window_proc(
         }
         WM_CLOSE => {
             debug!("WM_CLOSE");
-            if let HandleResult::WindowClose(is_close) =
-                proc().window_proc(hwnd.into(), Message::Close)
-            {
-                trace!("HandleResult::Close({is_close})");
-                if !is_close {
-                    return LRESULT(0);
-                }
+            let mut prevent = false;
+            proc().window_proc(
+                hwnd.into(),
+                Message::CloseRequested {
+                    prevent: &mut prevent,
+                },
+            );
+            trace!("HandleResult::CloseRequested({prevent})");
+            if prevent {
+                HandleResult::Handled
+            } else {
+                HandleResult::Default
             }
-            HandleResult::Default
         }
         WM_KEYDOWN | WM_KEYUP => {
             let is_down = msg == WM_KEYDOWN;

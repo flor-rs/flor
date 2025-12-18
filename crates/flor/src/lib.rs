@@ -68,10 +68,12 @@ impl FlorGui {
         }
     }
 
-    pub fn event_loop(&self) {
+    pub fn event_loop(&self) -> Result<(), Error> {
         if RENDERS.is_empty() {
-            return;
+            return Ok(());
         }
+
+        platform::init()?;
 
         let mut last_fps_time = Instant::now();
         let mut frame_count = 0;
@@ -85,7 +87,7 @@ impl FlorGui {
 
             if !allow && EXIT.load(Ordering::Acquire) {
                 info!("application exit.");
-                break;
+                break Ok(());
             }
 
             let mut lazy = true;

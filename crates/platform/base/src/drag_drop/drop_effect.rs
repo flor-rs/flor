@@ -1,8 +1,8 @@
-#[derive(Debug, Copy,Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum DropEffect {
-    Copy,
-    Link,
-    Move,
     None,
+    Copy,
+    Move,
+    Link,
     Scroll,
 }

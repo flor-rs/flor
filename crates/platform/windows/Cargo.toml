@@ -16,9 +16,11 @@ categories.workspace = true
 [features]
 theme-change = ["windows/Win32_System_Registry", "flor-platform-base/theme-change"]
 monitor = ["windows/Win32_UI_HiDpi", "flor-platform-base/monitor"]
+drag-drop = ["rustc-hash", "windows/Win32_System_DataExchange", "windows/Win32_System_Memory", "windows/Win32_UI", "windows/Win32_UI_Shell", "flor-platform-base/drag-drop"]
 
 [dependencies]
 once_cell = { workspace = true }
+rustc-hash = { workspace = true, optional = true }
 log = { workspace = true }
 flor-platform-base = { workspace = true }
 windows-core = { workspace = true }

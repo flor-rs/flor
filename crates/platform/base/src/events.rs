@@ -1,9 +1,11 @@
-use crate::drop_effect::DropEffect;
+#[cfg(feature = "drag-drop")]
+use crate::drag_drop::{DragFormat, DropEffect};
 use crate::key_code::KeyCode;
 use crate::key_state::KeyState;
 use crate::mouse_position::MousePosition;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
+use std::path::PathBuf;
 
 pub trait EventMsg: Any + Debug {}
 
@@ -67,13 +69,24 @@ pub enum ThemeMode {
     Dark,
 }
 #[derive(Debug)]
+pub enum DragData {
+    None,
+    Files(Vec<PathBuf>),
+    Text(String),
+    Image(Vec<u8>),
+    // 尚未读取的原始句柄（用于延迟读取）
+    Raw(Box<dyn Any>),
+}
+#[derive(Debug)]
 pub enum Message<'a> {
     WindowDestroy,
     ImeStart,
     ImeInput(InputEvent),
     ImeEnd,
     CaptureChange,
-    Close,
+    CloseRequested {
+        prevent: &'a mut bool,
+    },
     Draw,
     /// 传递时，每个组件收到的是自己的可用宽高
     Resize {
@@ -135,7 +148,7 @@ pub enum Message<'a> {
         is_shift: bool,
     },
     #[cfg(feature = "theme-change")]
-    ThemeChanged(ThemeMode),   // 需要重新检测深色模式
+    ThemeChanged(ThemeMode), // 需要重新检测深色模式
     WorkAreaChanged,           // 任务栏/分辨率改变
     WheelSettingsChanged(u32), // 滚轮行数改变 (携带新值)
     MouseLeave,
@@ -144,14 +157,33 @@ pub enum Message<'a> {
         dpi_y: f32,
     },
     Cursor,
-    DragEnter,
+    #[cfg(feature = "drag-drop")]
+    // 拖拽进入
+    DragEnter {
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        formats: &'a [DragFormat], // 支持的格式 (如 "File", "Text")
+        effect: &'a mut DropEffect,
+    },
+    #[cfg(feature = "drag-drop")]
+    // 拖拽悬停
     DragOver {
         key_state: KeyState,
         mouse_position: MousePosition,
-        drop_effect: &'a mut DropEffect,
+        formats: &'a [DragFormat], // 支持的格式 (如 "File", "Text")
+        effect: &'a mut DropEffect,
     },
+    #[cfg(feature = "drag-drop")]
+    // 拖拽离开
     DragLeave,
-    Drop,
+    #[cfg(feature = "drag-drop")]
+    // 放置 (真正的数据交换)
+    Drop {
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        data: DragData, // 解析好的数据
+        effect: &'a mut DropEffect,
+    },
 }
 
 impl Message<'_> {

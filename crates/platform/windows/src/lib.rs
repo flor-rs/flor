@@ -1,5 +1,6 @@
 use log::info;
 use std::time::Duration;
+
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostQuitMessage, TranslateMessage,
     MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
@@ -7,6 +8,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 mod conversions;
 mod cursor;
+#[cfg(feature = "drag-drop")]
 mod drop_target;
 #[cfg(feature = "monitor")]
 mod monitor;
@@ -42,6 +44,16 @@ pub fn handler_wait(timeout: Option<Duration>) {
     unsafe {
         MsgWaitForMultipleObjectsEx(None, millis, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
     }
+}
+
+#[inline]
+pub fn init() -> Result<(), Error> {
+    #[cfg(feature = "drag-drop")]
+    unsafe {
+        use windows::Win32::System::Ole::OleInitialize;
+        OleInitialize(None)?;
+    }
+    Ok(())
 }
 
 #[inline]

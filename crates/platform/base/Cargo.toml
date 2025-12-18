@@ -17,6 +17,7 @@ categories.workspace = true
 [features]
 theme-change = []
 monitor = []
+drag-drop = []
 
 [dependencies]
 rustc-hash = { workspace = true }

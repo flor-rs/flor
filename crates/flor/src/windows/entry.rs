@@ -27,6 +27,7 @@ pub struct WindowEntry {
     pub r_down_view_id: Option<ViewId>,
     pub m_down_view_id: Option<ViewId>,
     pub capture_view_id: Option<ViewId>,
+    pub current_drag_target: Option<ViewId>,
 }
 
 impl WindowEntry {
@@ -46,6 +47,7 @@ impl WindowEntry {
             r_down_view_id: None,
             m_down_view_id: None,
             capture_view_id: None,
+            current_drag_target: None,
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id

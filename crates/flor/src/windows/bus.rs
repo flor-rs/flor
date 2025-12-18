@@ -231,8 +231,44 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
             window_id.bus_mouse_leave_entry();
             HandleResult::Handled
         }
-        Message::Close => {
-            return Ok(HandleResult::WindowClose(true));
+        Message::CloseRequested { prevent } => {
+            *prevent = true;
+            HandleResult::Handled
+        }
+        #[cfg(feature = "drag-drop")]
+        Message::DragEnter {
+            key_state,
+            mouse_position,
+            formats,
+            effect,
+        } => {
+            *effect = window_id.bus_drag_enter_entry(key_state, mouse_position, formats);
+            HandleResult::Handled
+        }
+        #[cfg(feature = "drag-drop")]
+        Message::DragOver {
+            key_state,
+            mouse_position,
+            formats,
+            effect,
+        } => {
+            *effect = window_id.bus_drag_over_entry(key_state, mouse_position, formats);
+            HandleResult::Handled
+        }
+        #[cfg(feature = "drag-drop")]
+        Message::DragLeave => {
+            window_id.bus_drag_leave_entry();
+            HandleResult::Handled
+        }
+        #[cfg(feature = "drag-drop")]
+        Message::Drop {
+            key_state,
+            mouse_position,
+            data,
+            effect,
+        } => {
+            *effect = window_id.bus_drop_entry(key_state, mouse_position, &data);
+            HandleResult::Handled
         }
         _ => HandleResult::Default,
     };

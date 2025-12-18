@@ -1,5 +1,6 @@
 mod cursor;
-mod drop_effect;
+#[cfg(feature = "drag-drop")]
+mod drag_drop;
 mod events;
 mod handle_result;
 mod key_code;
@@ -11,9 +12,12 @@ mod window_operations;
 mod window_state;
 
 pub use {
-    cursor::*, drop_effect::*, events::*, handle_result::*, key_code::*, key_state::*,
-    mouse_position::*, window_operations::*, window_state::*,
+    cursor::*, events::*, handle_result::*, key_code::*, key_state::*, mouse_position::*,
+    window_operations::*, window_state::*,
 };
 
 #[cfg(feature = "monitor")]
 pub use monitor::*;
+
+#[cfg(feature = "drag-drop")]
+pub use drag_drop::*;

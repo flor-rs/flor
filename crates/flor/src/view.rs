@@ -18,6 +18,8 @@ use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render_from_view_id;
 use flor_graphics_base::RenderContext;
+#[cfg(feature = "drag-drop")]
+use flor_platform_base::{DragData, DragFormat, DropEffect};
 use flor_platform_base::{InputEvent, KeyCode, KeyState, MousePosition};
 use log::trace;
 use std::any::Any;
@@ -400,6 +402,45 @@ pub trait View {
     fn on_ime_end(&mut self) -> Result<(), Error> {
         Ok(())
     }
+
+    #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
+    fn on_drag_enter(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> Result<DropEffect, Error> {
+        Ok(DropEffect::None)
+    }
+
+    #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
+    fn on_drag_over(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> Result<DropEffect, Error> {
+        Ok(DropEffect::None)
+    }
+
+    #[cfg(feature = "drag-drop")]
+    fn on_drag_leave(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
+    fn on_drop(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        data: &DragData,
+    ) -> Result<DropEffect, Error> {
+        Ok(DropEffect::None)
+    }
+
     #[allow(unused_variables)]
     fn on_wheel_scroll_lines_changed_entry(&mut self, lines: u32) -> Result<(), Error> {
         Ok(())

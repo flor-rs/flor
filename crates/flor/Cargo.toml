@@ -33,6 +33,8 @@ theme-change = ["flor-platform-windows/theme-change"]
 
 clipboard = ["arboard"]
 
+drag-drop = ["flor-platform-windows/drag-drop"]
+
 [dependencies]
 log = { workspace = true }
 once_cell = { workspace = true }

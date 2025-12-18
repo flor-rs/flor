@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::log_error::ResultLogExt;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
@@ -13,6 +14,8 @@ use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WindowEntryVisit;
 use flor_graphics_base::RenderContext;
 use flor_platform_base::WindowOperations;
+#[cfg(feature = "drag-drop")]
+use flor_platform_base::{DragFormat, DropEffect, KeyState, MousePosition};
 use once_cell::sync::Lazy;
 use platform::WindowId;
 use rustc_hash::FxHashMap;
@@ -21,7 +24,6 @@ use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
-use crate::log_error::ResultLogExt;
 
 new_key_type! {
     pub struct ViewId;
@@ -210,13 +212,17 @@ impl ViewId {
 
     pub fn on_focus_gained(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write().on_focus_gained().error_on_err(format!("on_focus_gained {{ view_id: {} }}",self));
+            view.write()
+                .on_focus_gained()
+                .error_on_err(format!("on_focus_gained {{ view_id: {} }}", self));
         }
     }
 
     pub fn on_focus_lost(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write().on_focus_lost().error_on_err(format!("on_focus_lost {{ view_id: {} }}",self));
+            view.write()
+                .on_focus_lost()
+                .error_on_err(format!("on_focus_lost {{ view_id: {} }}", self));
         }
     }
 
@@ -310,6 +316,33 @@ impl LoadRenderResource for ViewId {
             render.create_svg(svg)
         } else {
             Err(FlorRenderError::RenderNotFound)
+        }
+    }
+}
+
+#[cfg(feature = "drag-drop")]
+impl ViewId {
+    pub(crate) fn on_drag_enter(
+        self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> DropEffect {
+        if let Some(view) = VIEW_STORAGE.views.read().get(self) {
+            return view
+                .write()
+                .on_drag_enter(key_state, mouse_position, format)
+                .log_err(format!("on_drag_enter {{ view_id:{} }}", self))
+                .unwrap_or(DropEffect::None);
+        }
+        DropEffect::None
+    }
+    pub(crate) fn on_drag_leave(self) {
+        if let Some(view) = VIEW_STORAGE.views.read().get(self) {
+            // 无返回值，保持原有风格
+            view.write()
+                .on_drag_leave()
+                .error_on_err(format!("on_drag_leave {{ view_id:{} }}", self));
         }
     }
 }

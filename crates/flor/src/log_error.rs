@@ -4,6 +4,9 @@ use log::{error, warn};
 pub trait ResultLogExt<E> {
     fn error_on_err(self, msg: impl AsRef<str>);
     fn warn_on_err(self, msg: impl AsRef<str>);
+
+    fn log_err(self, msg: impl AsRef<str>) -> Self;
+    fn log_warn(self, msg: impl AsRef<str>) -> Self;
 }
 
 impl<T, E: std::fmt::Debug> ResultLogExt<E> for Result<T, E> {
@@ -23,5 +26,23 @@ impl<T, E: std::fmt::Debug> ResultLogExt<E> for Result<T, E> {
             // 修正：这里应该用 warn! 宏
             warn!("{}: {:?}", msg.as_ref(), err);
         }
+    }
+
+    // --- 新增链式实现 ---
+    #[track_caller]
+    fn log_err(self, msg: impl AsRef<str>) -> Self {
+        if let Err(err) = &self {
+            // 使用 &self 借用打印，不消耗所有权
+            error!("{}: {:?}", msg.as_ref(), err);
+        }
+        self // 原样返回
+    }
+
+    #[track_caller]
+    fn log_warn(self, msg: impl AsRef<str>) -> Self {
+        if let Err(err) = &self {
+            warn!("{}: {:?}", msg.as_ref(), err);
+        }
+        self // 原样返回
     }
 }
