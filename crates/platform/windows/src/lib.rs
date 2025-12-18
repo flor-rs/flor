@@ -11,7 +11,6 @@ mod drop_target;
 #[cfg(feature = "monitor")]
 mod monitor;
 mod proc_handler;
-mod util;
 mod window;
 mod window_id;
 mod window_proc;

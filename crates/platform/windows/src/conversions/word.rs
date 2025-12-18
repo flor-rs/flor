@@ -1,5 +1,3 @@
-pub mod encode_wide;
-
 #[inline(always)]
 pub(crate) const fn loword(x: u32) -> u16 {
     (x & 0xFFFF) as u16

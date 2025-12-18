@@ -14,8 +14,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::conversions::key_code::FromVkCode;
 use crate::conversions::key_state::IntoKeyState;
 use crate::conversions::mouse_position::IntoMousePosition;
+use crate::conversions::word::{hiword, loword};
 use crate::proc_handler::proc;
-use crate::util::{hiword, loword};
 use flor_platform_base::{HandleResult, InputEvent};
 use flor_platform_base::{KeyCode, Message};
 

@@ -1,4 +1,4 @@
-use crate::util::encode_wide::encode_wide;
+use crate::conversions::encode_wide::encode_wide;
 use crate::Error;
 use flor_platform_base::CursorIcon;
 use windows::Win32::Graphics::Gdi::CreateBitmap;

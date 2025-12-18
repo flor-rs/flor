@@ -1,5 +1,5 @@
+use crate::conversions::encode_wide::encode_wide;
 use crate::cursor::Cursor;
-use crate::util::encode_wide::encode_wide;
 use crate::window_id::WindowId;
 use flor_platform_base::{CursorHandle, WindowApi, WindowMode, WindowOperations};
 use once_cell::sync::Lazy;
