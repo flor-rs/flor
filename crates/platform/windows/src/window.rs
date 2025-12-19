@@ -5,6 +5,7 @@ use flor_platform_base::{CursorHandle, WindowApi, WindowMode, WindowOperations};
 use once_cell::sync::Lazy;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{ClientToScreen, InvalidateRect, UpdateWindow};
+use windows::Win32::System::SystemServices::IMAGE_DOS_HEADER;
 use windows::Win32::UI::Input::Ime::{
     ImmAssociateContext, ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow,
     ImmSetOpenStatus, CFS_POINT, COMPOSITIONFORM, HIMC,
@@ -20,15 +21,31 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows_core::{Error, PCWSTR};
 
+// taken from winit's code base
+// https://github.com/rust-windowing/winit/blob/ee88e38f13fbc86a7aafae1d17ad3cd4a1e761df/src/platform_impl/windows/util.rs#L138
+pub fn get_instance_handle() -> HINSTANCE {
+    // Gets the instance handle by taking the address of the
+    // pseudo-variable created by the microsoft linker:
+    // https://devblogs.microsoft.com/oldnewthing/20041025-00/?p=37483
+
+    // This is preferred over GetModuleHandle(NULL) because it also works in DLLs:
+    // https://stackoverflow.com/questions/21718027/getmodulehandlenull-vs-hinstance
+    extern "C" {
+        static __ImageBase: IMAGE_DOS_HEADER;
+    }
+
+    unsafe { HINSTANCE(&__ImageBase as *const _ as _) }
+}
+
 static CLASS_NAME: Lazy<Vec<u16>> = Lazy::new(|| {
-    let class_name = encode_wide("flower_window");
+    let class_name = encode_wide("flor_window");
     let wc = WNDCLASSEXW {
         cbSize: size_of::<WNDCLASSEXW>() as u32,
         style: CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS,
         lpfnWndProc: Some(crate::window_proc::window_proc),
         cbClsExtra: 0,
         cbWndExtra: 0,
-        hInstance: Default::default(),
+        hInstance: get_instance_handle(),
         hIcon: Default::default(),
         hCursor: unsafe { LoadCursorW(Some(HINSTANCE::default()), IDC_ARROW).unwrap_or_default() },
         hbrBackground: Default::default(),

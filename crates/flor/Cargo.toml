@@ -34,6 +34,7 @@ theme-change = ["flor-platform-windows/theme-change"]
 clipboard = ["arboard"]
 
 drag-drop = ["flor-platform-windows/drag-drop"]
+tray = ["flor-platform-windows/tray"]
 
 [dependencies]
 log = { workspace = true }
@@ -46,7 +47,7 @@ flor-graphics-direct2d = { workspace = true, optional = true }
 flor-platform-base = { workspace = true }
 taffy = { workspace = true }
 parking_lot = "0.12"
-slotmap = "1.0"
+slotmap = { workspace = true }
 dashmap = { workspace = true }
 arboard = { workspace = true, optional = true }
 

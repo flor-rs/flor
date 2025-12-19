@@ -35,6 +35,8 @@ use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WINDOW_ENTRY_MAP;
 #[cfg(feature = "clipboard")]
 pub use arboard;
+#[cfg(feature = "tray")]
+use platform::{base::TrayEvent, base::TrayManagerEntry, base::TrayOptions, Tray, TrayId};
 pub use slotmap;
 pub use taffy;
 
@@ -53,12 +55,38 @@ impl FlorGui {
         set_proc_handler(Box::new(WindowsProcHandler::default()));
         #[cfg(feature = "clipboard")]
         let _ = CLIPBOARD.set(arboard::Clipboard::new()?);
+        #[cfg(feature = "tray")]
+        Tray::init()?;
         Ok(())
     }
 
     #[cfg(feature = "clipboard")]
-    pub fn clipboard<'a>() -> &'a arboard::Clipboard {
+    pub fn clipboard<'a>(&self) -> &'a arboard::Clipboard {
         CLIPBOARD.get().expect("Clipboard not initialized")
+    }
+
+    #[cfg(feature = "tray")]
+    pub fn tray_add(&self, options: &TrayOptions) -> Result<TrayId, Error> {
+        let tray_id = Tray::add(options)?;
+        Ok(tray_id)
+    }
+
+    #[cfg(feature = "tray")]
+    pub fn tray_update(&self, tray_id: TrayId, options: &TrayOptions) -> Result<(), Error> {
+        Tray::update(tray_id, options)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "tray")]
+    pub fn tray_remove(&self, tray_id: TrayId) -> Result<(), Error> {
+        Tray::remove(tray_id)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "tray")]
+    /// 本质上是set
+    pub fn tray_on_callback(&self, f: impl Fn(TrayId, TrayEvent) + Send + Sync + 'static) {
+        Tray::on_callback(f);
     }
 
     pub fn exit(&self) {

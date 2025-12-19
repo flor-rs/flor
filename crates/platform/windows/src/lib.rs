@@ -13,21 +13,25 @@ mod drop_target;
 #[cfg(feature = "monitor")]
 mod monitor;
 mod proc_handler;
+#[cfg(feature = "tray")]
+mod tray;
 mod window;
 mod window_id;
 mod window_proc;
 
 #[cfg(feature = "monitor")]
 pub use monitor::*;
+#[cfg(feature = "tray")]
+pub use tray::*;
 
 pub mod base {
     pub use flor_platform_base::*;
 }
 
 pub mod events {
+    use crate::base::HandleResult;
+    use crate::base::Message;
     use crate::window_id::WindowId;
-    use flor_platform_base::HandleResult;
-    use flor_platform_base::Message;
 
     pub type EventMessageHandler = fn(window_id: WindowId, message: Message) -> HandleResult;
 }
