@@ -208,9 +208,9 @@ pub(crate) unsafe extern "system" fn window_proc(
             );
             trace!("HandleResult::CloseRequested({prevent})");
             if prevent {
-                HandleResult::Handled
-            } else {
                 HandleResult::Default
+            } else {
+                HandleResult::Handled
             }
         }
         WM_KEYDOWN | WM_KEYUP => {
