@@ -22,7 +22,6 @@ pub mod log_error;
 mod min_wait_time;
 pub mod proc;
 pub mod render;
-pub mod render_loader;
 pub mod signal;
 pub mod view;
 pub mod windows;
