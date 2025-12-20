@@ -410,6 +410,7 @@ impl WindowBusDispatchEntry for WindowId {
             // 更新为 Some(ViewId)
             entry.hover_id = Some(new_hovered_id);
         }
+        self.request_redraw();
     }
 
     fn bus_mouse_leave_entry(&self) {
@@ -436,6 +437,7 @@ impl WindowBusDispatchEntry for WindowId {
             view.write()
                 .on_l_button_down(key_state, mouse_position)
                 .error_on_err(format!("on_l_button_down {{ view_id:{} }}]", view_id));
+            self.request_redraw();
         }
     }
 
