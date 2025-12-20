@@ -1,3 +1,4 @@
+use crate::view::handler::ViewHandler;
 use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
 use crate::view::View;
@@ -20,11 +21,12 @@ pub struct ViewStorage {
     pub view_ids: Mutex<SlotMap<ViewId, ()>>,
     /// 视图状态存储
     pub states: RwLock<SecondaryMap<ViewId, RwLock<ViewState>>>,
+    pub events: RwLock<SecondaryMap<ViewId, RwLock<ViewHandler>>>,
     /// 父子关系存储
     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,
     /// 视图树储存
     pub views: RwLock<SecondaryMap<ViewId, RwLock<Box<dyn View + Send + Sync + 'static>>>>,
-    /// 储存当前视图所在窗口id todo
+    /// 储存当前视图所在窗口id
     pub window_ids: RwLock<SecondaryMap<ViewId, WindowId>>,
     /// 储存父级关系
     pub parent_view_id: RwLock<SecondaryMap<ViewId, ViewId>>,
@@ -37,11 +39,11 @@ impl ViewStorage {
         ViewStorage {
             view_ids: Default::default(),
             states: Default::default(),
+            events: Default::default(),
             child_ids: Default::default(),
             views: Default::default(),
             window_ids: Default::default(),
             parent_view_id: Default::default(),
-            // main_view_ids: Default::default(),
             z_index_sort: Default::default(),
             focus_index: Default::default(),
         }

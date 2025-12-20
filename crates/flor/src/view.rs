@@ -3,6 +3,7 @@ pub mod draw_state;
 pub mod focus_manager;
 pub mod style;
 pub mod view_builder;
+pub mod handler;
 pub mod view_id;
 pub mod view_state;
 pub mod view_storage;
