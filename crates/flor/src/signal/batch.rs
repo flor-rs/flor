@@ -35,7 +35,7 @@ pub fn batch(f: impl Fn()) {
     });
 
     // 批量触发副作用
-    RUNTIME.run_effects_for_signals(collected_signal_ids);
+    RUNTIME.insert_update_queue(collected_signal_ids);
 }
 
 #[cfg(test)]

@@ -117,6 +117,8 @@ impl FlorGui {
                 break Ok(());
             }
 
+            signal::runtime::RUNTIME.execute_update_queue();
+
             let mut lazy = true;
             let mut re_draw_window_ids = vec![];
             let mut re_layout_window_ids = vec![];
