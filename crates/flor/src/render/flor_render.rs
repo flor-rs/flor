@@ -14,7 +14,7 @@ use crate::render::FlorBrushHandle;
 #[cfg(feature = "svg")]
 use flor_graphics_base::SvgDrawOptions;
 use flor_graphics_base::{
-    Color, Gradient, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
+    Color, Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
     TextDrawOptions, Transform2D,
 };
 use graphics::D2DRender;
@@ -230,6 +230,64 @@ impl RenderContext for FlorRender {
             }
         }
         // 如果后端匹配但 Handle 类型不对，或者没有启用的后端分支
+        Err(FlorRenderError::RenderNotFound)
+    }
+
+    fn hit_test_point(
+        &self,
+        text: &str,
+        text_format: &Self::TextFormatHandle,
+        width: f32,
+        height: f32,
+        x: f32,
+        y: f32,
+    ) -> Result<HitTestResult, Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => {
+                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
+                    return Ok(g.hit_test_point(text, inner_fmt, width, height, x, y)?);
+                }
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => {
+                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
+                    return Ok(g.hit_test_text_position(text, inner_fmt, width, height, x, y)?);
+                }
+            }
+        }
+
+        Err(FlorRenderError::RenderNotFound)
+    }
+
+    fn hit_test_text_position(
+        &self,
+        text: &str,
+        text_format: &Self::TextFormatHandle,
+        width: f32,
+        height: f32,
+        text_index: usize,
+        trailing: bool,
+    ) -> Result<(f32, f32), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => {
+                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
+                    return Ok(g.hit_test_text_position(
+                        text, inner_fmt, width, height, text_index, trailing,
+                    )?);
+                }
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => {
+                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
+                    return Ok(g.hit_test_text_position(
+                        text, inner_fmt, width, height, text_index, trailing,
+                    )?);
+                }
+            }
+        }
+
         Err(FlorRenderError::RenderNotFound)
     }
 

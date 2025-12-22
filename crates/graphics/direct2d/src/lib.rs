@@ -5,11 +5,7 @@ use crate::handle::D2DTextFormatHandle;
 #[cfg(feature = "svg")]
 use crate::handle::{D2DSvgHandle, SvgShadowCache};
 use crate::into_d2d_transform::IntoD2DTransform;
-use flor_graphics_base::{
-    Color, Error, Gradient, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
-    PathDrawOptions, Render, RenderContext, ScaleMode, TextAlignment, TextDrawOptions,
-    TextFormatHandle, TextTrimming, Transform2D, WordWrapping,
-};
+use flor_graphics_base::{Color, Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand, PathDrawOptions, Render, RenderContext, ScaleMode, TextAlignment, TextDrawOptions, TextFormatHandle, TextTrimming, Transform2D, WordWrapping};
 use log::debug;
 use lru::LruCache;
 
@@ -24,7 +20,7 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::OnceLock;
 use std::{fmt, slice};
-use windows::core::{w, Interface, HSTRING, PCWSTR};
+use windows::core::{w, Interface, BOOL, HSTRING, PCWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_BORDER_MODE, D2D1_BORDER_MODE_HARD,
@@ -52,17 +48,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
     D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
 };
-use windows::Win32::Graphics::DirectWrite::{
-    DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
-    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_LINE_SPACING_METHOD_DEFAULT,
-    DWRITE_LINE_SPACING_METHOD_UNIFORM, DWRITE_MEASURING_MODE_NATURAL,
-    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_FAR,
-    DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_JUSTIFIED,
-    DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
-    DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_TRIMMING_GRANULARITY_NONE,
-    DWRITE_TRIMMING_GRANULARITY_WORD, DWRITE_WORD_WRAPPING_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
-    DWRITE_WORD_WRAPPING_WRAP,
-};
+use windows::Win32::Graphics::DirectWrite::{DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_LINE_SPACING_METHOD_DEFAULT, DWRITE_LINE_SPACING_METHOD_UNIFORM, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_FAR, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_JUSTIFIED, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_TRIMMING_GRANULARITY_NONE, DWRITE_TRIMMING_GRANULARITY_WORD, DWRITE_WORD_WRAPPING_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP};
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Imaging::{CLSID_WICImagingFactory, IWICImagingFactory};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
@@ -550,6 +536,92 @@ impl RenderContext for D2DRender {
             };
             text_layout.GetMetrics(&mut text_metrics)?;
             Ok((text_metrics.width, text_metrics.height))
+        }
+    }
+
+    fn hit_test_point(&self, text: &str, text_format: &Self::TextFormatHandle, width: f32, height: f32, x: f32, y: f32) -> Result<HitTestResult, Self::Error> {
+        unsafe {
+            let text_layout = RenderFactory::get()
+                .write_factory
+                .CreateTextLayout(
+                    &encode_unicode(text),
+                    text_format.raw(),
+                    width,
+                    height,
+                )?;
+
+            let mut is_trailing = BOOL(0);
+            let mut is_inside = BOOL(0);
+            let mut metrics = DWRITE_HIT_TEST_METRICS {
+                textPosition: 0,
+                length: 0,
+                left: 0.0,
+                top: 0.0,
+                width: 0.0,
+                height: 0.0,
+                bidiLevel: 0,
+                isText: BOOL(0),
+                isTrimmed: BOOL(0),
+            };
+
+            text_layout.HitTestPoint(
+                x,
+                y,
+                &mut is_trailing,
+                &mut is_inside,
+                &mut metrics,
+            )?;
+
+            Ok(HitTestResult {
+                text_index: metrics.textPosition as usize,
+                is_trailing: is_trailing.as_bool(),
+                is_inside: is_inside.as_bool(),
+                is_trimmed: metrics.isTrimmed.as_bool(),
+                rect: (
+                    metrics.left,
+                    metrics.top,
+                    metrics.width,
+                    metrics.height,
+                ),
+            })
+        }
+    }
+
+    fn hit_test_text_position(&self, text: &str, text_format: &Self::TextFormatHandle, width: f32, height: f32, text_index: usize, trailing: bool) -> Result<(f32, f32), Self::Error> {
+        unsafe {
+            let text_layout = RenderFactory::get()
+                .write_factory
+                .CreateTextLayout(
+                    &encode_unicode(text),
+                    text_format.raw(),
+                    width,
+                    height,
+                )?;
+
+            let mut x = 0.0f32;
+            let mut y = 0.0f32;
+
+            let mut metrics = DWRITE_HIT_TEST_METRICS {
+                textPosition: 0,
+                length: 0,
+                left: 0.0,
+                top: 0.0,
+                width: 0.0,
+                height: 0.0,
+                bidiLevel: 0,
+                isText: BOOL(0),
+                isTrimmed: Default::default(),
+            };
+
+            text_layout.HitTestTextPosition(
+                text_index as u32,
+                trailing,
+                &mut x,
+                &mut y,
+                &mut metrics,
+            )?;
+
+            Ok((x, y))
         }
     }
 
