@@ -21,7 +21,7 @@ pub struct ViewStorage {
     pub view_ids: Mutex<SlotMap<ViewId, ()>>,
     /// 视图状态存储
     pub states: RwLock<SecondaryMap<ViewId, RwLock<ViewState>>>,
-    pub events: RwLock<SecondaryMap<ViewId, RwLock<ViewHandler>>>,
+    pub handlers: RwLock<SecondaryMap<ViewId, RwLock<ViewHandler>>>,
     /// 父子关系存储
     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,
     /// 视图树储存
@@ -39,7 +39,7 @@ impl ViewStorage {
         ViewStorage {
             view_ids: Default::default(),
             states: Default::default(),
-            events: Default::default(),
+            handlers: Default::default(),
             child_ids: Default::default(),
             views: Default::default(),
             window_ids: Default::default(),
@@ -50,19 +50,23 @@ impl ViewStorage {
     }
 
     pub fn new_view(&self) -> ViewId {
-        let mut view_ids = self.view_ids.lock();
-        let view_id = view_ids.insert(());
-        let mut states = self.states.write();
-        states.insert(view_id, RwLock::new(ViewState::new()));
+        let view_id = self.view_ids.lock().insert(());
+        self.states
+            .write()
+            .insert(view_id, RwLock::new(ViewState::new()));
+        self.handlers
+            .write()
+            .insert(view_id, RwLock::new(ViewHandler::default()));
         view_id
     }
 
     /// 创建新视图
     pub fn new_view_with_state(&self, view_state: ViewState) -> ViewId {
-        let mut view_ids = self.view_ids.lock();
-        let view_id = view_ids.insert(());
-        let mut states = self.states.write();
-        states.insert(view_id, RwLock::new(view_state));
+        let view_id = self.view_ids.lock().insert(());
+        self.states.write().insert(view_id, RwLock::new(view_state));
+        self.handlers
+            .write()
+            .insert(view_id, RwLock::new(ViewHandler::default()));
         view_id
     }
 

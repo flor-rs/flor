@@ -22,11 +22,11 @@ where
     }
 }
 
-pub type DragEnterHandler = DragEnterOverHandler;
+pub type OnDragEnterHandler = DragEnterOverHandler;
 
-pub type DragOverHandler = DragEnterOverHandler;
+pub type OnDragOverHandler = DragEnterOverHandler;
 
-pub type OnDragLeave = Handler;
+pub type OnDragLeaveHandler = Handler;
 
 #[derive(Clone)]
 pub struct DropHandler(

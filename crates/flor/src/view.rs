@@ -1,9 +1,9 @@
 pub mod control_state;
 pub mod draw_state;
 pub mod focus_manager;
+pub mod handler;
 pub mod style;
 pub mod view_builder;
-pub mod handler;
 pub mod view_id;
 pub mod view_state;
 pub mod view_storage;
@@ -33,7 +33,7 @@ pub trait View {
     fn view_id(&self) -> ViewId;
 
     fn bus_create(&mut self) -> Result<(), Error> {
-        self.on_create()?;
+        self.call_create()?;
 
         if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(self.view_id()) {
             for child_id in child_view_ids {
@@ -198,6 +198,19 @@ pub trait View {
         Ok(())
     }
 
+    fn call_create(&mut self) -> Result<(), Error> {
+        self.on_create()?;
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_create_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id());
+        }
+        Ok(())
+    }
+
     #[allow(unused_variables)]
     fn on_update_state(&mut self, state: Box<dyn Any>) {}
 
@@ -237,6 +250,22 @@ pub trait View {
     ) -> Result<(), Error> {
         Ok(())
     }
+
+    fn call_mouse_enter(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_mouse_enter(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_mouse_enter {{ key_state: {:?}, mouse_position: {:?} }}",
+                key_state, mouse_position
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_mouse_enter_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id());
+        }
+    }
     #[allow(unused_variables)]
     fn on_mouse_move(
         &mut self,
@@ -244,6 +273,22 @@ pub trait View {
         mouse_position: MousePosition,
     ) -> Result<(), Error> {
         Ok(())
+    }
+
+    fn call_mouse_move(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_mouse_move(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_mouse_move {{ key_state: {:?}, mouse_position: {:?} }}",
+                key_state, mouse_position
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_mouse_move_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
     }
     #[allow(unused_variables)]
     fn on_mouse_leave(
@@ -254,6 +299,22 @@ pub trait View {
         Ok(())
     }
 
+    fn call_mouse_leave(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_mouse_leave(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_mouse_leave {{ key_state: {:?}, mouse_position: {:?} }}",
+                key_state, mouse_position
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_mouse_leave_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id());
+        }
+    }
+
     // ========================================================================
     // [新增] 鼠标按键事件 (Mouse Button Events)
     // 对应 LButton, RButton, MButton 的 Down, Up, DoubleClick
@@ -261,24 +322,63 @@ pub trait View {
     // ========================================================================
 
     // ---- 左键 (Left Button) ----
+    fn call_button_down(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_button_down(key_state, mouse_position)
+            .error_on_err(format!("on_button_down {{ view_id:{} }}", self.view_id()));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_button_down_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_l_button_down(
+    fn on_button_down(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
     ) -> Result<(), Error> {
         Ok(())
     }
+    fn call_button_up(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_button_up(key_state, mouse_position)
+            .error_on_err(format!("on_button_up {{ view_id:{} }}", self.view_id()));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_button_up_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_l_button_up(
+    fn on_button_up(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
     ) -> Result<(), Error> {
         Ok(())
     }
+    fn call_click(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_click(key_state, mouse_position)
+            .error_on_err(format!("on_click {{ view_id:{} }}", self.view_id()));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_click_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_l_button_click(
+    fn on_click(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
@@ -286,8 +386,21 @@ pub trait View {
         Ok(())
     }
 
+    fn call_double_click(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_double_click(key_state, mouse_position)
+            .error_on_err(format!("on_double_click {{ view_id:{} }}", self.view_id()));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_double_click_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_l_button_dbl_click(
+    fn on_double_click(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
@@ -296,24 +409,72 @@ pub trait View {
     }
 
     // ---- 右键 (Right Button) ----
+    fn call_right_button_down(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_right_button_down(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_right_button_down {{ view_id:{} }}",
+                self.view_id()
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_right_button_down_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_r_button_down(
+    fn on_right_button_down(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
     ) -> Result<(), Error> {
         Ok(())
     }
+    fn call_right_button_up(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_right_button_up(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_right_button_up {{ view_id:{} }}",
+                self.view_id()
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_right_button_up_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_r_button_up(
+    fn on_right_button_up(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
     ) -> Result<(), Error> {
         Ok(())
     }
+    fn call_right_button_click(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_right_button_click(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_right_button_click {{ view_id:{} }}",
+                self.view_id()
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_right_button_click_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_r_button_click(
+    fn on_right_button_click(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
@@ -321,8 +482,28 @@ pub trait View {
         Ok(())
     }
 
+    fn call_right_button_double_click(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) {
+        self.on_right_button_double_click(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_right_button_double_click {{ view_id:{} }}",
+                self.view_id()
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_right_button_double_click_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_r_button_dbl_click(
+    fn on_right_button_double_click(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
@@ -331,32 +512,95 @@ pub trait View {
     }
 
     // ---- 中键 (Middle Button) ----
+    fn call_middle_button_down(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_middle_button_down(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_middle_button_down {{ view_id:{} }}",
+                self.view_id()
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_middle_button_down_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_m_button_down(
+    fn on_middle_button_down(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
     ) -> Result<(), Error> {
         Ok(())
     }
+    fn call_middle_button_up(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_middle_button_up(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_middle_button_up {{ view_id:{} }}",
+                self.view_id()
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_middle_button_up_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_m_button_up(
+    fn on_middle_button_up(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
     ) -> Result<(), Error> {
         Ok(())
     }
+    fn call_middle_button_click(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        self.on_middle_button_click(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_middle_button_click {{ view_id:{} }}",
+                self.view_id()
+            ));
+        // 注意：ViewHandler 中似乎没有 on_middle_button_click_handler
+        // 但为了保持一致性，如果确实没有，这里就不调用 handler
+        // 检查 handler.rs: 确实没有 on_middle_button_click_handler
+    }
+
     #[allow(unused_variables)]
-    fn on_m_button_click(
+    fn on_middle_button_click(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
     ) -> Result<(), Error> {
         Ok(())
     }
+    fn call_middle_button_double_click(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) {
+        self.on_middle_button_double_click(key_state, mouse_position)
+            .error_on_err(format!(
+                "on_middle_button_double_click {{ view_id:{} }}",
+                self.view_id()
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_middle_button_double_click_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        }
+    }
+
     #[allow(unused_variables)]
-    fn on_m_button_dbl_click(
+    fn on_middle_button_double_click(
         &mut self,
         key_state: KeyState,
         mouse_position: MousePosition,
@@ -374,6 +618,23 @@ pub trait View {
     ) -> Result<(), Error> {
         Ok(())
     }
+
+    fn call_key_down(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
+        self.on_key_down(code, is_alt, is_ctrl, is_shift)
+            .error_on_err(format!(
+                "on_key_down {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+                code, is_alt, is_ctrl, is_shift
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_key_down_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), code, is_alt, is_ctrl, is_shift);
+        }
+    }
+
     #[allow(unused_variables)]
     fn on_key_up(
         &mut self,
@@ -385,11 +646,53 @@ pub trait View {
         Ok(())
     }
 
+    fn call_key_up(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
+        self.on_key_up(code, is_alt, is_ctrl, is_shift)
+            .error_on_err(format!(
+                "on_key_up {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+                code, is_alt, is_ctrl, is_shift
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_key_up_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), code, is_alt, is_ctrl, is_shift);
+        }
+    }
+
     fn on_focus_gained(&mut self) -> Result<(), Error> {
         Ok(())
     }
+
+    fn call_focus_gained(&mut self) {
+        self.on_focus_gained()
+            .error_on_err(format!("on_focus_gained {{ view_id:{} }}", self.view_id()));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_focus_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id());
+        }
+    }
     fn on_focus_lost(&mut self) -> Result<(), Error> {
         Ok(())
+    }
+
+    fn call_focus_lost(&mut self) {
+        self.on_focus_lost()
+            .error_on_err(format!("on_focus_lost {{ view_id:{} }}", self.view_id()));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_blur_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id());
+        }
     }
 
     fn on_ime_start(&mut self) -> Result<(), Error> {
@@ -417,6 +720,36 @@ pub trait View {
 
     #[cfg(feature = "drag-drop")]
     #[allow(unused_variables)]
+    #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
+    fn call_drag_enter(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> DropEffect {
+        let mut effect = self
+            .on_drag_enter(key_state, mouse_position, format)
+            .log_err(format!("on_drag_enter {{ view_id:{} }}", self.view_id()))
+            .unwrap_or(DropEffect::None);
+
+        if let Some(handler_lock) = VIEW_STORAGE.handlers.read().get(self.view_id()) {
+            let handler = handler_lock.read();
+            if let Some(h) = &handler.on_drag_enter_handler {
+                h.0(
+                    self.view_id(),
+                    key_state,
+                    mouse_position,
+                    format,
+                    &mut effect,
+                );
+            }
+        }
+        effect
+    }
+
+    #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
     fn on_drag_over(
         &mut self,
         key_state: KeyState,
@@ -427,8 +760,52 @@ pub trait View {
     }
 
     #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
+    #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
+    fn call_drag_over(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        format: &[DragFormat],
+    ) -> DropEffect {
+        let mut effect = self
+            .on_drag_over(key_state, mouse_position, format)
+            .log_err(format!("on_drag_over {{ view_id:{} }}", self.view_id()))
+            .unwrap_or(DropEffect::None);
+
+        if let Some(handler_lock) = VIEW_STORAGE.handlers.read().get(self.view_id()) {
+            let handler = handler_lock.read();
+
+            if let Some(h) = &handler.on_drag_over_handler {
+                h.0(
+                    self.view_id(),
+                    key_state,
+                    mouse_position,
+                    format,
+                    &mut effect,
+                );
+            }
+        }
+        effect
+    }
+
+    #[cfg(feature = "drag-drop")]
     fn on_drag_leave(&mut self) -> Result<(), Error> {
         Ok(())
+    }
+
+    #[cfg(feature = "drag-drop")]
+    #[cfg(feature = "drag-drop")]
+    fn call_drag_leave(&mut self) {
+        self.on_drag_leave()
+            .error_on_err(format!("on_drag_leave {{ view_id:{} }}", self.view_id()));
+        if let Some(handler_lock) = VIEW_STORAGE.handlers.read().get(self.view_id()) {
+            let handler = handler_lock.read();
+            if let Some(h) = &handler.on_drag_leave_handler {
+                h.0(self.view_id());
+            }
+        }
     }
 
     #[cfg(feature = "drag-drop")]
@@ -442,9 +819,50 @@ pub trait View {
         Ok(DropEffect::None)
     }
 
+    #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
+    #[cfg(feature = "drag-drop")]
+    #[allow(unused_variables)]
+    fn call_drop(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+        data: &DragData,
+    ) -> DropEffect {
+        let mut effect = self
+            .on_drop(key_state, mouse_position, data)
+            .log_err(format!("on_drop {{ view_id:{} }}", self.view_id()))
+            .unwrap_or(DropEffect::None);
+
+        if let Some(handler_lock) = VIEW_STORAGE.handlers.read().get(self.view_id()) {
+            let handler = handler_lock.read();
+
+            if let Some(h) = &handler.on_drop_handler {
+                h.0(self.view_id(), key_state, mouse_position, data, &mut effect);
+            }
+        }
+        effect
+    }
+
     #[allow(unused_variables)]
     fn on_wheel_scroll_lines_changed_entry(&mut self, lines: u32) -> Result<(), Error> {
         Ok(())
+    }
+
+    fn call_wheel_scroll_lines_changed_entry(&mut self, lines: u32) {
+        self.on_wheel_scroll_lines_changed_entry(lines)
+            .error_on_err(format!(
+                "on_wheel_scroll_lines_changed_entry {{ view_id: {} }}",
+                self.view_id()
+            ));
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_wheel_settings_changed_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), lines);
+        }
     }
 }
 

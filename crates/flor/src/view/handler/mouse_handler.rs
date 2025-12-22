@@ -16,7 +16,7 @@ where
 
 // mouse handler
 pub type OnMouseMoveHandler = MouseHandler;
-pub type OnLButtonDoubleClickHandler = MouseHandler;
+pub type OnDoubleClickHandler = MouseHandler;
 pub type OnClickHandler = MouseHandler;
 pub type OnButtonDownHandler = MouseHandler;
 pub type OnButtonUpHandler = MouseHandler;

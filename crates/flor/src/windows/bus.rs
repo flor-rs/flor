@@ -114,21 +114,21 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
             key_state,
             mouse_position,
         } => {
-            window_id.bus_l_button_down_entry(key_state, mouse_position);
+            window_id.bus_button_down_entry(key_state, mouse_position);
             HandleResult::Handled
         }
         Message::LButtonUp {
             key_state,
             mouse_position,
         } => {
-            window_id.bus_l_button_up_entry(key_state, mouse_position);
+            window_id.bus_button_up_entry(key_state, mouse_position);
             HandleResult::Handled
         }
         Message::LButtonDoubleClick {
             key_state,
             mouse_position,
         } => {
-            window_id.bus_l_button_dbl_click_entry(key_state, mouse_position);
+            window_id.bus_double_click_entry(key_state, mouse_position);
             HandleResult::Handled
         }
 
@@ -137,21 +137,21 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
             key_state,
             mouse_position,
         } => {
-            window_id.bus_r_button_down_entry(key_state, mouse_position);
+            window_id.bus_right_button_down_entry(key_state, mouse_position);
             HandleResult::Handled
         }
         Message::RButtonUp {
             key_state,
             mouse_position,
         } => {
-            window_id.bus_r_button_up_entry(key_state, mouse_position);
+            window_id.bus_right_button_up_entry(key_state, mouse_position);
             HandleResult::Handled
         }
         Message::RButtonDoubleClick {
             key_state,
             mouse_position,
         } => {
-            window_id.bus_r_button_dbl_click_entry(key_state, mouse_position);
+            window_id.bus_right_button_double_click_entry(key_state, mouse_position);
             HandleResult::Handled
         }
 
@@ -160,21 +160,21 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
             key_state,
             mouse_position,
         } => {
-            window_id.bus_m_button_down_entry(key_state, mouse_position);
+            window_id.bus_middle_button_down_entry(key_state, mouse_position);
             HandleResult::Handled
         }
         Message::MButtonUp {
             key_state,
             mouse_position,
         } => {
-            window_id.bus_m_button_up_entry(key_state, mouse_position);
+            window_id.bus_middle_button_up_entry(key_state, mouse_position);
             HandleResult::Handled
         }
         Message::MButtonDoubleClick {
             key_state,
             mouse_position,
         } => {
-            window_id.bus_m_button_dbl_click_entry(key_state, mouse_position);
+            window_id.bus_middle_button_double_click_entry(key_state, mouse_position);
             HandleResult::Handled
         }
         Message::DpiChange { dpi_x, dpi_y } => {

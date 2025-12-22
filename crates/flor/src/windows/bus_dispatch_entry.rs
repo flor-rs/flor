@@ -64,19 +64,19 @@ pub trait WindowBusDispatchEntry {
     // ========================================================================
 
     // ---- 左键 (Left Button) ----
-    fn bus_l_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_l_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_l_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
 
     // ---- 右键 (Right Button) ----
-    fn bus_r_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_r_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_r_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_right_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_right_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_right_button_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
 
     // ---- 中键 (Middle Button) ----
-    fn bus_m_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_m_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_m_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_middle_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_middle_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_middle_button_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
 
     // 5. 键盘事件 (Keyboard Events)
     fn bus_key_down_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool);
@@ -310,8 +310,7 @@ impl WindowBusDispatchEntry for WindowId {
         let view_id = self.view_id();
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
-                .bus_wheel_scroll_lines_changed_entry(lines)
-                .error_on_err(format!("draw({:?}) error", view_id));
+                .call_wheel_scroll_lines_changed_entry(lines);
         }
     }
 
@@ -334,11 +333,7 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(view_id) = self.entry().map(|v| v.capture_view_id).flatten() {
             if let Some(view) = VIEW_STORAGE.views.write().get(view_id) {
                 view.write()
-                    .on_mouse_leave(key_state, mouse_position)
-                    .error_on_err(format!(
-                        "on_mouse_leave {{ key_state: {:?}, mouse_position: {:?} }}",
-                        key_state, mouse_position
-                    ));
+                    .call_mouse_leave(key_state, mouse_position);
                 return;
             }
         }
@@ -361,11 +356,7 @@ impl WindowBusDispatchEntry for WindowId {
                     // 旧的离开
                     view_lock
                         .write()
-                        .on_mouse_leave(key_state, mouse_position)
-                        .error_on_err(format!(
-                            "on_mouse_leave {{ key_state: {:?}, mouse_position: {:?} }}",
-                            key_state, mouse_position
-                        ));
+                        .call_mouse_leave(key_state, mouse_position);
                 }
             }
         }
@@ -380,11 +371,7 @@ impl WindowBusDispatchEntry for WindowId {
                 // 新的进入
                 view_lock
                     .write()
-                    .on_mouse_enter(key_state, mouse_position)
-                    .error_on_err(format!(
-                        "on_mouse_enter {{ key_state: {:?}, mouse_position: {:?} }}",
-                        key_state, mouse_position
-                    ));
+                    .call_mouse_enter(key_state, mouse_position);
             }
         }
 
@@ -395,11 +382,7 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(view_lock) = views.get(new_hovered_id) {
             view_lock
                 .write()
-                .on_mouse_move(key_state, mouse_position)
-                .error_on_err(format!(
-                    "on_mouse_move {{ key_state: {:?}, mouse_position: {:?} }}",
-                    key_state, mouse_position
-                ));
+                .call_mouse_move(key_state, mouse_position);
         }
 
         // =========================================================
@@ -425,7 +408,7 @@ impl WindowBusDispatchEntry for WindowId {
 
     // ==================== 左键 (Left Button) ====================
 
-    fn bus_l_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -435,13 +418,12 @@ impl WindowBusDispatchEntry for WindowId {
             self.entry_mut()
                 .map(|mut v| v.l_down_view_id = Some(view_id));
             view.write()
-                .on_l_button_down(key_state, mouse_position)
-                .error_on_err(format!("on_l_button_down {{ view_id:{} }}]", view_id));
+                .call_button_down(key_state, mouse_position);
             self.request_redraw();
         }
     }
 
-    fn bus_l_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -451,19 +433,17 @@ impl WindowBusDispatchEntry for WindowId {
             if let Some(spawn_click) = self.entry().map(|v| v.l_down_view_id == Some(view_id)) {
                 if spawn_click {
                     view.write()
-                        .on_l_button_click(key_state, mouse_position)
-                        .error_on_err(format!("on_l_button_click {{ view_id:{} }}]", view_id));
+                        .call_click(key_state, mouse_position);
                     view_id.set_focus();
                 }
             }
 
             view.write()
-                .on_l_button_up(key_state, mouse_position)
-                .error_on_err(format!("on_l_button_up {{ view_id:{} }}]", view_id));
+                .call_button_up(key_state, mouse_position);
         }
     }
 
-    fn bus_l_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -471,14 +451,13 @@ impl WindowBusDispatchEntry for WindowId {
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
-                .on_l_button_dbl_click(key_state, mouse_position)
-                .error_on_err(format!("on_l_button_dbl_click {{ view_id:{} }}]", view_id));
+                .call_double_click(key_state, mouse_position);
         }
     }
 
     // ==================== 右键 (Right Button) ====================
 
-    fn bus_r_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_right_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -488,12 +467,11 @@ impl WindowBusDispatchEntry for WindowId {
             self.entry_mut()
                 .map(|mut v| v.r_down_view_id = Some(view_id));
             view.write()
-                .on_r_button_down(key_state, mouse_position)
-                .error_on_err(format!("on_r_button_down {{ view_id:{} }}]", view_id));
+                .call_right_button_down(key_state, mouse_position);
         }
     }
 
-    fn bus_r_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_right_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -503,17 +481,15 @@ impl WindowBusDispatchEntry for WindowId {
             if let Some(spawn_click) = self.entry().map(|v| v.r_down_view_id == Some(view_id)) {
                 if spawn_click {
                     view.write()
-                        .on_r_button_click(key_state, mouse_position)
-                        .error_on_err(format!("on_r_button_click {{ view_id:{} }}]", view_id));
+                        .call_right_button_click(key_state, mouse_position);
                 }
             }
             view.write()
-                .on_r_button_up(key_state, mouse_position)
-                .error_on_err(format!("on_r_button_up {{ view_id:{} }}]", view_id));
+                .call_right_button_up(key_state, mouse_position);
         }
     }
 
-    fn bus_r_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_right_button_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -521,14 +497,13 @@ impl WindowBusDispatchEntry for WindowId {
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
-                .on_r_button_dbl_click(key_state, mouse_position)
-                .error_on_err(format!("on_r_button_dbl_click {{ view_id:{} }}]", view_id));
+                .call_right_button_double_click(key_state, mouse_position);
         }
     }
 
     // ==================== 中键 (Middle Button) ====================
 
-    fn bus_m_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_middle_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -538,12 +513,11 @@ impl WindowBusDispatchEntry for WindowId {
             self.entry_mut()
                 .map(|mut v| v.m_down_view_id = Some(view_id));
             view.write()
-                .on_m_button_down(key_state, mouse_position)
-                .error_on_err(format!("on_m_button_down {{ view_id:{} }}]", view_id));
+                .call_middle_button_down(key_state, mouse_position);
         }
     }
 
-    fn bus_m_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_middle_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -553,17 +527,15 @@ impl WindowBusDispatchEntry for WindowId {
             if let Some(spawn_click) = self.entry().map(|v| v.m_down_view_id == Some(view_id)) {
                 if spawn_click {
                     view.write()
-                        .on_m_button_click(key_state, mouse_position)
-                        .error_on_err(format!("on_m_button_click {{ view_id:{} }}]", view_id));
+                        .call_middle_button_click(key_state, mouse_position);
                 }
             }
             view.write()
-                .on_m_button_up(key_state, mouse_position)
-                .error_on_err(format!("on_m_button_up {{ view_id:{} }}]", view_id));
+                .call_middle_button_up(key_state, mouse_position);
         }
     }
 
-    fn bus_m_button_dbl_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_middle_button_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -571,8 +543,7 @@ impl WindowBusDispatchEntry for WindowId {
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
-                .on_m_button_dbl_click(key_state, mouse_position)
-                .error_on_err(format!("on_m_button_dbl_click {{ view_id:{} }}]", view_id));
+                .call_middle_button_double_click(key_state, mouse_position);
         }
     }
 
@@ -585,11 +556,7 @@ impl WindowBusDispatchEntry for WindowId {
         {
             if let Some(view) = views.get(view_id) {
                 view.write()
-                    .on_key_down(code, is_alt, is_ctrl, is_shift)
-                    .error_on_err(format!(
-                        "on_key_down {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
-                        code, is_alt, is_ctrl, is_shift
-                    ));
+                    .call_key_down(code, is_alt, is_ctrl, is_shift);
                 return;
             }
         }
@@ -610,11 +577,7 @@ impl WindowBusDispatchEntry for WindowId {
         {
             if let Some(view) = views.get(view_id) {
                 view.write()
-                    .on_key_up(code, is_alt, is_ctrl, is_shift)
-                    .error_on_err(format!(
-                        "on_key_up {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
-                        code, is_alt, is_ctrl, is_shift
-                    ));
+                    .call_key_up(code, is_alt, is_ctrl, is_shift);
                 return;
             }
         }
@@ -685,7 +648,7 @@ impl WindowBusDispatchEntry for WindowId {
         }
 
         // 3. 投递给目标控件
-        target_id.on_drag_enter(key_state, mouse_position, format)
+        target_id.call_drag_enter(key_state, mouse_position, format)
     }
 
     // 2. [DragOver] 核心状态机：负责分发 Enter/Leave/Over
@@ -709,10 +672,7 @@ impl WindowBusDispatchEntry for WindowId {
             // A-1: 通知旧控件 Leave
             if let Some(old_id) = old_target_id {
                 if let Some(view) = VIEW_STORAGE.views.read().get(old_id) {
-                    // Leave 不需要返回值，直接链式调用
-                    view.write()
-                        .on_drag_leave()
-                        .error_on_err(format!("on_drag_leave {{ view_id:{} }}", old_id));
+                    view.write().call_drag_leave();
                 }
             }
 
@@ -722,7 +682,7 @@ impl WindowBusDispatchEntry for WindowId {
             }
 
             // A-3: 通知新控件 Enter (合成事件)
-            new_target_id.on_drag_enter(key_state, mouse_position, format)
+            new_target_id.call_drag_enter(key_state, mouse_position, format)
         } else {
             // Case B: 目标未变 (在 A 内部移动)
 
@@ -730,9 +690,7 @@ impl WindowBusDispatchEntry for WindowId {
             if let Some(view) = VIEW_STORAGE.views.read().get(new_target_id) {
                 return view
                     .write()
-                    .on_drag_over(key_state, mouse_position, format)
-                    .log_err(format!("on_drag_over {{ view_id:{} }}", new_target_id))
-                    .unwrap_or(DropEffect::None);
+                    .call_drag_over(key_state, mouse_position, format);
             }
             DropEffect::None
         }
@@ -746,7 +704,7 @@ impl WindowBusDispatchEntry for WindowId {
 
         // 1. 通知 Leave
         if let Some(old_id) = old_target_id {
-            old_id.on_drag_leave();
+            old_id.call_drag_leave();
         }
 
         // 2. 清理状态
@@ -775,9 +733,7 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(view) = VIEW_STORAGE.views.read().get(target_id) {
             return view
                 .write()
-                .on_drop(key_state, mouse_position, data)
-                .log_err(format!("on_drop {{ view_id:{} }}", target_id))
-                .unwrap_or(DropEffect::None);
+                .call_drop(key_state, mouse_position, data);
         }
 
         DropEffect::None

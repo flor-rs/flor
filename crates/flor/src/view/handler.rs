@@ -20,7 +20,7 @@ pub use {key_handler::*, mouse_handler::*, view_handler::*, window_handler::*};
 pub struct ViewHandler {
     // mouse_handler
     pub on_mouse_move_handler: Option<OnMouseMoveHandler>,
-    pub on_l_button_double_click_handler: Option<OnLButtonDoubleClickHandler>,
+    pub on_double_click_handler: Option<OnDoubleClickHandler>,
     pub on_click_handler: Option<OnClickHandler>,
     pub on_button_down_handler: Option<OnButtonDownHandler>,
     pub on_button_up_handler: Option<OnButtonUpHandler>,
@@ -42,10 +42,6 @@ pub struct ViewHandler {
     pub on_mouse_leave_handler: Option<OnMouseLeaveHandler>,
     pub on_focus_handler: Option<OnFocusHandler>,
     pub on_blur_handler: Option<OnBlurHandler>,
-    pub on_drag_start_handler: Option<OnDragStartHandler>,
-    pub on_drag_enter_handler: Option<OnDragEnterHandler>,
-    pub on_drag_leave_handler: Option<OnDragLeaveHandler>,
-    pub on_drop_handler: Option<OnDropHandler>,
     pub on_create_handler: Option<OnCreateHandler>,
     pub on_destroy_handler: Option<OnDestroyHandler>,
 
@@ -62,13 +58,13 @@ pub struct ViewHandler {
 
     // drag_drop_handler
     #[cfg(feature = "drag-drop")]
-    pub drag_enter_handler: Option<DragEnterHandler>,
+    pub on_drag_enter_handler: Option<OnDragEnterHandler>,
     #[cfg(feature = "drag-drop")]
-    pub drag_over_handler: Option<DragOverHandler>,
+    pub on_drag_over_handler: Option<OnDragOverHandler>,
     #[cfg(feature = "drag-drop")]
-    pub on_drag_leave: Option<OnDragLeave>,
+    pub on_drag_leave_handler: Option<OnDragLeaveHandler>,
     #[cfg(feature = "drag-drop")]
-    pub drop_handler: Option<DropHandler>,
+    pub on_drop_handler: Option<DropHandler>,
 }
 
 impl std::fmt::Debug for ViewHandler {
@@ -82,7 +78,7 @@ impl std::fmt::Debug for ViewHandler {
         }
 
         field!(on_mouse_move_handler);
-        field!(on_l_button_double_click_handler);
+        field!(on_double_click_handler);
         field!(on_click_handler);
         field!(on_button_down_handler);
         field!(on_button_up_handler);
@@ -102,10 +98,6 @@ impl std::fmt::Debug for ViewHandler {
         field!(on_mouse_leave_handler);
         field!(on_focus_handler);
         field!(on_blur_handler);
-        field!(on_drag_start_handler);
-        field!(on_drag_enter_handler);
-        field!(on_drag_leave_handler);
-        field!(on_drop_handler);
         field!(on_create_handler);
         field!(on_destroy_handler);
 
@@ -120,10 +112,10 @@ impl std::fmt::Debug for ViewHandler {
 
         #[cfg(feature = "drag-drop")]
         {
-            field!(drag_enter_handler);
-            field!(drag_over_handler);
-            field!(on_drag_leave);
-            field!(drop_handler);
+            field!(on_drag_enter_handler);
+            field!(on_drag_over_handler);
+            field!(on_drag_leave_handler);
+            field!(on_drop_handler);
         }
 
         debug.finish()

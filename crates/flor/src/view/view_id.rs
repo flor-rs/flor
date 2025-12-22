@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::log_error::ResultLogExt;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
@@ -87,6 +86,7 @@ impl ViewId {
     pub fn update_state(self, state: Box<dyn Any>) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             view.write().on_update_state(state);
+            self.request_redraw();
         }
     }
 
@@ -210,19 +210,17 @@ impl ViewId {
         }
     }
 
-    pub fn on_focus_gained(self) {
+    pub fn call_focus_gained(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             view.write()
-                .on_focus_gained()
-                .error_on_err(format!("on_focus_gained {{ view_id: {} }}", self));
+                .call_focus_gained();
         }
     }
 
-    pub fn on_focus_lost(self) {
+    pub fn call_focus_lost(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             view.write()
-                .on_focus_lost()
-                .error_on_err(format!("on_focus_lost {{ view_id: {} }}", self));
+                .call_focus_lost();
         }
     }
 
@@ -322,7 +320,7 @@ impl LoadRenderResource for ViewId {
 
 #[cfg(feature = "drag-drop")]
 impl ViewId {
-    pub(crate) fn on_drag_enter(
+    pub(crate) fn call_drag_enter(
         self,
         key_state: KeyState,
         mouse_position: MousePosition,
@@ -331,18 +329,15 @@ impl ViewId {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             return view
                 .write()
-                .on_drag_enter(key_state, mouse_position, format)
-                .log_err(format!("on_drag_enter {{ view_id:{} }}", self))
-                .unwrap_or(DropEffect::None);
+                .call_drag_enter(key_state, mouse_position, format);
         }
         DropEffect::None
     }
-    pub(crate) fn on_drag_leave(self) {
+    pub(crate) fn call_drag_leave(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             // 无返回值，保持原有风格
             view.write()
-                .on_drag_leave()
-                .error_on_err(format!("on_drag_leave {{ view_id:{} }}", self));
+                .call_drag_leave();
         }
     }
 }

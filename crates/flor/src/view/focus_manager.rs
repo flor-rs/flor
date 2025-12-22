@@ -113,10 +113,10 @@ impl FocusManager {
             return;
         }
         if let Some(view_id) = old_view_id {
-            view_id.on_focus_lost();
+            view_id.call_focus_lost();
         }
         if let Some(view_id) = new_view_id {
-            view_id.on_focus_gained();
+            view_id.call_focus_gained();
         }
     }
 
