@@ -15,6 +15,7 @@ categories.workspace = true
 
 [features]
 svg = ["windows/Win32_UI_Shell", "flor-graphics-base/svg"]
+memory-font = ["flor-graphics-base/memory-font", "windows-core", "windows/Foundation"]
 
 [dependencies]
 log = { workspace = true }
@@ -35,3 +36,4 @@ windows = { workspace = true, features = ["Win32_Foundation",
     "Win32_System_Variant",
     "Win32_System_Com_StructuredStorage"] }
 windows-numerics = { workspace = true }
+windows-core = { workspace = true, optional = true }

@@ -1,16 +1,16 @@
-use crate::view::View;
-use flor_platform_base::{WindowMode, WindowApi};
-use log::trace;
-use parking_lot::RwLock;
-
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::render::FlorRender;
 use crate::signal::effect::updater_effect::create_updater;
 use crate::view::view_storage::VIEW_STORAGE;
+use crate::view::View;
 use crate::windows::bus;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WindowEntry;
+use flor_graphics_base::Color;
+use flor_platform_base::{WindowApi, WindowMode};
+use log::trace;
+use parking_lot::RwLock;
 use platform::WindowId;
 
 pub struct WindowOption {
@@ -19,6 +19,7 @@ pub struct WindowOption {
     pub height: u32,
     pub wait_v_sync: bool,
     pub continuous_rendering: bool,
+    pub background_color: Color,
     pub view_fn: Option<Box<dyn Fn(WindowId) -> Box<dyn View + Send + Sync>>>,
 }
 
@@ -30,6 +31,7 @@ impl Default for WindowOption {
             height: 600,
             wait_v_sync: true,
             continuous_rendering: false,
+            background_color: Color::rgb(255, 255, 255),
             view_fn: None,
         }
     }
@@ -50,7 +52,7 @@ impl WindowOption {
         // 创建渲染器
         let render = FlorRender::create(window_id, width, height, self.wait_v_sync)?;
 
-        let view_id = WindowEntry::new(window_id, self.continuous_rendering);
+        let view_id = WindowEntry::new(window_id, self.continuous_rendering, self.background_color);
 
         VIEW_STORAGE
             .views

@@ -36,6 +36,8 @@ clipboard = ["arboard"]
 drag-drop = ["flor-platform-windows/drag-drop"]
 tray = ["flor-platform-windows/tray"]
 
+memory-font = ["flor-graphics-direct2d?/memory-font"]
+
 [dependencies]
 log = { workspace = true }
 once_cell = { workspace = true }

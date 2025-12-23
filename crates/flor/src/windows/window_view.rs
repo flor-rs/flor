@@ -18,36 +18,22 @@ impl View for WindowId {
         }
     }
 
-    fn on_draw(&mut self, render: &mut FlorRender, abs_location: (f32, f32), layout: Layout) -> Result<(), Error> {
+    fn on_draw(
+        &mut self,
+        render: &mut FlorRender,
+        abs_location: (f32, f32),
+        layout: Layout,
+    ) -> Result<(), Error> {
         trace!("window draw");
 
-        // 解构绝对坐标，方便后续使用
-        let (abs_x, abs_y) = abs_location;
-
-        // 清除背景 (注意：如果这是子 View，通常不应该 clear 全屏，除非它是 Root Window)
-        // 如果这是根窗口，保持原样；如果是子控件，这行可能会把别人的绘制盖住。
-        render.clear(Color::from_hex_str("FFF")?)?;
-
-        // ⚠️ 性能提示：create_text_format 比较耗时，建议在结构体初始化时创建并缓存，不要每帧创建
-        let mut text_format = render.create_text_format("宋体")?;
-
-        // --- 绘制 "window" 标签 ---
-        let brush = render.create_solid_color_brush(Color::from_hex_str("00ccff")?, None)?;
-
-        // 【修正点 1】：应用绝对坐标
-        // 原来是 (0., 0.)，现在是 (abs_x, abs_y)
-        render.draw_text(
-            "window",
-            &mut text_format,
-            abs_x,          // left
-            abs_y,          // top
-            200.,           // width
-            20.,            // height
-            &brush,
-            None
-        )?;
+        if let Some(entry) = self.entry() {
+            render.clear(entry.background_color)?;
+        }
 
         // --- FPS 绘制逻辑 ---
+        let (abs_x, abs_y) = abs_location;
+        let mut text_format = render.create_text_format("")?;
+
         let fps = match self.entry().map(|e| e.fps.load(Ordering::Acquire)) {
             None => "None".into(),
             Some(fps) => fps.to_string(),
@@ -57,7 +43,7 @@ impl View for WindowId {
         let fps_box_width = 100.0;
         let fps_box_height = 30.0;
         let margin_right = 10.0;
-        let margin_top = 5.0;
+        let margin_top = 20.0;
 
         // 2. 计算相对坐标 (相对于当前控件左上角)
         // 右上角 x = 控件宽度 - 文本框宽度 - 右边距

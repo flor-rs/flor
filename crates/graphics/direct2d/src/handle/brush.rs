@@ -1,7 +1,7 @@
 use flor_graphics_base::BrushHandle;
 use windows::Win32::Graphics::Direct2D::ID2D1Brush;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct D2DBrushHandle {
     raw: ID2D1Brush,
 }

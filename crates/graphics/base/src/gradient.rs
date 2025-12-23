@@ -1,6 +1,7 @@
 use crate::color::Color;
 
 /// 渐变类型，可用于 Gradient Brush
+#[derive(Debug, Clone)]
 pub enum Gradient {
     /// 线性渐变
     Linear {

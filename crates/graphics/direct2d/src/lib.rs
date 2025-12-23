@@ -5,7 +5,11 @@ use crate::handle::D2DTextFormatHandle;
 #[cfg(feature = "svg")]
 use crate::handle::{D2DSvgHandle, SvgShadowCache};
 use crate::into_d2d_transform::IntoD2DTransform;
-use flor_graphics_base::{Color, Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand, PathDrawOptions, Render, RenderContext, ScaleMode, TextAlignment, TextDrawOptions, TextFormatHandle, TextTrimming, Transform2D, WordWrapping};
+use flor_graphics_base::{
+    Color, Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
+    PathDrawOptions, Render, RenderContext, ScaleMode, TextAlignment, TextDrawOptions,
+    TextFormatHandle, TextTrimming, Transform2D, WordWrapping,
+};
 use log::debug;
 use lru::LruCache;
 
@@ -40,15 +44,30 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE,
     D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_HWND_RENDER_TARGET_PROPERTIES,
     D2D1_IMAGE_BRUSH_PROPERTIES, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS1_NONE,
-    D2D1_LAYER_PARAMETERS1, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
-    D2D1_MAP_OPTIONS_READ, D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_PRESENT_OPTIONS_NONE,
-    D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4,
-    D2D1_QUADRATIC_BEZIER_SEGMENT, D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
+    D2D1_LAYER_PARAMETERS1, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_MAP_OPTIONS_READ,
+    D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_PRESENT_OPTIONS_NONE, D2D1_PROPERTY_TYPE_ENUM,
+    D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_QUADRATIC_BEZIER_SEGMENT,
+    D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+    D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
     D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
 };
-use windows::Win32::Graphics::DirectWrite::{DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_LINE_SPACING_METHOD_DEFAULT, DWRITE_LINE_SPACING_METHOD_UNIFORM, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_FAR, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_JUSTIFIED, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_TRIMMING_GRANULARITY_NONE, DWRITE_TRIMMING_GRANULARITY_WORD, DWRITE_WORD_WRAPPING_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP};
+use windows::Win32::Graphics::DirectWrite::{
+    DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
+    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS,
+    DWRITE_LINE_SPACING_METHOD_DEFAULT, DWRITE_LINE_SPACING_METHOD_UNIFORM,
+    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_PARAGRAPH_ALIGNMENT_FAR, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_JUSTIFIED, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
+    DWRITE_TEXT_METRICS, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    DWRITE_TRIMMING_GRANULARITY_NONE, DWRITE_TRIMMING_GRANULARITY_WORD,
+    DWRITE_WORD_WRAPPING_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
+};
+#[cfg(feature = "memory-font")]
+use windows::Win32::Graphics::DirectWrite::{
+    IDWriteFactory5, IDWriteFontFileLoader, DWRITE_FONT_FACE_TYPE_UNKNOWN,
+    DWRITE_FONT_SIMULATIONS_NONE,
+};
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Imaging::{CLSID_WICImagingFactory, IWICImagingFactory};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
@@ -76,9 +95,15 @@ pub mod base {
 }
 pub mod into_d2d_transform;
 
-pub mod handle;
 pub mod color;
 pub mod encode;
+pub mod handle;
+
+#[cfg(feature = "memory-font")]
+mod memory_font;
+
+#[cfg(feature = "memory-font")]
+use crate::memory_font::{get_family_name_from_face, MemoryFontFileLoader};
 
 use crate::color::AsD2dColor;
 use crate::encode::encode_unicode;
@@ -102,6 +127,9 @@ pub struct RenderFactory {
     pub wic_factory: IWICImagingFactory,
     pub write_factory: IDWriteFactory,
     pub d2d1_bitmap_properties1: D2D1_BITMAP_PROPERTIES1,
+
+    #[cfg(feature = "memory-font")]
+    pub memory_font_file_loader: MemoryFontFileLoader,
 }
 
 unsafe impl Sync for RenderFactory {}
@@ -147,6 +175,8 @@ impl RenderFactory {
                         CLSCTX_INPROC_SERVER,
                     )?,
                     write_factory: DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?,
+                    #[cfg(feature = "memory-font")]
+                    memory_font_file_loader: MemoryFontFileLoader::default(),
                 }
             };
             let _ = RENDER_FACTORY.set(render_factory);
@@ -286,7 +316,6 @@ impl Render for D2DRender {
         Ok(RenderFactory::get().create_render(hwnd.into(), width, height, wait_v_sync)?)
     }
 }
-
 impl RenderContext for D2DRender {
     type Error = D2DBackendError;
     type ImageHandle = D2DImageHandle;
@@ -412,7 +441,7 @@ impl RenderContext for D2DRender {
 
     fn create_image_from_raw_bytes(
         &mut self,
-        raw_bytes: Vec<Vec<u8>>,
+        raw_bytes: &Vec<Vec<u8>>,
         width: u32,
         height: u32,
         delays: Vec<u16>,
@@ -509,6 +538,67 @@ impl RenderContext for D2DRender {
         Ok(D2DTextFormatHandle::new(text_format, font_family_name))
     }
 
+    #[cfg(feature = "memory-font")]
+    fn create_text_format_from_bytes(
+        &mut self,
+        font_data: &[u8],
+        ttc_index: u32,
+    ) -> Result<Self::TextFormatHandle, Self::Error> {
+        unsafe {
+            let factory = &RenderFactory::get().write_factory;
+
+            // 1. Loader 准备
+            let loader_impl = MemoryFontFileLoader {
+                data: font_data.to_vec(),
+            };
+            let loader_interface: IDWriteFontFileLoader = loader_impl.into();
+            factory.RegisterFontFileLoader(&loader_interface)?;
+            // 2. 创建 FontFile
+            let dummy_key = 0u32;
+            let font_file = factory.CreateCustomFontFileReference(
+                &dummy_key as *const _ as *const _,
+                4,
+                &loader_interface,
+            )?;
+
+            // 3. 构建 Collection (Win10+ 必须步骤，否则 CreateTextFormat 找不到字体)
+            // 需要 cast 到 Factory5
+            let factory5: IDWriteFactory5 = factory.cast()?;
+            let font_set_builder = factory5.CreateFontSetBuilder()?;
+            font_set_builder.AddFontFile(&font_file)?;
+            let font_set = font_set_builder.CreateFontSet()?;
+            let font_collection = factory5.CreateFontCollectionFromFontSet(&font_set)?;
+
+            // 4. 创建 Face 并解析名称
+            // 因为 IDWriteFontFace 没有 GetFontFamily，我们需要手动解析 'name' 表
+            let font_face = factory.CreateFontFace(
+                DWRITE_FONT_FACE_TYPE_UNKNOWN,
+                &[Some(font_file)], // 传递切片
+                ttc_index,
+                DWRITE_FONT_SIMULATIONS_NONE,
+            )?;
+
+            // 调用上面的辅助函数获取名称
+            let family_name_string = get_family_name_from_face(&font_face)?;
+
+            // 转换为 HSTRING / PCWSTR
+            let family_name_hstring = HSTRING::from(&family_name_string);
+
+            // 5. 创建 Format
+            let text_format = factory.CreateTextFormat(
+                PCWSTR(family_name_hstring.as_ptr()),
+                &font_collection,
+                DWRITE_FONT_WEIGHT_NORMAL,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                16.0,
+                w!("zh-cn"),
+            )?;
+            factory.UnregisterFontFileLoader(&loader_interface)?;
+            Ok(D2DTextFormatHandle::new(text_format, family_name_string))
+        }
+    }
+
     fn measure_text(
         &self,
         text: &str,
@@ -539,16 +629,22 @@ impl RenderContext for D2DRender {
         }
     }
 
-    fn hit_test_point(&self, text: &str, text_format: &Self::TextFormatHandle, width: f32, height: f32, x: f32, y: f32) -> Result<HitTestResult, Self::Error> {
+    fn hit_test_point(
+        &self,
+        text: &str,
+        text_format: &Self::TextFormatHandle,
+        width: f32,
+        height: f32,
+        x: f32,
+        y: f32,
+    ) -> Result<HitTestResult, Self::Error> {
         unsafe {
-            let text_layout = RenderFactory::get()
-                .write_factory
-                .CreateTextLayout(
-                    &encode_unicode(text),
-                    text_format.raw(),
-                    width,
-                    height,
-                )?;
+            let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
+                &encode_unicode(text),
+                text_format.raw(),
+                width,
+                height,
+            )?;
 
             let mut is_trailing = BOOL(0);
             let mut is_inside = BOOL(0);
@@ -564,39 +660,34 @@ impl RenderContext for D2DRender {
                 isTrimmed: BOOL(0),
             };
 
-            text_layout.HitTestPoint(
-                x,
-                y,
-                &mut is_trailing,
-                &mut is_inside,
-                &mut metrics,
-            )?;
+            text_layout.HitTestPoint(x, y, &mut is_trailing, &mut is_inside, &mut metrics)?;
 
             Ok(HitTestResult {
                 text_index: metrics.textPosition as usize,
                 is_trailing: is_trailing.as_bool(),
                 is_inside: is_inside.as_bool(),
                 is_trimmed: metrics.isTrimmed.as_bool(),
-                rect: (
-                    metrics.left,
-                    metrics.top,
-                    metrics.width,
-                    metrics.height,
-                ),
+                rect: (metrics.left, metrics.top, metrics.width, metrics.height),
             })
         }
     }
 
-    fn hit_test_text_position(&self, text: &str, text_format: &Self::TextFormatHandle, width: f32, height: f32, text_index: usize, trailing: bool) -> Result<(f32, f32), Self::Error> {
+    fn hit_test_text_position(
+        &self,
+        text: &str,
+        text_format: &Self::TextFormatHandle,
+        width: f32,
+        height: f32,
+        text_index: usize,
+        trailing: bool,
+    ) -> Result<(f32, f32), Self::Error> {
         unsafe {
-            let text_layout = RenderFactory::get()
-                .write_factory
-                .CreateTextLayout(
-                    &encode_unicode(text),
-                    text_format.raw(),
-                    width,
-                    height,
-                )?;
+            let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
+                &encode_unicode(text),
+                text_format.raw(),
+                width,
+                height,
+            )?;
 
             let mut x = 0.0f32;
             let mut y = 0.0f32;
@@ -648,10 +739,10 @@ impl RenderContext for D2DRender {
 
     fn create_gradient_brush(
         &mut self,
-        gradient: Gradient,
+        gradient: &Gradient,
     ) -> Result<Self::BrushHandle, Self::Error> {
         unsafe {
-            let brush: ID2D1Brush = match gradient {
+            let brush: ID2D1Brush = match &gradient {
                 Gradient::Linear { start, end, colors } => {
                     // 构建 D2D 渐变停靠点和颜色数组
                     let stops = colors
@@ -716,8 +807,8 @@ impl RenderContext for D2DRender {
                                     X: center.0,
                                     Y: center.1,
                                 },
-                                radiusX: radius,
-                                radiusY: radius,
+                                radiusX: *radius,
+                                radiusY: *radius,
                                 ..Default::default()
                             },
                             None,

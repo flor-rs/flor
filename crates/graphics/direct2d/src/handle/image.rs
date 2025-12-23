@@ -354,7 +354,7 @@ impl D2DImageHandle {
     }
 
     pub(crate) fn from_raw_bytes(
-        raw_bytes: Vec<Vec<u8>>,
+        raw_bytes: &Vec<Vec<u8>>,
         width: u32,
         height: u32,
         delays: Vec<u16>,

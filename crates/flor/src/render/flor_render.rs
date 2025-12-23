@@ -166,7 +166,7 @@ impl RenderContext for FlorRender {
 
     fn create_image_from_raw_bytes(
         &mut self,
-        raw_bytes: Vec<Vec<u8>>,
+        raw_bytes: &Vec<Vec<u8>>,
         width: u32,
         height: u32,
         delays: Vec<u16>,
@@ -202,6 +202,22 @@ impl RenderContext for FlorRender {
             )),
             #[cfg(feature = "cpu-render-backend")]
             FlorRender::CPU(c) => Ok(c.create_text_format(font_family_name)?),
+        }
+    }
+
+    #[cfg(feature = "memory-font")]
+    fn create_text_format_from_bytes(
+        &mut self,
+        font_data: &[u8],
+        ttc_index: u32,
+    ) -> Result<Self::TextFormatHandle, Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => Ok(FlorTextFormatHandle::D2DTextFormatHandle(
+                g.create_text_format_from_bytes(font_data, ttc_index)?,
+            )),
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => Ok(c.create_text_format_from_bytes(font_data, ttc_index)?),
         }
     }
 
@@ -308,7 +324,7 @@ impl RenderContext for FlorRender {
 
     fn create_gradient_brush(
         &mut self,
-        gradient: Gradient,
+        gradient: &Gradient,
     ) -> Result<Self::BrushHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]

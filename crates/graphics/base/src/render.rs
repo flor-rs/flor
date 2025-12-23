@@ -57,7 +57,7 @@ pub trait RenderContext: Any {
     fn create_image_from_bytes(&mut self, bytes: &[u8]) -> Result<Self::ImageHandle, Self::Error>;
     fn create_image_from_raw_bytes(
         &mut self,
-        raw_bytes: Vec<Vec<u8>>,
+        raw_bytes: &Vec<Vec<u8>>,
         width: u32,
         height: u32,
         delays: Vec<u16>,
@@ -72,6 +72,14 @@ pub trait RenderContext: Any {
         &mut self,
         font_family_name: &str,
     ) -> Result<Self::TextFormatHandle, Self::Error>;
+
+    #[cfg(feature = "memory-font")]
+    fn create_text_format_from_bytes(
+        &mut self,
+        font_data: &[u8],
+        ttc_index: u32,
+    ) -> Result<Self::TextFormatHandle, Self::Error>;
+
     /// 测量文本宽高
     fn measure_text(
         &self,
@@ -110,7 +118,7 @@ pub trait RenderContext: Any {
     ) -> Result<Self::BrushHandle, Self::Error>;
     fn create_gradient_brush(
         &mut self,
-        gradient: Gradient,
+        gradient: &Gradient,
     ) -> Result<Self::BrushHandle, Self::Error>;
 
     // ==================== 绘制方法 ====================

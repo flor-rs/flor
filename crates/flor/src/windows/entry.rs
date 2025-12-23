@@ -2,6 +2,7 @@ use crate::view::focus_manager::FocusManager;
 use crate::view::view_id::ViewId;
 use dashmap::mapref::one::{Ref, RefMut};
 use dashmap::DashMap;
+use flor_graphics_base::Color;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use platform::WindowId;
@@ -28,10 +29,11 @@ pub struct WindowEntry {
     pub m_down_view_id: Option<ViewId>,
     pub capture_view_id: Option<ViewId>,
     pub current_drag_target: Option<ViewId>,
+    pub background_color: Color,
 }
 
 impl WindowEntry {
-    pub fn new(window_id: WindowId, continuous_rendering: bool) -> ViewId {
+    pub fn new(window_id: WindowId, continuous_rendering: bool, background_color: Color) -> ViewId {
         let view_id = ViewId::new();
 
         let window_entry = Self {
@@ -48,6 +50,7 @@ impl WindowEntry {
             m_down_view_id: None,
             capture_view_id: None,
             current_drag_target: None,
+            background_color,
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id

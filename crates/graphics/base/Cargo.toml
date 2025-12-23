@@ -15,6 +15,7 @@ categories.workspace = true
 
 [features]
 svg = []
+memory-font = []
 
 [dependencies]
 #log =  { workspace = true }

@@ -878,7 +878,7 @@ impl<T: View> LoadRenderResource for T {
 
     fn load_raw_image(
         &self,
-        raw_bytes: Vec<Vec<u8>>,
+        raw_bytes: &Vec<Vec<u8>>,
         width: u32,
         height: u32,
         delays: Vec<u16>,

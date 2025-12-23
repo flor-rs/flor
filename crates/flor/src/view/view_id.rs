@@ -86,7 +86,7 @@ impl ViewId {
     pub fn update_state(self, state: Box<dyn Any>) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             view.write().on_update_state(state);
-            self.request_redraw();
+            let _ = self.request_redraw();
         }
     }
 
@@ -295,7 +295,7 @@ impl LoadRenderResource for ViewId {
     }
     fn load_raw_image(
         &self,
-        raw_bytes: Vec<Vec<u8>>,
+        raw_bytes: &Vec<Vec<u8>>,
         width: u32,
         height: u32,
         delays: Vec<u16>,
