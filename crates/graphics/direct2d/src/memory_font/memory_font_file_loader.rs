@@ -13,6 +13,7 @@ pub struct MemoryFontFileLoader {
 }
 
 impl IDWriteFontFileLoader_Impl for MemoryFontFileLoader_Impl {
+    #[allow(non_snake_case)]
     fn CreateStreamFromKey(
         &self,
         _font_file_reference_key: *const c_void,

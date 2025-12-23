@@ -8,7 +8,7 @@ use windows::core::Result;
 use windows::Win32::Foundation::E_FAIL;
 use windows::Win32::Graphics::DirectWrite::IDWriteFontFace;
 use windows_core::Error;
-pub use {memory_font_file_loader::*, memory_font_file_stream::*};
+pub use memory_font_file_loader::*;
 
 /// 从 IDWriteFontFace 中手动解析 Family Name
 /// OpenType 规范: https://learn.microsoft.com/en-us/typography/opentype/spec/name
