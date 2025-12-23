@@ -189,6 +189,10 @@ impl ViewId {
         }
     }
 
+    pub fn init_focus_scope(self, focus_scope: u32) {
+        VIEW_STORAGE.focus_scope.write().insert(self, focus_scope);
+    }
+
     pub fn init_focus_index(self, focus_index: u32) {
         VIEW_STORAGE.focus_index.write().insert(self, focus_index);
     }
