@@ -232,12 +232,12 @@ pub trait RenderContext: Any {
     // 这是通用兜底方案，任何形状都能裁
     fn push_path_clip(&mut self, path: &Path) -> Result<(), Self::Error>;
 
-    fn pop_clip(&mut self) -> Result<(), Self::Error>;
-    fn pop_all_clip(&mut self) -> Result<(), Self::Error>;
+    fn pop_clip(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error>;
+    fn get_clip_depth(&mut self) -> Result<u32, Self::Error>;
 
     fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error>;
-    fn pop_transform(&mut self) -> Result<(), Self::Error>;
-    fn pop_all_transform(&mut self) -> Result<(), Self::Error>;
+    fn pop_transform(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error>;
+    fn get_transform_depth(&mut self) -> Result<u32, Self::Error>;
 
     // ==================== 辅助/输出 ====================
     /// 截取当前渲染目标的内容

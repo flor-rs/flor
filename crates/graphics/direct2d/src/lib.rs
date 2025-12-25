@@ -2319,38 +2319,38 @@ impl RenderContext for D2DRender {
         Ok(())
     }
 
-    // =========================================================
-    // 4. 弹出剪裁 (根据类型自动分发)
-    // =========================================================
-    fn pop_clip(&mut self) -> Result<(), Self::Error> {
-        // 1. 查看栈顶是什么类型
-        if let Some(clip_type) = self.clip_stack.pop() {
-            unsafe {
-                match clip_type {
-                    ClipType::AxisAligned => {
-                        self.current_render.PopAxisAlignedClip();
-                    }
-                    ClipType::Layer => {
-                        self.current_render.PopLayer();
+    fn pop_clip(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error> {
+        let current_depth = self.clip_stack.len() as u32;
+        let target = target_depth.unwrap_or_else(|| current_depth.saturating_sub(1));
+
+        if target >= current_depth {
+            return Ok(());
+        }
+
+        while self.clip_stack.len() as u32 > target {
+            if let Some(clip_type) = self.clip_stack.pop() {
+                unsafe {
+                    match clip_type {
+                        ClipType::AxisAligned => {
+                            self.current_render.PopAxisAlignedClip();
+                        }
+                        ClipType::Layer => {
+                            self.current_render.PopLayer();
+                        }
                     }
                 }
             }
-        } else {
-            // 栈为空时的防呆处理，可以选择 log 警告
-            // println!("Warning: Try to pop clip from empty stack");
         }
         Ok(())
     }
 
-    // =========================================================
-    // 5. 清空剪裁 (帧结束时的兜底)
-    // =========================================================
-    fn pop_all_clip(&mut self) -> Result<(), Self::Error> {
-        while !self.clip_stack.is_empty() {
-            self.pop_clip()?;
-        }
-        Ok(())
+    fn get_clip_depth(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.clip_stack.len() as u32)
     }
+
+    // =========================================================
+    // 4. 弹出剪裁 (根据类型自动分发)
+    // =========================================================
 
     fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error> {
         let local = transform.into_transform();
@@ -2368,24 +2368,44 @@ impl RenderContext for D2DRender {
         Ok(())
     }
 
-    fn pop_transform(&mut self) -> Result<(), Self::Error> {
-        if let Some(old_transform) = self.transform_stack.pop() {
-            unsafe {
-                self.current_render.SetTransform(&old_transform);
-            }
+    fn pop_transform(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error> {
+        let current_depth = self.transform_stack.len() as u32;
+        let target = target_depth.unwrap_or_else(|| current_depth.saturating_sub(1));
+
+        if target >= current_depth {
+            return Ok(());
         }
+
+        // 目标深度对应的 Transform 就是我们想要恢复的状态
+        // transform_stack[i] 存储的是 "第 i+1 次 Push 之前的状态"
+        // 当我们 restore 到 depth 时，说明我们只保留 depth 次 Push
+        // 实际上 transform_stack 的长度就是 depth
+        // 我们要恢复的是 stack[target] 吗？
+        // 假设 stack = [M0, M1]。Len = 2。Current = M2.
+        // target = 1. Want M1.
+        // stack[1] == M1.
+        // target = 0. Want M0.
+        // stack[0] == M0.
+        // 所以恢复 stack[target] 是正确的
+
+        // 注意：Vec 索引 usize
+        let target_idx = target as usize;
+        let restore_transform = self.transform_stack[target_idx];
+
+        unsafe {
+            self.current_render.SetTransform(&restore_transform);
+        }
+
+        // 截断栈
+        self.transform_stack.truncate(target_idx);
+
         Ok(())
     }
 
-    fn pop_all_transform(&mut self) -> Result<(), Self::Error> {
-        if let Some(first) = self.transform_stack.first() {
-            unsafe {
-                self.current_render.SetTransform(first);
-            }
-        }
-        self.transform_stack.clear();
-        Ok(())
+    fn get_transform_depth(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.transform_stack.len() as u32)
     }
+
 
     fn capture_snapshot(
         &mut self,

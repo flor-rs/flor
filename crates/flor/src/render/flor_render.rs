@@ -635,24 +635,23 @@ impl RenderContext for FlorRender {
         Ok(())
     }
 
-    fn pop_clip(&mut self) -> Result<(), Self::Error> {
+    fn pop_clip(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => g.pop_clip()?,
+            FlorRender::GPU(g) => g.pop_clip(target_depth)?,
             #[cfg(feature = "cpu-render-backend")]
-            FlorRender::CPU(c) => c.pop_clip()?,
+            FlorRender::CPU(c) => c.pop_clip(target_depth)?,
         };
         Ok(())
     }
 
-    fn pop_all_clip(&mut self) -> Result<(), Self::Error> {
+    fn get_clip_depth(&mut self) -> Result<u32, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => g.pop_all_clip()?,
+            FlorRender::GPU(g) => Ok(g.get_clip_depth()?),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRender::CPU(c) => c.pop_all_clip()?,
-        };
-        Ok(())
+            FlorRender::CPU(c) => Ok(c.get_clip_depth()?),
+        }
     }
 
     fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error> {
@@ -665,25 +664,25 @@ impl RenderContext for FlorRender {
         Ok(())
     }
 
-    fn pop_transform(&mut self) -> Result<(), Self::Error> {
+    fn pop_transform(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => g.pop_transform()?,
+            FlorRender::GPU(g) => g.pop_transform(target_depth)?,
             #[cfg(feature = "cpu-render-backend")]
-            FlorRender::CPU(c) => c.pop_transform()?,
+            FlorRender::CPU(c) => c.pop_transform(target_depth)?,
         };
         Ok(())
     }
 
-    fn pop_all_transform(&mut self) -> Result<(), Self::Error> {
+    fn get_transform_depth(&mut self) -> Result<u32, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => g.pop_all_transform()?,
+            FlorRender::GPU(g) => Ok(g.get_transform_depth()?),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRender::CPU(c) => c.pop_all_transform()?,
-        };
-        Ok(())
+            FlorRender::CPU(c) => Ok(c.get_transform_depth()?),
+        }
     }
+
 
     fn capture_snapshot(
         &mut self,

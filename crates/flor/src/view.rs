@@ -145,6 +145,8 @@ pub trait View {
         );
         // 自身处理
         trace!("self_view.draw");
+        let transform_depth = render.get_transform_depth()?;
+        let clip_depth = render.get_clip_depth()?;
         self.on_draw(render, abs_location, layout)?;
         // 绘制子控件
         if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(view_id) {
@@ -154,6 +156,8 @@ pub trait View {
                 }
             }
         }
+        render.pop_clip(Some(clip_depth))?;
+        render.pop_transform(Some(transform_depth))?;
         Ok(())
     }
 
