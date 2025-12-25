@@ -235,6 +235,10 @@ pub trait RenderContext: Any {
     fn pop_clip(&mut self) -> Result<(), Self::Error>;
     fn pop_all_clip(&mut self) -> Result<(), Self::Error>;
 
+    fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error>;
+    fn pop_transform(&mut self) -> Result<(), Self::Error>;
+    fn pop_all_transform(&mut self) -> Result<(), Self::Error>;
+
     // ==================== 辅助/输出 ====================
     /// 截取当前渲染目标的内容
     ///

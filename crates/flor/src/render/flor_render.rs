@@ -655,6 +655,36 @@ impl RenderContext for FlorRender {
         Ok(())
     }
 
+    fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.push_transform(transform)?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.push_transform(transform)?,
+        };
+        Ok(())
+    }
+
+    fn pop_transform(&mut self) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.pop_transform()?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.pop_transform()?,
+        };
+        Ok(())
+    }
+
+    fn pop_all_transform(&mut self) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.pop_all_transform()?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.pop_all_transform()?,
+        };
+        Ok(())
+    }
+
     fn capture_snapshot(
         &mut self,
         rect: Option<(f32, f32, u32, u32)>,

@@ -232,6 +232,7 @@ impl RenderFactory {
                 lur: LruCache::new(NonZeroUsize::new(512).unwrap_or_else(|| unreachable!())),
                 layer_pool: vec![],
                 clip_stack: vec![],
+                transform_stack: vec![],
             })
         }
     }
@@ -257,6 +258,7 @@ pub struct D2DRender {
     pub lur: LruCache<u64, ID2D1CommandList>,
     pub layer_pool: Vec<ID2D1Layer>,
     pub clip_stack: Vec<ClipType>,
+    pub transform_stack: Vec<Matrix3x2>,
 }
 impl Debug for D2DRender {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -2347,6 +2349,41 @@ impl RenderContext for D2DRender {
         while !self.clip_stack.is_empty() {
             self.pop_clip()?;
         }
+        Ok(())
+    }
+
+    fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error> {
+        let local = transform.into_transform();
+        unsafe {
+            let mut old_transform = Matrix3x2::default();
+            self.current_render.GetTransform(&mut old_transform);
+
+            // 压栈保存当前状态
+            self.transform_stack.push(old_transform);
+
+            // 计算并应用新变换 (Local * World)
+            let new_transform = local * old_transform;
+            self.current_render.SetTransform(&new_transform);
+        }
+        Ok(())
+    }
+
+    fn pop_transform(&mut self) -> Result<(), Self::Error> {
+        if let Some(old_transform) = self.transform_stack.pop() {
+            unsafe {
+                self.current_render.SetTransform(&old_transform);
+            }
+        }
+        Ok(())
+    }
+
+    fn pop_all_transform(&mut self) -> Result<(), Self::Error> {
+        if let Some(first) = self.transform_stack.first() {
+            unsafe {
+                self.current_render.SetTransform(first);
+            }
+        }
+        self.transform_stack.clear();
         Ok(())
     }
 
