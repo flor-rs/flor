@@ -4,7 +4,7 @@ use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
 use crate::view::control_state::ControlState;
 use crate::view::draw_state::DrawState;
-use crate::view::style::layout::LayoutStateSelector;
+use crate::view::style::layout::{CalcTaffyStyle, LayoutStateSelector};
 use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
@@ -57,6 +57,14 @@ impl ViewId {
     //     pub states: RwLock<SecondaryMap<ViewId, RwLock<ViewState>>>,
     pub fn layout(self) -> Result<taffy::Layout, Error> {
         self.with_state(|state| state.layout)
+    }
+
+    pub fn calc_current_style(self) -> Result<taffy::Style, Error> {
+        self.with_state(|view_state| {
+            view_state
+                .layout_style
+                .calc_taffy_style(self.control_state())
+        })
     }
 
     pub fn with_state<R>(self, getter: impl FnOnce(&ViewState) -> R) -> Result<R, Error> {
@@ -216,15 +224,13 @@ impl ViewId {
 
     pub fn call_focus_gained(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write()
-                .call_focus_gained();
+            view.write().call_focus_gained();
         }
     }
 
     pub fn call_focus_lost(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write()
-                .call_focus_lost();
+            view.write().call_focus_lost();
         }
     }
 
@@ -340,8 +346,7 @@ impl ViewId {
     pub(crate) fn call_drag_leave(self) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             // 无返回值，保持原有风格
-            view.write()
-                .call_drag_leave();
+            view.write().call_drag_leave();
         }
     }
 }

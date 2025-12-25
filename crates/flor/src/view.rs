@@ -25,7 +25,7 @@ use flor_platform_base::{InputEvent, KeyCode, KeyState, MousePosition};
 use log::trace;
 use std::any::Any;
 use std::time::{Duration, Instant};
-use taffy::{AvailableSpace, Layout, NodeId, Size, Style, TaffyTree};
+use taffy::{AvailableSpace, Display, Layout, NodeId, Size, Style, TaffyTree};
 
 /// View特征定义了所有UI组件的基本行为
 pub trait View {
@@ -60,7 +60,7 @@ pub trait View {
 
         let style = view_state
             .layout_style
-            .calc_taffy_style(view_id.control_state());
+            .calc_update_taffy_style(view_id.control_state());
         drop(view_state);
 
         let children = collect_layout_children(view_id, taffy)?;
@@ -121,6 +121,9 @@ pub trait View {
 
     fn bus_frame(&mut self, now: Instant) -> Result<Option<Duration>, Error> {
         let view_id = self.view_id();
+        if view_id.calc_current_style()?.display == Display::None {
+            return Ok(None);
+        }
         let views = VIEW_STORAGE.views.read();
         let mut min_wait_time = self.on_frame(now)?;
         // 绘制子控件
@@ -138,7 +141,12 @@ pub trait View {
     fn bus_draw(&mut self, render: &mut FlorRender, abs_location: (f32, f32)) -> Result<(), Error> {
         let view_id = self.view_id();
         let views = VIEW_STORAGE.views.read();
+
         let layout = view_id.layout()?;
+        if view_id.calc_current_style()?.display == Display::None {
+            return Ok(());
+        }
+
         let abs_location = (
             abs_location.0 + layout.location.x,
             abs_location.1 + layout.location.y,

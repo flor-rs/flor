@@ -218,7 +218,7 @@ impl WindowBusDispatchEntry for WindowId {
 
         let mut style_update = view_state
             .layout_style
-            .calc_taffy_style(view_id.control_state());
+            .calc_update_taffy_style(view_id.control_state());
 
         // 这里的特殊逻辑：如果 style 有更新，必须强制加上 100% 的尺寸限制
         if let Some(s) = &mut style_update {

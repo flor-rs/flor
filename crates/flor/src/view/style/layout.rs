@@ -3,10 +3,7 @@ use crate::view::control_state::ControlState;
 use taffy::TextAlign;
 #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
 use taffy::{AlignContent, AlignItems, AlignSelf, JustifyContent};
-use taffy::{
-    BoxSizing, Dimension, Display, LengthPercentage, LengthPercentageAuto, Overflow, Point,
-    Position, Rect, Size,
-};
+use taffy::{BoxSizing, Dimension, Display, LengthPercentage, LengthPercentageAuto, Overflow, Point, Position, Rect, Size, Style};
 #[cfg(feature = "layout-flex")]
 use taffy::{FlexDirection, FlexWrap};
 #[cfg(feature = "layout-grid")]
@@ -417,14 +414,19 @@ use crate::view::style::style_selector::StateSelector;
 pub type LayoutStateSelector = StateSelector<LayoutKey, Layout>;
 
 pub trait CalcTaffyStyle {
-    fn calc_taffy_style(&self, control_state: ControlState) -> Option<taffy::Style>;
+    fn calc_update_taffy_style(&self, control_state: ControlState) -> Option<taffy::Style>;
+    fn calc_taffy_style(&self, control_state: ControlState) -> taffy::Style;
 }
 
 impl CalcTaffyStyle for LayoutStateSelector {
-    fn calc_taffy_style(&self, control_state: ControlState) -> Option<taffy::Style> {
+    fn calc_update_taffy_style(&self, control_state: ControlState) -> Option<taffy::Style> {
         if !self.is_dirty(control_state) {
             return None;
         }
+        Some(self.calc_taffy_style(control_state))
+    }
+
+    fn calc_taffy_style(&self, control_state: ControlState) -> Style {
         let mut layout_style = taffy::Style::default();
 
         // #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Default)]
@@ -501,6 +503,6 @@ impl CalcTaffyStyle for LayoutStateSelector {
                 }
             }
         }
-        Some(layout_style)
+        layout_style
     }
 }
