@@ -1,3 +1,4 @@
+use crate::log_error::ResultLogExt;
 use crate::view::handler::ViewHandler;
 use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
@@ -83,6 +84,11 @@ impl ViewStorage {
             } else {
                 child_ids.insert(parent, vec![child.view_id()]);
             }
+            if let Some(view) = self.views.read().get(parent) {
+                view.write()
+                    .on_child_push()
+                    .error_on_err(format!("on_child_push {{ view_id:{} }}]", parent));
+            }
         }
 
         let child_view_id = child.view_id();
@@ -141,6 +147,11 @@ impl ViewStorage {
 
             if let Some(parent_state) = self.states.write().get(parent) {
                 parent_state.write().dirty_children = true;
+            }
+            if let Some(view) = self.views.read().get(parent) {
+                view.write()
+                    .on_child_dispose()
+                    .error_on_err(format!("on_child_dispose {{ view_id:{} }}]", parent));
             }
         }
 

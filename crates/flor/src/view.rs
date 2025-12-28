@@ -876,6 +876,14 @@ pub trait View {
             h.0(self.view_id(), lines);
         }
     }
+
+    fn on_child_push(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn on_child_dispose(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 impl<T: View> LoadRenderResource for T {
