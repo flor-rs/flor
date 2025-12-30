@@ -8,11 +8,18 @@ use crate::signal::write_signal::WriteSignal;
 use std::marker::PhantomData;
 
 /// 读写信号
-#[derive(Copy, Clone)]
 pub struct RwSignal<T> {
     id: Id,
     _type: PhantomData<T>,
 }
+
+impl<T> Clone for RwSignal<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for RwSignal<T> {}
 
 impl<T: Default + 'static> Default for RwSignal<T> {
     fn default() -> Self {
