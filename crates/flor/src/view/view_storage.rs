@@ -75,14 +75,18 @@ impl ViewStorage {
 
     /// 添加子视图
     pub fn add_child(&self, parent: ViewId, child: Box<dyn View + Send + Sync>) {
+        let child_view_id = child.view_id();
         {
             let mut child_ids = self.child_ids.write();
 
-            self.parent_view_id.write().insert(child.view_id(), parent);
-            if let Some(children) = child_ids.get_mut(parent) {
-                children.push(child.view_id());
-            } else {
-                child_ids.insert(parent, vec![child.view_id()]);
+            self.parent_view_id.write().insert(child_view_id, parent);
+            // A window is also a view
+            if parent != child_view_id {
+                if let Some(children) = child_ids.get_mut(parent) {
+                    children.push(child_view_id);
+                } else {
+                    child_ids.insert(parent, vec![child_view_id]);
+                }
             }
             if let Some(view) = self.views.read().get(parent) {
                 view.write()
@@ -91,16 +95,13 @@ impl ViewStorage {
             }
         }
 
-        let child_view_id = child.view_id();
-
         self.views.write().insert(child_view_id, RwLock::new(child));
         if let Some(view_state) = VIEW_STORAGE.states.read().get(parent) {
             view_state.write().dirty_children = true;
         }
 
-        // 关联窗口检索
-        let x = { VIEW_STORAGE.window_ids.read().get(parent).cloned() };
-        if let Some(window_id) = x {
+        let windows_ids = { VIEW_STORAGE.window_ids.read().get(parent).cloned() };
+        if let Some(window_id) = windows_ids {
             Self::set_all_child_window_id(child_view_id, window_id);
         }
 
@@ -109,14 +110,19 @@ impl ViewStorage {
         }
     }
 
-    fn set_all_child_window_id(view_id: ViewId, window_id: WindowId) {
-        {
-            VIEW_STORAGE.window_ids.write().insert(view_id, window_id);
-        }
-        let child_ids = VIEW_STORAGE.child_ids.read();
-        if let Some(child_ids) = child_ids.get(view_id).cloned() {
-            for child_id in child_ids {
-                Self::set_all_child_window_id(child_id, window_id);
+    fn set_all_child_window_id(root_id: ViewId, window_id: WindowId) {
+        let child_map = VIEW_STORAGE.child_ids.read();
+
+        let mut window_ids = VIEW_STORAGE.window_ids.write();
+
+        let mut stack = Vec::with_capacity(64);
+        stack.push(root_id);
+
+        while let Some(view_id) = stack.pop() {
+            window_ids.insert(view_id, window_id);
+
+            if let Some(children) = child_map.get(view_id) {
+                stack.extend(children.iter().copied());
             }
         }
     }

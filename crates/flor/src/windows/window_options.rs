@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::render::FlorRender;
 use crate::signal::effect::updater_effect::create_updater;
+use crate::view::view_builder::builder::ViewBuilder;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
 use crate::windows::bus;
@@ -41,7 +42,7 @@ impl WindowOption {
     pub fn open<F, V>(self, view_fn: F) -> Result<WindowId, Error>
     where
         F: Fn(WindowId) -> V + 'static,
-        V: View + Send + Sync + 'static,
+        V: IntoIterator<Item=Box<dyn View + Send + Sync + 'static>>,
     {
         // 创建原生窗口
         let mut window_id = WindowId::create_window(&self.title, self.width, self.height)?;
@@ -59,8 +60,11 @@ impl WindowOption {
             .write()
             .insert(view_id, RwLock::new(Box::new(window_id)));
 
-        let view_fn =
-            Box::new(move |window_id| Box::new(view_fn(window_id)) as Box<dyn View + Send + Sync>);
+        let view_fn = Box::new(move |window_id| {
+            view_fn(window_id)
+                .into_iter()
+                .collect::<Vec<_>>()
+        });
 
         let root_dyn_view = create_updater(
             move || view_fn(window_id),
@@ -72,7 +76,7 @@ impl WindowOption {
 
         trace!("window root view: {:?}", root_dyn_view);
         VIEW_STORAGE.window_ids.write().insert(view_id, window_id);
-        VIEW_STORAGE.add_child(view_id, root_dyn_view);
+        window_id.views(root_dyn_view);
         window_id.bus_init_focus_manager_entry()?;
 
         bus::register_render(window_id, render);
