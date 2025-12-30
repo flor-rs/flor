@@ -35,3 +35,18 @@ macro_rules! views {
         ]
     };
 }
+
+pub trait IntoView {
+    fn into_view(self) -> Box<dyn View + Send + Sync + 'static>;
+    fn into_views(self) -> Vec<Box<dyn View + Send + Sync + 'static>>;
+}
+
+impl<T: View + Send + Sync + 'static> IntoView for T {
+    fn into_view(self) -> Box<dyn View + Send + Sync + 'static> {
+        Box::new(self) as Box<dyn View + Send + Sync + 'static>
+    }
+
+    fn into_views(self) -> Vec<Box<dyn View + Send + Sync + 'static>> {
+        vec![Box::new(self) as Box<dyn View + Send + Sync + 'static>]
+    }
+}
