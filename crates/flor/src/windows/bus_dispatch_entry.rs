@@ -38,7 +38,7 @@ pub trait WindowBusDispatchEntry {
     /// 系统主题变更 (深色/浅色)
     /// 参数 theme: 当前最新的主题模式
     #[cfg(feature = "theme-change")]
-    fn bus_theme_changed_entry(&mut self, theme: platform::base::ThemeMode);
+    fn bus_theme_changed_entry(&mut self, theme: ThemeMode);
 
     /// 工作区/显示器可用区域变更 (如任务栏移动、分辨率改变)
     /// 无参数：实现者应在收到此消息后，标记布局脏(Dirty)，并在 Layout 阶段主动查询当前显示器信息
@@ -276,7 +276,7 @@ impl WindowBusDispatchEntry for WindowId {
                             let render = render.deref_mut();
                             let mut view = dyn_view.write();
                             return view
-                                .measure(known_dimensions, available_space, style, render)
+                                .on_measure(known_dimensions, available_space, style, render)
                                 .unwrap_or(Size::ZERO);
                         }
                     }

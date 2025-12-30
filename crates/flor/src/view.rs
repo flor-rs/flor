@@ -244,7 +244,7 @@ pub trait View {
 
     /// 测量
     #[allow(unused_variables)]
-    fn measure(
+    fn on_measure(
         &mut self,
         known_dimensions: Size<Option<f32>>,
         available_space: Size<AvailableSpace>,
