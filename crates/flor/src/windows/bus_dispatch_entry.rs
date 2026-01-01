@@ -1,11 +1,12 @@
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
-use crate::view::style::layout::CalcTaffyStyle;
+use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::{collect_layout_children, View};
 use crate::windows::bus::{render, render_from_view_id};
 use crate::windows::entry::WindowEntryVisit;
+use atomic_float::{AtomicF32, AtomicF64};
 use flor_graphics_base::RenderContext;
 use flor_platform_base::MousePosition;
 #[cfg(feature = "theme-change")]
@@ -16,6 +17,8 @@ use flor_platform_base::{InputEvent, KeyCode, KeyState, WindowApi};
 use log::{trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use taffy::{AvailableSpace, Size, Style};
 
@@ -71,12 +74,20 @@ pub trait WindowBusDispatchEntry {
     // ---- 右键 (Right Button) ----
     fn bus_right_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
     fn bus_right_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_right_button_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_right_button_double_click_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    );
 
     // ---- 中键 (Middle Button) ----
     fn bus_middle_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
     fn bus_middle_button_up_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
-    fn bus_middle_button_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition);
+    fn bus_middle_button_double_click_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    );
 
     // 5. 键盘事件 (Keyboard Events)
     fn bus_key_down_entry(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool);
@@ -128,6 +139,9 @@ pub trait WindowBusDispatchEntry {
 
     /// 封装的WindowOperations
     fn request_redraw(&self);
+
+    fn update_child_layout_dpi(&self, dpi_x: f64, dpi_y: f64);
+    fn bus_setup_arc_data(&self, dpi_x: f64, dpi_y: f64, rem_px: f32);
 }
 
 impl WindowBusDispatchEntry for WindowId {
@@ -321,8 +335,7 @@ impl WindowBusDispatchEntry for WindowId {
     fn bus_wheel_scroll_lines_changed_entry(&mut self, lines: u32) {
         let view_id = self.view_id();
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-            view.write()
-                .call_wheel_scroll_lines_changed_entry(lines);
+            view.write().call_wheel_scroll_lines_changed_entry(lines);
         }
     }
 
@@ -344,8 +357,7 @@ impl WindowBusDispatchEntry for WindowId {
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {
         if let Some(view_id) = self.entry().map(|v| v.capture_view_id).flatten() {
             if let Some(view) = VIEW_STORAGE.views.write().get(view_id) {
-                view.write()
-                    .call_mouse_leave(key_state, mouse_position);
+                view.write().call_mouse_leave(key_state, mouse_position);
                 return;
             }
         }
@@ -392,9 +404,7 @@ impl WindowBusDispatchEntry for WindowId {
         // 条件：只要在窗口内，当前命中的这个 View 就要持续收到 Move
         // =========================================================
         if let Some(view_lock) = views.get(new_hovered_id) {
-            view_lock
-                .write()
-                .call_mouse_move(key_state, mouse_position);
+            view_lock.write().call_mouse_move(key_state, mouse_position);
         }
 
         // =========================================================
@@ -429,8 +439,7 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             self.entry_mut()
                 .map(|mut v| v.l_down_view_id = Some(view_id));
-            view.write()
-                .call_button_down(key_state, mouse_position);
+            view.write().call_button_down(key_state, mouse_position);
             self.request_redraw();
         }
     }
@@ -444,14 +453,12 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             if let Some(spawn_click) = self.entry().map(|v| v.l_down_view_id == Some(view_id)) {
                 if spawn_click {
-                    view.write()
-                        .call_click(key_state, mouse_position);
+                    view.write().call_click(key_state, mouse_position);
                     view_id.set_focus();
                 }
             }
 
-            view.write()
-                .call_button_up(key_state, mouse_position);
+            view.write().call_button_up(key_state, mouse_position);
         }
     }
 
@@ -462,8 +469,7 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-            view.write()
-                .call_double_click(key_state, mouse_position);
+            view.write().call_double_click(key_state, mouse_position);
         }
     }
 
@@ -496,12 +502,15 @@ impl WindowBusDispatchEntry for WindowId {
                         .call_right_button_click(key_state, mouse_position);
                 }
             }
-            view.write()
-                .call_right_button_up(key_state, mouse_position);
+            view.write().call_right_button_up(key_state, mouse_position);
         }
     }
 
-    fn bus_right_button_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_right_button_double_click_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -547,7 +556,11 @@ impl WindowBusDispatchEntry for WindowId {
         }
     }
 
-    fn bus_middle_button_double_click_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+    fn bus_middle_button_double_click_entry(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) {
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)
@@ -567,8 +580,7 @@ impl WindowBusDispatchEntry for WindowId {
             .and_then(|entry| entry.focus_manager.current_view_id())
         {
             if let Some(view) = views.get(view_id) {
-                view.write()
-                    .call_key_down(code, is_alt, is_ctrl, is_shift);
+                view.write().call_key_down(code, is_alt, is_ctrl, is_shift);
                 return;
             }
         }
@@ -588,8 +600,7 @@ impl WindowBusDispatchEntry for WindowId {
             .and_then(|entry| entry.focus_manager.current_view_id())
         {
             if let Some(view) = views.get(view_id) {
-                view.write()
-                    .call_key_up(code, is_alt, is_ctrl, is_shift);
+                view.write().call_key_up(code, is_alt, is_ctrl, is_shift);
                 return;
             }
         }
@@ -743,9 +754,7 @@ impl WindowBusDispatchEntry for WindowId {
 
         // 3. 投递 Drop
         if let Some(view) = VIEW_STORAGE.views.read().get(target_id) {
-            return view
-                .write()
-                .call_drop(key_state, mouse_position, data);
+            return view.write().call_drop(key_state, mouse_position, data);
         }
 
         DropEffect::None
@@ -754,5 +763,68 @@ impl WindowBusDispatchEntry for WindowId {
     fn request_redraw(&self) {
         flor_platform_base::WindowOperations::request_redraw(self)
             .warn_on_err("request_redraw fail");
+    }
+
+    fn update_child_layout_dpi(&self, dpi_x: f64, dpi_y: f64) {
+        let root_id = self.view_id();
+
+        // 一次性获取所有需要的锁
+        let state_map = VIEW_STORAGE.states.read();
+
+        // 检查根节点
+        if let Some(state_arc) = state_map.get(root_id) {
+            let state = state_arc.read();
+            if state.layout_style.dpi_x.load(Ordering::Relaxed) == dpi_x
+                && state.layout_style.dpi_y.load(Ordering::Relaxed) == dpi_y
+            {
+                return; // 提前返回，锁会自动释放
+            }
+        } else {
+            return; // 根节点不存在
+        }
+
+        let child_map = VIEW_STORAGE.child_ids.read();
+
+        // 需要更新，遍历所有节点
+        let mut stack = Vec::with_capacity(64);
+        stack.push(root_id);
+
+        while let Some(view_id) = stack.pop() {
+            if let Some(state_arc) = state_map.get(view_id) {
+                let mut state = state_arc.write();
+                state.layout_style.set_dpi(dpi_x, dpi_y);
+            }
+
+            if let Some(children) = child_map.get(view_id) {
+                stack.extend(children.iter().copied());
+            }
+        }
+    }
+
+    fn bus_setup_arc_data(&self, dpi_x: f64, dpi_y: f64, rem_px: f32) {
+        let root_id = self.view_id();
+        let dpi_x = Arc::new(AtomicF64::new(dpi_x));
+        let dpi_y = Arc::new(AtomicF64::new(dpi_y));
+        let rem_px = Arc::new(AtomicF32::new(rem_px));
+
+        let child_map = VIEW_STORAGE.child_ids.read();
+        let state_map = VIEW_STORAGE.states.read();
+
+        // 需要更新，遍历所有节点
+        let mut stack = Vec::with_capacity(64);
+        stack.push(root_id);
+
+        while let Some(view_id) = stack.pop() {
+            if let Some(state_arc) = state_map.get(view_id) {
+                let mut state = state_arc.write();
+                state.layout_style.dpi_x = dpi_x.clone();
+                state.layout_style.dpi_y = dpi_y.clone();
+                state.layout_style.rem_px = rem_px.clone();
+            }
+
+            if let Some(children) = child_map.get(view_id) {
+                stack.extend(children.iter().copied());
+            }
+        }
     }
 }

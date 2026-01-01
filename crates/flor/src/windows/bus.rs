@@ -182,6 +182,7 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
                 return Ok(HandleResult::Default);
             };
             render_lock.write().set_scale_factor(dpi_x, dpi_y)?;
+            window_id.update_child_layout_dpi(dpi_x, dpi_y);
             HandleResult::Handled
         }
         Message::WindowDestroy => {

@@ -1,8 +1,9 @@
+pub mod class;
 pub mod control_state;
 pub mod draw_state;
 pub mod focus_manager;
 pub mod handler;
-pub mod style;
+pub mod state_selector;
 pub mod view_builder;
 pub mod view_id;
 pub mod view_state;
@@ -14,7 +15,7 @@ use crate::min_wait_time::MinWaitTime;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRender, FlorRenderError, LoadRenderResource};
-use crate::view::style::layout::CalcTaffyStyle;
+use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render_from_view_id;
@@ -882,6 +883,11 @@ pub trait View {
     }
 
     fn on_child_dispose(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_update_class(&mut self, class_str: &[&str]) -> Result<(), Error> {
         Ok(())
     }
 }

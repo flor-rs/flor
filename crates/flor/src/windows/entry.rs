@@ -1,5 +1,6 @@
 use crate::view::focus_manager::FocusManager;
 use crate::view::view_id::ViewId;
+use atomic_float::AtomicF32;
 use dashmap::mapref::one::{Ref, RefMut};
 use dashmap::DashMap;
 use flor_graphics_base::Color;
@@ -7,6 +8,7 @@ use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use platform::WindowId;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
 use taffy::TaffyTree;
 
 /// 为window_id 和分配 view_id 建立映射
@@ -30,10 +32,16 @@ pub struct WindowEntry {
     pub capture_view_id: Option<ViewId>,
     pub current_drag_target: Option<ViewId>,
     pub background_color: Color,
+    pub rem_px: Arc<AtomicF32>,
 }
 
 impl WindowEntry {
-    pub fn new(window_id: WindowId, continuous_rendering: bool, background_color: Color) -> ViewId {
+    pub fn new(
+        window_id: WindowId,
+        continuous_rendering: bool,
+        background_color: Color,
+        rem_px: Arc<AtomicF32>,
+    ) -> ViewId {
         let view_id = ViewId::new();
 
         let window_entry = Self {
@@ -51,6 +59,7 @@ impl WindowEntry {
             capture_view_id: None,
             current_drag_target: None,
             background_color,
+            rem_px,
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id

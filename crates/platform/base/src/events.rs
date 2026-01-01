@@ -153,8 +153,8 @@ pub enum Message<'a> {
     WheelSettingsChanged(u32), // 滚轮行数改变 (携带新值)
     MouseLeave,
     DpiChange {
-        dpi_x: f32,
-        dpi_y: f32,
+        dpi_x: f64,
+        dpi_y: f64,
     },
     Cursor,
     #[cfg(feature = "drag-drop")]

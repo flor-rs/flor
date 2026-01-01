@@ -1,30 +1,52 @@
-use crate::view::style::layout::LayoutStateSelector;
-use crate::view::View;
+use crate::log_error::ResultLogExt;
+use crate::signal::effect::updater_effect::create_updater;
+use crate::view::state_selector::LayoutStateSelector;
 use crate::view::view_storage::VIEW_STORAGE;
+use crate::view::View;
 
 pub trait LayoutBuilder {
-    fn layout(self, style: impl Fn(LayoutStateSelector) -> LayoutStateSelector) -> Self;
+    // 增加 'static 约束，因为闭包需要被 move 进 updater 长期持有
+    fn layout<F>(self, style_fn: F) -> Self
+    where
+        F: Fn(LayoutStateSelector) -> LayoutStateSelector + 'static;
 }
 
 impl<T: View> LayoutBuilder for T {
-    fn layout(self, style: impl Fn(LayoutStateSelector) -> LayoutStateSelector) -> Self {
-        let states = VIEW_STORAGE
-            .states
-            .read();
+    fn layout<F>(self, style_fn: F) -> Self
+    where
+        F: Fn(LayoutStateSelector) -> LayoutStateSelector + 'static,
+    {
+        let view_id = self.view_id();
 
-        let style = {
-            let view_state = states
-                .get(self.view_id())
-                .expect(&format!("view[{}] not found ViewState",self.view_id()))
-                .read();
-            style(view_state.layout_style.clone())
-        };
+        // 2. 创建响应式更新器
+        create_updater(
+            move || {
+                let base_style = {
+                    let states = VIEW_STORAGE.states.read();
+                    let view_state = states
+                        .get(view_id)
+                        .expect(&format!("view[{}] not found ViewState", view_id))
+                        .read();
+                    view_state.layout_style.clone()
+                };
+                let current_base = base_style.clone();
+                (style_fn)(current_base)
+            },
+            move |new_style| {
+                let states = VIEW_STORAGE.states.read();
+                let mut view_state = states
+                    .get(view_id)
+                    .expect(&format!("view[{}] not found ViewState", view_id))
+                    .write();
 
-        let mut view_state = states
-            .get(self.view_id())
-            .expect(&format!("view[{}] not found ViewState",self.view_id()))
-            .write();
-        view_state.layout_style = style;
+                view_state.layout_style = new_style;
+
+                view_id
+                    .request_redraw()
+                    .error_on_err(format!("[{}] request_redraw fail", view_id));
+            },
+        );
+
         self
     }
 }

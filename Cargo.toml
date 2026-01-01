@@ -21,6 +21,7 @@ license = ""
 repository = ""
 
 [workspace.dependencies]
+atomic_float = "1.1.0"
 flor-macros = { version = "0.1.0", path = "crates/macros" }
 flor = { version = "0.1.0", path = "crates/flor" }
 flor-platform-base = { version = "0.1.0", path = "crates/platform/base" }

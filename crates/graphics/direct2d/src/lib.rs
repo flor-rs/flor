@@ -390,9 +390,9 @@ impl RenderContext for D2DRender {
         Ok(())
     }
 
-    fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
+    fn set_scale_factor(&mut self, dpi_x: f64, dpi_y: f64) -> Result<(), Self::Error> {
         unsafe {
-            self.current_render.SetDpi(dpi_x, dpi_y);
+            self.current_render.SetDpi(dpi_x as f32, dpi_y as f32);
             Ok(())
         }
     }

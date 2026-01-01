@@ -41,6 +41,7 @@ monitor = ["flor-platform-windows/monitor"]
 hi-dpi = ["flor-platform-windows/hi-dpi"]
 
 [dependencies]
+atomic_float = { workspace = true }
 log = { workspace = true }
 once_cell = { workspace = true }
 rustc-hash = { workspace = true }

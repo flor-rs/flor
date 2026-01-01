@@ -1,10 +1,20 @@
+mod layout;
+
+pub use layout::*;
+
 use crate::view::control_state::ControlState;
+use atomic_float::{AtomicF32, AtomicF64};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct StateSelector<K: Eq + Hash + Clone, V: Clone> {
+    pub dpi_x: Arc<AtomicF64>,
+    pub dpi_y: Arc<AtomicF64>,
+    pub rem_px: Arc<AtomicF32>,
     pub current_key: ControlState,
     pub styles: FxHashMap<ControlState, FxHashMap<K, V>>,
     pub dirty_style: FxHashSet<ControlState>,
@@ -13,6 +23,9 @@ pub struct StateSelector<K: Eq + Hash + Clone, V: Clone> {
 impl<K: Eq + Hash + Clone, V: Clone> Default for StateSelector<K, V> {
     fn default() -> Self {
         Self {
+            dpi_x: Arc::new(AtomicF64::new(96.)),
+            dpi_y: Arc::new(AtomicF64::new(96.)),
+            rem_px: Arc::new(AtomicF32::new(16.)),
             current_key: ControlState::Normal,
             styles: Default::default(),
             dirty_style: Default::default(),
@@ -101,5 +114,14 @@ impl<K: Eq + Hash + Clone, V: Clone> StateSelector<K, V> {
             }
         }
         Some(base_map)
+    }
+
+    pub fn set_dpi(&mut self, dpi_x: f64, dpi_y: f64) {
+        self.dpi_x.store(dpi_x, Ordering::Release);
+        self.dpi_y.store(dpi_y, Ordering::Release);
+    }
+
+    pub fn set_rem_px(&mut self, rem_px: f32) {
+        self.rem_px.store(rem_px, Ordering::Release);
     }
 }

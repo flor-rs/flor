@@ -2,9 +2,10 @@ use crate::error::Error;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
+use crate::view::class::ClassLoader;
 use crate::view::control_state::ControlState;
 use crate::view::draw_state::DrawState;
-use crate::view::style::layout::{CalcTaffyStyle, LayoutStateSelector};
+use crate::view::state_selector::{CalcTaffyStyle, LayoutStateSelector};
 use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
@@ -96,6 +97,13 @@ impl ViewId {
             view.write().on_update_state(state);
             let _ = self.request_redraw();
         }
+    }
+
+    pub fn update_class(self, class_str: String) {
+        let class_strs = class_str.split_whitespace().collect::<Vec<_>>();
+        let _ = self.with_state_mut(|state| {
+            state.layout_style.load_classes(class_strs.as_slice());
+        });
     }
 
     //     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,
