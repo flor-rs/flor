@@ -1,18 +1,23 @@
-use crate::Error;
+use crate::{Error, WindowId};
 use flor_platform_base::MonitorApi;
+use std::mem::size_of;
+use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, POINT, RECT};
-use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, HDC, HMONITOR, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST};
-use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
-use windows_core::BOOL;
+use windows::Win32::Graphics::Gdi::{
+    EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, HDC, HMONITOR,
+    MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
+};
 
 #[derive(Debug, Clone)]
 pub struct Monitor {
-    pub h_monitor: HMONITOR, // Win32 HMONITOR
-    pub name: String,        // 设备名 (如 \\.\DISPLAY1)
+    pub h_monitor: HMONITOR,
+    pub name: String,
     pub is_primary: bool,
-    pub rect: (f32, f32, u32, u32),      // 屏幕物理像素坐标
-    pub work_area: (f32, f32, u32, u32), // 除去任务栏的区域
-    pub scale_factor: f32,               // DPI 缩放
+    pub rect: (f32, f32, u32, u32),
+    pub work_area: (f32, f32, u32, u32),
+    pub scale_factor: f32,
+    pub dpi_x: u32,
+    pub dpi_y: u32,
 }
 
 unsafe impl Send for Monitor {}
@@ -21,12 +26,11 @@ unsafe impl Sync for Monitor {}
 impl MonitorApi for Monitor {
     type Monitor = Self;
     type Error = Error;
+    type WindowId = WindowId;
 
     fn enumerate_monitors() -> Result<Vec<Self::Monitor>, Self::Error> {
         let mut monitors: Vec<Monitor> = Vec::new();
-
         unsafe {
-            // 核心魔法：把 monitors 的裸指针传给回调函数
             let _ = EnumDisplayMonitors(
                 None,
                 None,
@@ -34,70 +38,71 @@ impl MonitorApi for Monitor {
                 LPARAM(&mut monitors as *mut _ as isize),
             );
         }
-
         Ok(monitors)
     }
 
     fn monitor_from_point(x: i32, y: i32) -> Result<Self::Monitor, Self::Error> {
         unsafe {
             let pt = POINT { x, y };
-            // 1. 直接拿句柄
             let h_monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-
-            // 2. 复用逻辑：直接调用辅助函数
-            // 如果获取失败（极少见），返回系统错误
             Monitor::from_handle(h_monitor)
-                .ok_or_else(|| Error::from(Error::from_win32()))
+                .ok_or_else(|| Error::from(windows::core::Error::from_win32()))
+        }
+    }
+
+    fn monitor_from_window_id(window_id: WindowId) -> Result<Self::Monitor, Self::Error> {
+        unsafe {
+            let hwnd = window_id.hwnd();
+            let h_monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            Monitor::from_handle(h_monitor)
+                .ok_or_else(|| Error::from(windows::core::Error::from_win32()))
         }
     }
 
     fn name(&self) -> &str {
         &self.name
     }
-
     fn is_primary(&self) -> bool {
         self.is_primary
     }
-
     fn scale_factor(&self) -> f32 {
         self.scale_factor
     }
-
     fn rect(&self) -> (f32, f32, u32, u32) {
         self.rect
     }
-
     fn work_area(&self) -> (f32, f32, u32, u32) {
         self.work_area
     }
-
+    fn dpi_x(&self) -> f64 {
+        self.dpi_x as f64
+    }
+    fn dpi_y(&self) -> f64 {
+        self.dpi_y as f64
+    }
     fn inner(self) -> Self::Monitor {
         self
     }
 }
 
 impl Monitor {
-    // 【新增】私有辅助函数：封装通用的解析逻辑
-    // 无论是遍历还是单点查询，最后都调用它
     unsafe fn from_handle(h_monitor: HMONITOR) -> Option<Self> {
         let mut info = MONITORINFOEXW::default();
         info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
 
-        // 获取信息失败直接返回 None
         if !GetMonitorInfoW(h_monitor, &mut info.monitorInfo as *mut _ as *mut _).as_bool() {
             return None;
         }
 
         let rc = info.monitorInfo.rcMonitor;
         let work = info.monitorInfo.rcWork;
-        let name = String::from_utf16_lossy(
-            &info.szDevice.split(|&c| c == 0).next().unwrap_or(&[])
-        );
+        let name =
+            String::from_utf16_lossy(&info.szDevice.split(|&c| c == 0).next().unwrap_or(&[]));
         let is_primary = (info.monitorInfo.dwFlags & 1) != 0;
 
-        let mut dpi_x = 0;
-        let mut dpi_y = 0;
-        let _ = GetDpiForMonitor(h_monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+        // 核心修改：使用封装的兼容性函数获取 DPI
+        let (dpi_x, dpi_y) = get_monitor_dpi(h_monitor);
+
         let scale = if dpi_x > 0 { dpi_x as f32 / 96.0 } else { 1.0 };
 
         Some(Self {
@@ -117,6 +122,8 @@ impl Monitor {
                 (work.bottom - work.top) as u32,
             ),
             scale_factor: scale,
+            dpi_x,
+            dpi_y,
         })
     }
 }
@@ -127,14 +134,31 @@ unsafe extern "system" fn monitor_enum_proc(
     _rect: *mut RECT,
     lparam: LPARAM,
 ) -> BOOL {
-    // 1. 把 lparam 还原回 Vec 指针
     let monitors = &mut *(lparam.0 as *mut Vec<Monitor>);
-
-    // 复用逻辑：调用辅助函数，成功则 push
     if let Some(m) = Monitor::from_handle(h_monitor) {
         monitors.push(m);
     }
-
-    // 返回 TRUE 继续枚举下一个屏幕
     BOOL(1)
+}
+
+unsafe fn get_monitor_dpi(h_monitor: HMONITOR) -> (u32, u32) {
+    // [方案 1] 现代高性能路径 (Win8.1 / Win10 / Win11)
+    // 直接静态链接，速度最快
+    #[cfg(not(feature = "win7-compat"))]
+    {
+        use windows::Win32::UI::HiDpi::GetDpiForMonitor;
+        use windows::Win32::UI::HiDpi::MDT_EFFECTIVE_DPI;
+
+        let mut x = 96;
+        let mut y = 96;
+        // 如果失败保持默认 96
+        let _ = GetDpiForMonitor(h_monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y);
+        (x, y)
+    }
+
+    // [方案 2] Win7 兼容路径 (Dynamic Loading + GDI Fallback)
+    #[cfg(feature = "win7-compat")]
+    {
+        crate::win7_compat::get_monitor_dpi(h_monitor)
+    }
 }

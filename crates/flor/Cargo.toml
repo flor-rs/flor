@@ -37,6 +37,8 @@ drag-drop = ["flor-platform-windows/drag-drop"]
 tray = ["flor-platform-windows/tray"]
 
 memory-font = ["flor-graphics-direct2d?/memory-font"]
+monitor = ["flor-platform-windows/monitor"]
+hi-dpi = ["flor-platform-windows/hi-dpi"]
 
 [dependencies]
 log = { workspace = true }

@@ -147,6 +147,32 @@ impl WindowApi for WindowId {
         todo!()
     }
 
+    fn get_dpi(&self) -> Result<(f64, f64), Self::Error> {
+        #[cfg(not(feature = "monitor"))]
+        unsafe {
+            #[cfg(feature = "win7-compat")]
+            {
+                let dpi = crate::win7_compat::get_dpi_compatible(self.hwnd()) as f64;
+                Ok((dpi, dpi))
+            }
+            #[cfg(not(feature = "win7-compat"))]
+            {
+                use windows::Win32::UI::HiDpi::GetDpiForWindow;
+                let dpi = GetDpiForWindow(self.hwnd());
+                let val = if dpi == 0 { 96.0 } else { dpi as f64 };
+                Ok((val, val))
+            }
+        }
+        #[cfg(feature = "monitor")]
+        {
+            use crate::base::MonitorApi;
+            use crate::Monitor;
+            // 原理是 MonitorFromWindow
+            let monitor = Monitor::monitor_from_window_id(*self)?;
+            Ok((monitor.dpi_x(), monitor.dpi_y()))
+        }
+    }
+
     // --- 位置 Getters ---
 
     #[inline]

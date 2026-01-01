@@ -15,10 +15,11 @@ categories.workspace = true
 
 [features]
 theme-change = ["windows/Win32_System_Registry", "flor-platform-base/theme-change"]
-monitor = ["windows/Win32_UI_HiDpi", "flor-platform-base/monitor"]
+monitor = ["flor-platform-base/monitor"]
 drag-drop = ["rustc-hash", "windows/Win32_System_DataExchange", "windows/Win32_System_Memory", "windows/Win32_UI", "windows/Win32_UI_Shell", "flor-platform-base/drag-drop"]
 tray = ["flor-platform-base/tray", "slotmap", "windows/Win32_UI_Shell", "windows/Win32_UI_WindowsAndMessaging"]
-
+hi-dpi = []
+win7-compat = ["windows/Win32_System_LibraryLoader"]
 [dependencies]
 once_cell = { workspace = true }
 rustc-hash = { workspace = true, optional = true }
@@ -26,7 +27,7 @@ log = { workspace = true }
 flor-platform-base = { workspace = true }
 windows-core = { workspace = true }
 windows = { workspace = true, features = [
-    "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_Ime",
+    "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_Ime", "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemServices", "Win32_System_Com", "Win32_System_Ole", "System_Implementation", "Win32_System_Com_StructuredStorage"
 ] }
 parking_lot = "0.12"

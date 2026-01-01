@@ -15,6 +15,8 @@ mod monitor;
 mod proc_handler;
 #[cfg(feature = "tray")]
 mod tray;
+#[cfg(feature = "win7-compat")]
+pub(crate) mod win7_compat;
 mod window;
 mod window_id;
 mod window_proc;
@@ -56,6 +58,16 @@ pub fn init() -> Result<(), Error> {
     unsafe {
         use windows::Win32::System::Ole::OleInitialize;
         OleInitialize(None)?;
+    }
+    #[cfg(feature = "hi-dpi")]
+    unsafe {
+        #[cfg(not(feature = "win7-compat"))]
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)?;
+        #[cfg(feature = "win7-compat")]
+        {
+            use windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware;
+            SetProcessDPIAware();
+        }
     }
     Ok(())
 }

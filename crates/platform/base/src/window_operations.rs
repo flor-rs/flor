@@ -39,6 +39,7 @@ pub trait WindowApi {
     /// 获取 DPI 缩放因子
     /// 返回 1.0 (标准), 1.25 (125%), 2.0 (Retina) 等
     fn get_scale_factor(&self) -> Result<f32, Self::Error>;
+    fn get_dpi(&self) -> Result<(f64, f64), Self::Error>;
 
     // --- 位置 (Position) - i32 ---
     // 允许负数，支持多显示器负坐标
