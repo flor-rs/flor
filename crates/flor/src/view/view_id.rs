@@ -4,7 +4,6 @@ use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
 use crate::view::class::ClassLoader;
 use crate::view::control_state::ControlState;
-use crate::view::draw_state::DrawState;
 use crate::view::state_selector::{CalcTaffyStyle, LayoutStateSelector};
 use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
@@ -149,6 +148,10 @@ impl ViewId {
         false
     }
 
+    pub fn is_active(self) -> bool {
+        VIEW_STORAGE.pressed.read().get(self).is_some()
+    }
+
     fn is_disabled(self) -> bool {
         let state_map = VIEW_STORAGE.states.read();
         let state = state_map
@@ -159,27 +162,18 @@ impl ViewId {
         state
     }
 
-    pub fn draw_state(self) -> DrawState {
+    /// 有的控件部分地区需要不同的检测，提供一个语法糖方法
+    pub fn control_state_with_pressed(self, pressed: bool) -> ControlState {
         if self.is_disabled() {
-            return DrawState::Disabled;
-        }
-        if self.is_hover() {
-            return DrawState::Hover;
-        }
-        DrawState::Normal
-    }
-
-    pub fn draw_state_and_pressed(self, pressed: bool) -> DrawState {
-        if self.is_disabled() {
-            return DrawState::Disabled;
+            return ControlState::Disable;
         }
         if pressed {
-            return DrawState::Pressed;
+            return ControlState::Active;
         }
         if self.is_hover() {
-            return DrawState::Hover;
+            return ControlState::Hover;
         }
-        DrawState::Normal
+        ControlState::Normal
     }
 
     pub fn control_state(self) -> ControlState {
@@ -189,8 +183,9 @@ impl ViewId {
         if self.is_hover() {
             return ControlState::Hover;
         }
-        // todo
-        // ControlState::Active
+        if self.is_active() {
+            return ControlState::Active
+        }
         if self.is_hover() {
             return ControlState::Hover;
         }

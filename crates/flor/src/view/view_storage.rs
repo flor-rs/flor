@@ -34,6 +34,7 @@ pub struct ViewStorage {
     pub z_index_sort: RwLock<FxHashMap<WindowId, Vec<ViewId>>>,
     pub focus_index: RwLock<SecondaryMap<ViewId, u32>>,
     pub focus_scope: RwLock<SecondaryMap<ViewId, u32>>,
+    pub pressed: RwLock<SecondaryMap<ViewId, ()>>,
 }
 
 impl ViewStorage {
@@ -49,6 +50,7 @@ impl ViewStorage {
             z_index_sort: Default::default(),
             focus_index: Default::default(),
             focus_scope: Default::default(),
+            pressed: Default::default(),
         }
     }
 

@@ -439,6 +439,7 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             self.entry_mut()
                 .map(|mut v| v.l_down_view_id = Some(view_id));
+            VIEW_STORAGE.pressed.write().insert(view_id, ());
             view.write().call_button_down(key_state, mouse_position);
             self.request_redraw();
         }
@@ -451,13 +452,14 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            // 合成事件，点击
             if let Some(spawn_click) = self.entry().map(|v| v.l_down_view_id == Some(view_id)) {
                 if spawn_click {
                     view.write().call_click(key_state, mouse_position);
                     view_id.set_focus();
                 }
             }
-
+            VIEW_STORAGE.pressed.write().remove(view_id);
             view.write().call_button_up(key_state, mouse_position);
         }
     }
