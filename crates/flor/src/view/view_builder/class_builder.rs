@@ -1,36 +1,8 @@
 use crate::signal::effect::updater_effect::create_updater;
 use crate::view::View;
 
-/// 定义统一的属性行为接口
-pub trait ClassProp: 'static {
-    fn make(&self) -> String;
-}
-
-// 1. 实现文本类型：String
-// 在响应式系统中，它充当一个返回固定值的“常量闭包”
-impl ClassProp for String {
-    fn make(&self) -> String {
-        self.clone()
-    }
-}
-
-// 2. 实现静态字符串切片：&'static str
-impl ClassProp for &'static str {
-    fn make(&self) -> String {
-        self.to_string()
-    }
-}
-
-// 3. 实现闭包/函数：Fn() -> String
-// 这是真正的动态计算，会触发响应式依赖收集
-impl<F> ClassProp for F
-where
-    F: Fn() -> String + 'static,
-{
-    fn make(&self) -> String {
-        (self)()
-    }
-}
+// 使用 define_prop! 宏生成 ClassProp trait
+crate::define_prop!(clone ClassProp, String, extra: &'static str => |s: &str| s.to_string());
 
 // 定义 Builder Trait
 // T 根据你的上下文可能是 PhantomData 或其他标识，此处保留泛型位
