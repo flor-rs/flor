@@ -1,5 +1,7 @@
+mod decoration;
 mod layout;
 
+pub use decoration::*;
 pub use layout::*;
 
 use crate::view::control_state::ControlState;
