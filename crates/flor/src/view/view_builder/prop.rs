@@ -124,3 +124,36 @@ macro_rules! define_prop {
         }
     };
 }
+
+// ============================================================================
+// 预定义的 std 类型 Prop Traits
+// ============================================================================
+
+// 布尔类型
+define_prop!(copy BoolProp, bool);
+
+// 有符号整数
+define_prop!(copy I8Prop, i8);
+define_prop!(copy I16Prop, i16);
+define_prop!(copy I32Prop, i32);
+define_prop!(copy I64Prop, i64);
+define_prop!(copy I128Prop, i128);
+define_prop!(copy IsizeProp, isize);
+
+// 无符号整数
+define_prop!(copy U8Prop, u8);
+define_prop!(copy U16Prop, u16);
+define_prop!(copy U32Prop, u32);
+define_prop!(copy U64Prop, u64);
+define_prop!(copy U128Prop, u128);
+define_prop!(copy UsizeProp, usize);
+
+// 浮点数
+define_prop!(copy F32Prop, f32);
+define_prop!(copy F64Prop, f64);
+
+// 字符
+define_prop!(copy CharProp, char);
+
+// 字符串
+define_prop!(clone StringProp, String, extra: &'static str => |s: &str| s.to_string());
