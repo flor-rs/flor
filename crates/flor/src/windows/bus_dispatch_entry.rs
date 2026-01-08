@@ -302,7 +302,7 @@ impl WindowBusDispatchEntry for WindowId {
         {
             trace!("bus_update_layout begin");
             if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-                view.write().bus_update_layout(layout_tree)?;
+                view.write().bus_update_layout(layout_tree, (0.0, 0.0))?;
             }
             trace!("bus_update_layout end");
         }

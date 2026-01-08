@@ -246,28 +246,10 @@ impl ViewId {
         false
     }
 
+    /// 获取控件的绝对位置（相对于窗口左上角）
+    /// 该值在 bus_update_layout 时计算并缓存
     pub fn abs_location(&self) -> Result<(f32, f32), Error> {
-        // 1. 先获取自己相对于父级的偏移量
-        let my_layout = self.layout()?;
-        let mut x = my_layout.location.x;
-        let mut y = my_layout.location.y;
-
-        // 2. 获取父节点，准备开始向上遍历
-        let mut current_node = self.parent_view_id();
-
-        // 3. 循环向上爬树
-        while let Some(node_id) = current_node {
-            let parent_layout = node_id.layout()?;
-
-            // 累加父节点的相对位置
-            x += parent_layout.location.x;
-            y += parent_layout.location.y;
-
-            // ⚠️ 关键点：将当前节点更新为父节点的父节点 (继续向上爬)
-            current_node = node_id.parent_view_id();
-        }
-
-        Ok((x, y))
+        self.with_state(|state| state.abs_location)
     }
 
     pub fn request_redraw(self) -> Result<(), Error> {

@@ -98,21 +98,34 @@ pub trait View {
     }
 
     /// 更新布局
-    fn bus_update_layout(&mut self, taffy: &mut TaffyTree<ViewId>) -> Result<(), Error> {
+    fn bus_update_layout(&mut self, taffy: &mut TaffyTree<ViewId>, parent_abs_location: (f32, f32)) -> Result<(), Error> {
         let view_id = self.view_id();
+
+        // 计算当前控件的绝对位置
+        let current_abs_location: (f32, f32);
+        
         // 自身处理
         if let Some(state) = VIEW_STORAGE.states.read().get(view_id) {
             let mut state = state.write();
             if let Some(node_id) = state.node_id {
-                state.layout = *taffy.layout(node_id)?; // 这行报错
+                state.layout = *taffy.layout(node_id)?;
             }
+            // 计算绝对位置 = 父级绝对位置 + 自身相对位置
+            current_abs_location = (
+                parent_abs_location.0 + state.layout.location.x,
+                parent_abs_location.1 + state.layout.location.y,
+            );
+            state.abs_location = current_abs_location;
+        } else {
+            current_abs_location = parent_abs_location;
         }
+
         // 子节点处理
         let views = VIEW_STORAGE.views.read();
         if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(view_id) {
             for view_id in child_view_ids {
                 if let Some(view) = views.get(*view_id) {
-                    view.write().bus_update_layout(taffy)?;
+                    view.write().bus_update_layout(taffy, current_abs_location)?;
                 }
             }
         }
@@ -189,22 +202,28 @@ pub trait View {
 
     #[allow(unused_variables)]
     fn on_hit_test(&self, mouse_position: MousePosition, key_state: KeyState) -> bool {
-        let Ok(layout) = self.view_id().layout() else {
+        let view_id = self.view_id();
+
+        // 获取控件的布局信息和绝对位置
+        let Ok((abs_x, abs_y, w, h)) = view_id.with_state(|state| {
+            (
+                state.abs_location.0,
+                state.abs_location.1,
+                state.layout.size.width,
+                state.layout.size.height,
+            )
+        }) else {
             return false;
         };
-        // 当前控件布局
-        let x = layout.location.x;
-        let y = layout.location.y;
-        let w = layout.size.width;
-        let h = layout.size.height;
 
         // 鼠标位置
         let mx = mouse_position.x as f32;
         let my = mouse_position.y as f32;
 
-        // 鼠标在不在范围内
-        mx >= x && mx < x + w && my >= y && my < y + h
+        // 鼠标在不在范围内（使用绝对位置）
+        mx >= abs_x && mx < abs_x + w && my >= abs_y && my < abs_y + h
     }
+
 
     fn on_create(&mut self) -> Result<(), Error> {
         Ok(())
