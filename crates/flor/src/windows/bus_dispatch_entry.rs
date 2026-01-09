@@ -1,3 +1,5 @@
+mod draw_entry;
+
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::view::state_selector::CalcTaffyStyle;
@@ -5,6 +7,7 @@ use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::{collect_layout_children, View};
 use crate::windows::bus::{render, render_from_view_id};
+use crate::windows::bus_dispatch_entry::draw_entry::draw_entry;
 use crate::windows::entry::WindowEntryVisit;
 use atomic_float::{AtomicF32, AtomicF64};
 use flor_graphics_base::RenderContext;
@@ -321,12 +324,7 @@ impl WindowBusDispatchEntry for WindowId {
         };
         let mut render = render.write();
         render.begin().error_on_err("fail begin render");
-        let view_id = self.view_id();
-        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-            view.write()
-                .bus_draw(&mut render, (0f32, 0f32))
-                .error_on_err(format!("draw({:?}) error", view_id));
-        }
+        draw_entry(self.view_id(), render.deref_mut())?;
         render.end().error_on_err("fail end render");
         Ok(())
     }

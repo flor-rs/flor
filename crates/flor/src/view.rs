@@ -275,6 +275,15 @@ pub trait View {
     ) -> Result<(), Error> {
         Ok(())
     }
+    #[allow(unused_variables)]
+    fn on_draw_overlay(
+        &mut self,
+        render: &mut FlorRender,
+        abs_location: (f32, f32),
+        layout: Layout,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 
     /// 测量
     #[allow(unused_variables)]
