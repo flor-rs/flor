@@ -8,12 +8,12 @@ use crate::windows::bus::{render, render_from_view_id};
 use crate::windows::entry::WindowEntryVisit;
 use atomic_float::{AtomicF32, AtomicF64};
 use flor_graphics_base::RenderContext;
-use flor_platform_base::MousePosition;
 #[cfg(feature = "theme-change")]
 use flor_platform_base::ThemeMode;
 #[cfg(feature = "drag-drop")]
 use flor_platform_base::{DragData, DragFormat, DropEffect};
 use flor_platform_base::{InputEvent, KeyCode, KeyState, WindowApi};
+use flor_platform_base::{MousePosition, ScrollAxis};
 use log::{trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
@@ -48,8 +48,13 @@ pub trait WindowBusDispatchEntry {
     fn bus_work_area_changed_entry(&mut self);
 
     /// 鼠标滚轮设置变更
-    /// 参数 lines: 系统设置的一次滚动行数 (Windows 默认为 3)
-    fn bus_wheel_scroll_lines_changed_entry(&mut self, lines: u32);
+    fn bus_wheel_scroll_lines_changed_entry(
+        &mut self,
+        axis: ScrollAxis,
+        delta: f32,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    );
 
     // 3. 命中测试 (Hit Testing)
     /// 交互事件的前置条件，确定事件归属
@@ -332,10 +337,16 @@ impl WindowBusDispatchEntry for WindowId {
 
     fn bus_work_area_changed_entry(&mut self) {}
 
-    fn bus_wheel_scroll_lines_changed_entry(&mut self, lines: u32) {
+    fn bus_wheel_scroll_lines_changed_entry(
+        &mut self,
+        axis: ScrollAxis,
+        delta: f32,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) {
         let view_id = self.view_id();
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-            view.write().call_wheel_scroll_lines_changed_entry(lines);
+            view.write().call_wheel_scroll_lines_changed(axis, delta, key_state, mouse_position);
         }
     }
 

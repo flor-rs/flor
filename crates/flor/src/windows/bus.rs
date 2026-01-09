@@ -271,6 +271,10 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
             *effect = window_id.bus_drop_entry(key_state, mouse_position, &data);
             HandleResult::Handled
         }
+        Message::MouseWheel { axis, delta, key_state, mouse_position } => {
+            window_id.bus_wheel_scroll_lines_changed_entry(axis, delta, key_state, mouse_position);
+            HandleResult::Handled
+        }
         _ => HandleResult::Default,
     };
     Ok(handle_result)

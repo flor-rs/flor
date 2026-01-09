@@ -1,5 +1,6 @@
 use crate::view::handler::Handler;
 use crate::view::view_id::ViewId;
+use flor_platform_base::{KeyState, MousePosition, ScrollAxis};
 use std::sync::Arc;
 
 pub type OnResizeHandler = Handler;
@@ -7,11 +8,13 @@ pub type OnCloseRequestedHandler = Handler;
 pub type OnWorkAreaChangedHandler = Handler;
 
 #[derive(Clone)]
-pub struct OnWheelSettingsChangedHandler(pub Arc<dyn Fn(ViewId, u32) + Send + Sync + 'static>);
+pub struct OnWheelSettingsChangedHandler(
+    pub Arc<dyn Fn(ViewId, ScrollAxis, f32, KeyState, MousePosition) + Send + Sync + 'static>,
+);
 
 impl<F> From<F> for OnWheelSettingsChangedHandler
 where
-    F: Fn(ViewId, u32) + Send + Sync + 'static,
+    F: Fn(ViewId, ScrollAxis, f32, KeyState, MousePosition) + Send + Sync + 'static,
 {
     fn from(f: F) -> Self {
         OnWheelSettingsChangedHandler(Arc::new(f))
@@ -29,4 +32,3 @@ where
         OnDpiChangeHandler(Arc::new(f))
     }
 }
-

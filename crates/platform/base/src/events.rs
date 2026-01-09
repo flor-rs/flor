@@ -63,7 +63,7 @@ pub enum InputEvent {
     /// 同样无堆分配。
     Control(char),
 }
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ThemeMode {
     Light,
     Dark,
@@ -76,6 +76,11 @@ pub enum DragData {
     Image(Vec<u8>),
     // 尚未读取的原始句柄（用于延迟读取）
     Raw(Box<dyn Any>),
+}
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ScrollAxis {
+    Vertical,
+    Horizontal,
 }
 #[derive(Debug)]
 pub enum Message<'a> {
@@ -146,6 +151,12 @@ pub enum Message<'a> {
         is_alt: bool,
         is_ctrl: bool,
         is_shift: bool,
+    },
+    MouseWheel {
+        axis: ScrollAxis,
+        delta: f32,
+        key_state: KeyState,
+        mouse_position: MousePosition,
     },
     #[cfg(feature = "theme-change")]
     ThemeChanged(ThemeMode), // 需要重新检测深色模式

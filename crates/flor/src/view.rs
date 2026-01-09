@@ -21,8 +21,8 @@ use crate::windows::bus::render_from_view_id;
 use flor_graphics_base::RenderContext;
 #[cfg(feature = "drag-drop")]
 use flor_platform_base::{DragData, DragFormat, DropEffect};
-use flor_platform_base::{InputEvent, KeyCode, KeyState, MousePosition};
-use log::trace;
+use flor_platform_base::{InputEvent, KeyCode, KeyState, MousePosition, ScrollAxis};
+use log::{debug, trace};
 use std::any::Any;
 use std::time::{Duration, Instant};
 use taffy::{AvailableSpace, Display, Layout, NodeId, Size, Style, TaffyTree};
@@ -98,12 +98,16 @@ pub trait View {
     }
 
     /// 更新布局
-    fn bus_update_layout(&mut self, taffy: &mut TaffyTree<ViewId>, parent_abs_location: (f32, f32)) -> Result<(), Error> {
+    fn bus_update_layout(
+        &mut self,
+        taffy: &mut TaffyTree<ViewId>,
+        parent_abs_location: (f32, f32),
+    ) -> Result<(), Error> {
         let view_id = self.view_id();
 
         // 计算当前控件的绝对位置
         let current_abs_location: (f32, f32);
-        
+
         // 自身处理
         if let Some(state) = VIEW_STORAGE.states.read().get(view_id) {
             let mut state = state.write();
@@ -125,7 +129,8 @@ pub trait View {
         if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(view_id) {
             for view_id in child_view_ids {
                 if let Some(view) = views.get(*view_id) {
-                    view.write().bus_update_layout(taffy, current_abs_location)?;
+                    view.write()
+                        .bus_update_layout(taffy, current_abs_location)?;
                 }
             }
         }
@@ -182,18 +187,24 @@ pub trait View {
         Ok(())
     }
 
-    fn bus_wheel_scroll_lines_changed_entry(&mut self, lines: u32) -> Result<(), Error> {
+    fn bus_wheel_scroll_lines_changed(
+        &mut self,
+        axis: ScrollAxis,
+        delta: f32,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
         let view_id = self.view_id();
-        self.on_wheel_scroll_lines_changed_entry(lines)
+        self.on_wheel_scroll_lines_changed(axis, delta, key_state, mouse_position)
             .error_on_err(format!(
-                "on_wheel_scroll_lines_changed_entry {{ view_id: {} }}",
+                "on_wheel_scroll_lines_changed {{ view_id: {} }}",
                 view_id
             ));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
-                .bus_wheel_scroll_lines_changed_entry(lines)
+                .bus_wheel_scroll_lines_changed(axis, delta, key_state, mouse_position)
                 .error_on_err(format!(
-                    "on_wheel_scroll_lines_changed_entry {{ view_id: {} }}",
+                    "on_wheel_scroll_lines_changed {{ view_id: {} }}",
                     view_id
                 ));
         }
@@ -220,10 +231,14 @@ pub trait View {
         let mx = mouse_position.x as f32;
         let my = mouse_position.y as f32;
 
+        debug!(
+            "[view({})] on_hit_test: abs_x: {}, abs_y: {}, w: {}, h: {}, mx: {}, my: {}",
+            view_id, abs_x, abs_y, w, h, mx, my
+        );
+
         // 鼠标在不在范围内（使用绝对位置）
         mx >= abs_x && mx < abs_x + w && my >= abs_y && my < abs_y + h
     }
-
 
     fn on_create(&mut self) -> Result<(), Error> {
         Ok(())
@@ -876,14 +891,26 @@ pub trait View {
     }
 
     #[allow(unused_variables)]
-    fn on_wheel_scroll_lines_changed_entry(&mut self, lines: u32) -> Result<(), Error> {
+    fn on_wheel_scroll_lines_changed(
+        &mut self,
+        axis: ScrollAxis,
+        delta: f32,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
         Ok(())
     }
 
-    fn call_wheel_scroll_lines_changed_entry(&mut self, lines: u32) {
-        self.on_wheel_scroll_lines_changed_entry(lines)
+    fn call_wheel_scroll_lines_changed(
+        &mut self,
+        axis: ScrollAxis,
+        delta: f32,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) {
+        self.on_wheel_scroll_lines_changed(axis, delta, key_state, mouse_position)
             .error_on_err(format!(
-                "on_wheel_scroll_lines_changed_entry {{ view_id: {} }}",
+                "on_wheel_scroll_lines_changed {{ view_id: {} }}",
                 self.view_id()
             ));
         let handler = VIEW_STORAGE
@@ -892,7 +919,7 @@ pub trait View {
             .get(self.view_id())
             .and_then(|h| h.read().on_wheel_settings_changed_handler.clone());
         if let Some(h) = handler {
-            h.0(self.view_id(), lines);
+            h.0(self.view_id(), axis, delta, key_state, mouse_position);
         }
     }
 
