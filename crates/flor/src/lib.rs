@@ -130,7 +130,7 @@ impl FlorGui {
                     re_layout_window_ids.push(window_id);
                 }
                 if !entry.continuous_rendering {
-                    entry.fps.store(0, Ordering::Release);
+                    entry.fps.store(-1, Ordering::Release);
                     continue;
                 } else {
                     entry.fps.store(last_frame_count, Ordering::Release);

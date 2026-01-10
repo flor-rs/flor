@@ -35,8 +35,14 @@ impl View for WindowId {
         let mut text_format = render.create_text_format("")?;
 
         let fps = match self.entry().map(|e| e.fps.load(Ordering::Acquire)) {
-            None => "None".into(),
-            Some(fps) => fps.to_string(),
+            None => "-".to_string(),
+            Some(fps) => {
+                if fps < 0 {
+                    "-".to_string()
+                } else {
+                    fps.to_string()
+                }
+            }
         };
 
         // 1. 定义 FPS 文本区域的大小和边距

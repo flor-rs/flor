@@ -7,7 +7,7 @@ use flor_graphics_base::Color;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use platform::WindowId;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
 use taffy::TaffyTree;
 
@@ -23,7 +23,7 @@ pub struct WindowEntry {
     pub hover_id: Option<ViewId>,
     pub focus_manager: FocusManager,
     pub continuous_rendering: bool,
-    pub fps: AtomicU32,
+    pub fps: AtomicI32,
     pub show_fps: bool,
     pub layout_dirty: AtomicBool,
     pub l_down_view_id: Option<ViewId>,
@@ -50,7 +50,7 @@ impl WindowEntry {
             hover_id: None,
             focus_manager: Default::default(),
             continuous_rendering,
-            fps: AtomicU32::new(0),
+            fps: AtomicI32::new(-1),
             show_fps: false,
             layout_dirty: AtomicBool::new(false),
             l_down_view_id: None,
