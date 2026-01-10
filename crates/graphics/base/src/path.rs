@@ -117,6 +117,52 @@ impl Path {
             .line_to(x, y + height) // 4. 画线到左下角
             .close() // 5. 闭合路径 (自动连回左上角)
     }
+
+    /// 计算 Path 的 AABB 包围盒
+    /// 返回元组: (x, y, width, height)
+    /// 复杂度: O(N) - 极快
+    pub fn get_bounds(&self) -> (f32, f32, f32, f32) {
+        // 快速路径：空路径
+        if self.commands.is_empty() {
+            return (0.0, 0.0, 0.0, 0.0);
+        }
+
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+
+        // 遍历所有命令
+        for cmd in &self.commands {
+            match cmd {
+                PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) => {
+                    // 内联的比较逻辑，编译器会优化
+                    if *x < min_x { min_x = *x; }
+                    if *x > max_x { max_x = *x; }
+                    if *y < min_y { min_y = *y; }
+                    if *y > max_y { max_y = *y; }
+                }
+                PathCommand::Bezier(points) => {
+                    // 关键：直接遍历所有控制点和终点
+                    // 这是一个“松包围盒”（Loose Bounds），但对于剔除来说是安全且正确的
+                    for (x, y) in points {
+                        if *x < min_x { min_x = *x; }
+                        if *x > max_x { max_x = *x; }
+                        if *y < min_y { min_y = *y; }
+                        if *y > max_y { max_y = *y; }
+                    }
+                }
+                PathCommand::Close => {}
+            }
+        }
+
+        // 防御性编程：如果所有点都无效
+        if min_x == f32::MAX {
+            return (0.0, 0.0, 0.0, 0.0);
+        }
+
+        (min_x, min_y, max_x - min_x, max_y - min_y)
+    }
 }
 
 #[cfg(test)]
