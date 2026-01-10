@@ -952,19 +952,23 @@ pub trait View {
         match self.on_visual_overflow() {
             VisualOverflow::None => (abs_x, abs_y, w, h),
             // 统一扩散：x,y 减去 v，宽高各增加 2*v
-            VisualOverflow::Uniform(v) => (
-                abs_x - v,
-                abs_y - v,
-                w + v * 2.0,
-                h + v * 2.0
-            ),
+            VisualOverflow::Uniform(v) => (abs_x - v, abs_y - v, w + v * 2.0, h + v * 2.0),
             // 自定义扩散：x减左，y减上，宽加左右，高加上下
-            VisualOverflow::Custom { left, top, right, bottom } => (
+            VisualOverflow::Custom {
+                left,
+                top,
+                right,
+                bottom,
+            } => (
                 abs_x - left,
                 abs_y - top,
                 w + left + right,
-                h + top + bottom
+                h + top + bottom,
             ),
+            VisualOverflow::Path(path) => {
+                let (x, y, w, h) = path.get_bounds();
+                (abs_x + x, abs_y + y, w, h)
+            }
         }
     }
 
@@ -982,11 +986,10 @@ pub trait View {
 
         // 3. AABB 相交测试 (只要四个方向有一个方向错开了，就是不相交)
         // 逻辑：(我左 > 你右) 或 (我右 < 你左) 或 (我顶 > 你底) 或 (我底 < 你顶) => 不相交
-        let is_disjoint =
-            my_x >= test_x + test_w       // 我的左边 在 你的右边 之外
+        let is_disjoint = my_x >= test_x + test_w       // 我的左边 在 你的右边 之外
                 || my_x + my_w <= test_x         // 我的右边 在 你的左边 之外
                 || my_y >= test_y + test_h       // 我的顶边 在 你的底边 之外
-                || my_y + my_h <= test_y;        // 我的底边 在 你的顶边 之外
+            || my_y + my_h <= test_y; // 我的底边 在 你的顶边 之外
 
         !is_disjoint
     }

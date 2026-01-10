@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+use flor_graphics_base::Path;
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum VisualOverflow {
     /// 无溢出（默认值）。
     /// 性能最优，直接使用布局边界进行剔除。
@@ -18,6 +20,7 @@ pub enum VisualOverflow {
         right: f32,
         bottom: f32,
     },
+    Path(Path),
 }
 
 // 提供默认值，方便 View trait 使用
