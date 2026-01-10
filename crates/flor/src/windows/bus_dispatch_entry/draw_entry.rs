@@ -2,14 +2,14 @@ use crate::error::Error;
 use crate::render::FlorRender;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
-use flor_graphics_base::RenderContext;
+use flor_graphics_base::{RenderContext, Transform2D};
 use log::trace;
 use taffy::{Display, Layout};
 
 enum DrawStage {
     Enter,
     Exit {
-        transform_depth: u32,
+        transform_depth: Option<u32>,
         clip_depth: u32,
         layout: Layout,
     },
@@ -27,12 +27,12 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
 
     let mut stack = Vec::with_capacity(64);
 
-    // 根节点入栈
     stack.push(DrawFrame {
         view_id: root_id,
         abs_location: (0.0, 0.0),
         stage: DrawStage::Enter,
     });
+
     while let Some(frame) = stack.pop() {
         match frame.stage {
             DrawStage::Enter => {
@@ -42,12 +42,12 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                     continue;
                 };
 
-                let layout = view_id.layout()?;
-                if view_id.calc_current_style()?.display == Display::None {
+                if !view_id.visual() {
                     continue;
                 }
 
-                if !view_id.visual() {
+                let layout = view_id.layout()?;
+                if view_id.calc_current_style()?.display == Display::None {
                     continue;
                 }
 
@@ -56,15 +56,28 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                     frame.abs_location.1 + layout.location.y,
                 );
 
-                trace!("self_view.draw");
+                trace!("view({}).draw_entry", view_id);
 
-                let transform_depth = render.get_transform_depth()?;
+                let mut transform_depth = None;
                 let clip_depth = render.get_clip_depth()?;
 
-                // before children
                 view.write().on_draw(render, abs_location, layout)?;
 
-                // Exit 阶段（一定要先压）
+                let content_rect = (
+                    abs_location.0,
+                    abs_location.1,
+                    layout.size.width,
+                    layout.size.height,
+                );
+                render.push_clip(content_rect)?;
+
+                if let Some((scroll_x, scroll_y)) = view_id.scroll_offset() {
+                    if scroll_x != 0.0 || scroll_y != 0.0 {
+                        transform_depth = Some(render.get_transform_depth()?);
+                        render.push_transform(&Transform2D::translation(-scroll_x, -scroll_y))?;
+                    }
+                }
+
                 stack.push(DrawFrame {
                     view_id,
                     abs_location,
@@ -75,7 +88,6 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                     },
                 });
 
-                // 子节点（逆序）
                 if let Some(children) = child_map.get(view_id) {
                     for &child_id in children.iter().rev() {
                         stack.push(DrawFrame {
@@ -96,12 +108,13 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                     continue;
                 };
 
-                // after children
+                if transform_depth.is_some() {
+                    render.pop_transform(transform_depth)?;
+                }
+                render.pop_clip(Some(clip_depth))?;
+
                 view.write()
                     .on_draw_overlay(render, frame.abs_location, layout)?;
-
-                render.pop_clip(Some(clip_depth))?;
-                render.pop_transform(Some(transform_depth))?;
             }
         }
     }

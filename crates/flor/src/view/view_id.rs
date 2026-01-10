@@ -154,6 +154,65 @@ impl ViewId {
             .unwrap_or(true)
     }
 
+    pub fn is_scroll_view(self) -> bool {
+        VIEW_STORAGE.scroll.read().get(self).copied().is_some()
+    }
+
+    /// 获取当前滚动位置 (Current Scroll Offset)
+    /// 返回值: (x, y)
+    /// 如果控件不可滚动，返回 (0.0, 0.0)
+    pub fn scroll_offset(self) -> Option<(f32, f32)> {
+        VIEW_STORAGE
+            .scroll
+            .read()
+            .get(self)
+            .map(|s| s.current)
+    }
+
+    /// 获取最大可滚动范围 (Max Scroll Range)
+    /// 返回值: (max_x, max_y)
+    /// 这对应 Taffy 计算出的 `scroll_width/height`。
+    /// 比如内容宽 150，视口宽 100，这里返回 (50.0, 0.0)。
+    pub fn max_scroll_offset(self) -> Option<(f32, f32)> {
+        VIEW_STORAGE
+            .scroll
+            .read()
+            .get(self)
+            .map(|s| s.max)
+    }
+
+    /// 绝对滚动：滚动到指定位置 (x, y)
+    pub fn scroll_to(self, x: f32, y: f32) {
+        VIEW_STORAGE.set_scroll_internal(self, Some(x), Some(y), false);
+    }
+
+    /// 绝对滚动：仅滚动水平方向
+    pub fn scroll_to_x(self, x: f32) {
+        VIEW_STORAGE.set_scroll_internal(self, Some(x), None, false);
+    }
+
+    /// 绝对滚动：仅滚动垂直方向
+    pub fn scroll_to_y(self, y: f32) {
+        VIEW_STORAGE.set_scroll_internal(self, None, Some(y), false);
+    }
+
+    /// 相对滚动：在当前位置基础上增加 (delta_x, delta_y)
+    /// 例如：scroll_by(0.0, 10.0) 向下滚 10px
+    pub fn scroll_by(self, delta_x: f32, delta_y: f32) {
+        VIEW_STORAGE.set_scroll_internal(self, Some(delta_x), Some(delta_y), true);
+    }
+
+    /// 快捷操作：回到顶部
+    pub fn scroll_to_top(self) {
+        self.scroll_to_y(0.0);
+    }
+
+    /// 快捷操作：去到底部
+    pub fn scroll_to_bottom(self) {
+        // 利用 internal 的钳制逻辑，传一个巨大的值即可自动吸附到底部
+        self.scroll_to_y(f32::MAX);
+    }
+
     pub fn is_hover(self) -> bool {
         if let Some(win_id) = self.window_id() {
             if let Some(entry) = win_id.entry() {
@@ -267,10 +326,9 @@ impl ViewId {
         self.with_state(|state| state.abs_location)
     }
 
-    pub fn request_redraw(self) -> Result<(), Error> {
+    pub fn request_redraw(self) {
         self.window_id()
             .map(|window_id| WindowBusDispatchEntry::request_redraw(&window_id));
-        Ok(())
     }
 
     pub fn capture_mouse(self) -> Result<(), Error> {

@@ -1,5 +1,6 @@
 use crate::log_error::ResultLogExt;
 use crate::view::handler::ViewHandler;
+use crate::view::scroll_state::ScrollState;
 use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
 use crate::view::View;
@@ -36,6 +37,7 @@ pub struct ViewStorage {
     pub focus_scope: RwLock<SecondaryMap<ViewId, u32>>,
     pub pressed: RwLock<SecondaryMap<ViewId, ()>>,
     pub visual: RwLock<SecondaryMap<ViewId, bool>>,
+    pub scroll: RwLock<SecondaryMap<ViewId, ScrollState>>,
 }
 
 impl ViewStorage {
@@ -53,6 +55,7 @@ impl ViewStorage {
             focus_scope: Default::default(),
             pressed: Default::default(),
             visual: Default::default(),
+            scroll: Default::default(),
         }
     }
 
@@ -285,6 +288,46 @@ impl ViewStorage {
             for (id, _, _) in sortable {
                 self.build_recursive(id, child_map, state_map, result);
             }
+        }
+    }
+
+    pub fn set_scroll_internal(&self, view_id: ViewId, x: Option<f32>, y: Option<f32>, is_delta: bool) {
+        // 1. 获取写锁
+        // 如果 VIEW_STORAGE.scroll 里没有这个 ID，说明它不是一个可滚动的视图，直接返回
+        let mut scroll_map = VIEW_STORAGE.scroll.write();
+        let Some(state) = scroll_map.get_mut(view_id) else {
+            return;
+        };
+
+        let mut changed = false;
+
+        // 2. 处理 X 轴
+        if let Some(val_x) = x {
+            let target_x = if is_delta { state.current.0 + val_x } else { val_x };
+            // 钳制：不小于 0.0，不大于 max.0 (layout 算出的 scroll_width)
+            let clamped_x = target_x.max(0.0).min(state.max.0);
+
+            if (state.current.0 - clamped_x).abs() > f32::EPSILON {
+                state.current.0 = clamped_x;
+                changed = true;
+            }
+        }
+
+        // 3. 处理 Y 轴
+        if let Some(val_y) = y {
+            let target_y = if is_delta { state.current.1 + val_y } else { val_y };
+            // 钳制：不小于 0.0，不大于 max.1 (layout 算出的 scroll_height)
+            let clamped_y = target_y.max(0.0).min(state.max.1);
+
+            if (state.current.1 - clamped_y).abs() > f32::EPSILON {
+                state.current.1 = clamped_y;
+                changed = true;
+            }
+        }
+
+        // 4. 触发更新
+        if changed {
+            view_id.request_redraw();
         }
     }
 }

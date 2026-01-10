@@ -1,4 +1,3 @@
-use crate::log_error::ResultLogExt;
 use crate::signal::effect::updater_effect::create_updater;
 use crate::view::state_selector::LayoutStateSelector;
 use crate::view::view_storage::VIEW_STORAGE;
@@ -41,9 +40,7 @@ impl<T: View> LayoutBuilder for T {
 
                 view_state.layout_style = new_style;
 
-                view_id
-                    .request_redraw()
-                    .error_on_err(format!("[{}] request_redraw fail", view_id));
+                view_id.request_redraw();
             },
         );
 

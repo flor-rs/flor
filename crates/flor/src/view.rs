@@ -9,6 +9,7 @@ pub mod view_state;
 pub mod view_storage;
 pub mod visual_overflow;
 pub mod frame_policy;
+pub mod scroll_state;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
