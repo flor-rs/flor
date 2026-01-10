@@ -47,12 +47,8 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                     continue;
                 }
 
-                {
-                    let view = view.read();
-                    let visual_rect = view.visual_rect();
-                    if !view.on_visual_test_entry(visual_rect) {
-                        continue;
-                    }
+                if !view_id.visual() {
+                    continue;
                 }
 
                 let abs_location = (

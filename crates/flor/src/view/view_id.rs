@@ -139,6 +139,21 @@ impl ViewId {
         VIEW_STORAGE.window_ids.read().get(self).copied()
     }
 
+    /// Checks if the view is currently considered visible based on the last frame's calculation.
+    ///
+    /// used for culling optimizations (e.g., skipping `on_frame`).
+    pub fn visual(self) -> bool {
+        VIEW_STORAGE
+            .visual
+            .read()
+            .get(self)
+            .copied()
+            // Fallback to `true` (Fail-Safe):
+            // If the state is missing (e.g., first frame), assume visible.
+            // This prevents "dead widgets" that never update because they are assumed invisible.
+            .unwrap_or(true)
+    }
+
     pub fn is_hover(self) -> bool {
         if let Some(win_id) = self.window_id() {
             if let Some(entry) = win_id.entry() {
@@ -184,7 +199,7 @@ impl ViewId {
             return ControlState::Hover;
         }
         if self.is_active() {
-            return ControlState::Active
+            return ControlState::Active;
         }
         if self.is_hover() {
             return ControlState::Hover;

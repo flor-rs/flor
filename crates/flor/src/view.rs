@@ -8,6 +8,7 @@ pub mod view_id;
 pub mod view_state;
 pub mod view_storage;
 pub mod visual_overflow;
+pub mod frame_policy;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
@@ -15,6 +16,7 @@ use crate::min_wait_time::MinWaitTime;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRender, FlorRenderError, LoadRenderResource};
+use crate::view::frame_policy::FramePolicy;
 use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
@@ -142,6 +144,9 @@ pub trait View {
     fn bus_frame(&mut self, now: Instant) -> Result<Option<Duration>, Error> {
         let view_id = self.view_id();
         if view_id.calc_current_style()?.display == Display::None {
+            return Ok(None);
+        }
+        if !view_id.visual() {
             return Ok(None);
         }
         let views = VIEW_STORAGE.views.read();
@@ -996,6 +1001,10 @@ pub trait View {
 
     fn on_visual_overflow(&self) -> VisualOverflow {
         VisualOverflow::None
+    }
+
+    fn on_frame_policy(&self) -> FramePolicy {
+        FramePolicy::VisibleOnly
     }
 
     fn on_child_push(&mut self) -> Result<(), Error> {

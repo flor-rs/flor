@@ -1,4 +1,5 @@
 mod draw_entry;
+mod visual_test_entry;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
@@ -8,6 +9,7 @@ use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::{collect_layout_children, View};
 use crate::windows::bus::{render, render_from_view_id};
 use crate::windows::bus_dispatch_entry::draw_entry::draw_entry;
+use crate::windows::bus_dispatch_entry::visual_test_entry::visual_test_entry;
 use crate::windows::entry::WindowEntryVisit;
 use atomic_float::{AtomicF32, AtomicF64};
 use flor_graphics_base::RenderContext;
@@ -62,6 +64,8 @@ pub trait WindowBusDispatchEntry {
     // 3. 命中测试 (Hit Testing)
     /// 交互事件的前置条件，确定事件归属
     fn bus_hit_test_entry(&self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId;
+
+    fn bus_visual_test_entry(&self);
 
     // 4. 鼠标事件 (Mouse Events)
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition);
@@ -361,6 +365,10 @@ impl WindowBusDispatchEntry for WindowId {
             }
         }
         self.view_id()
+    }
+
+    fn bus_visual_test_entry(&self) {
+        visual_test_entry(*self);
     }
 
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {

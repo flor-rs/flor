@@ -35,6 +35,7 @@ pub struct ViewStorage {
     pub focus_index: RwLock<SecondaryMap<ViewId, u32>>,
     pub focus_scope: RwLock<SecondaryMap<ViewId, u32>>,
     pub pressed: RwLock<SecondaryMap<ViewId, ()>>,
+    pub visual: RwLock<SecondaryMap<ViewId, bool>>,
 }
 
 impl ViewStorage {
@@ -51,6 +52,7 @@ impl ViewStorage {
             focus_index: Default::default(),
             focus_scope: Default::default(),
             pressed: Default::default(),
+            visual: Default::default(),
         }
     }
 
