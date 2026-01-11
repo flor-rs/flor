@@ -1,10 +1,11 @@
 use crate::error::Error;
+use crate::log_error::ResultLogExt;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
 use crate::view::class::ClassLoader;
 use crate::view::control_state::ControlState;
-use crate::view::state_selector::{CalcTaffyStyle, LayoutStateSelector};
+use crate::view::state_selector::{parse_state_prefix, CalcTaffyStyle, LayoutStateSelector};
 use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
@@ -99,10 +100,23 @@ impl ViewId {
     }
 
     pub fn update_class(self, class_str: String) {
-        let class_strs = class_str.split_whitespace().collect::<Vec<_>>();
+        let classes = class_str.split_whitespace().collect::<Vec<_>>();
+
+        // 更新布局样式
         let _ = self.with_state_mut(|state| {
-            state.layout_style.load_classes(class_strs.as_slice());
+            state.layout_style.load_classes(classes.as_slice());
         });
+
+        // 通知 View 更新各个 class
+        if let Some(view) = VIEW_STORAGE.views.read().get(self) {
+            for class in classes {
+                // 解析状态前缀: "hover:class_name" -> (Hover, "class_name")
+                let (control_state, actual_class) = parse_state_prefix(class);
+                view.write()
+                    .on_update_class(control_state, actual_class)
+                    .error_on_err(format!("on_update_class {{ view_id:{} }}", self));
+            }
+        }
     }
 
     //     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,

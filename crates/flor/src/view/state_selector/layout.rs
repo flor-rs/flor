@@ -1632,7 +1632,7 @@ impl LayoutAccumulator {
 }
 
 /// Parse state prefix (hover:, focus:, active:, disabled:) from class name
-fn parse_state_prefix(class: &str) -> (ControlState, &str) {
+pub fn parse_state_prefix(class: &str) -> (ControlState, &str) {
     if let Some(rest) = class.strip_prefix("hover:") {
         (ControlState::Hover, rest)
     } else if let Some(rest) = class.strip_prefix("focus:") {

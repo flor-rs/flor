@@ -17,6 +17,7 @@ use crate::min_wait_time::MinWaitTime;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRender, FlorRenderError, LoadRenderResource};
+use crate::view::control_state::ControlState;
 use crate::view::frame_policy::FramePolicy;
 use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
@@ -1017,7 +1018,7 @@ pub trait View {
     }
 
     #[allow(unused_variables)]
-    fn on_update_class(&mut self, class_str: &[&str]) -> Result<(), Error> {
+    fn on_update_class(&mut self, control_state: ControlState, class: &str) -> Result<(), Error> {
         Ok(())
     }
 }
