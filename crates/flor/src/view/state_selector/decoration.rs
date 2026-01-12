@@ -321,8 +321,9 @@ fn parse_state_prefix(class: &str) -> (DecorationState, &str) {
     }
 }
 
+/// 提取方括号内的值，如 `[10px]` -> `10px`
 #[inline]
-fn extract_bracket_value(s: &str) -> Option<&str> {
+pub fn extract_bracket_value(s: &str) -> Option<&str> {
     if s.starts_with('[') && s.ends_with(']') {
         Some(&s[1..s.len() - 1])
     } else {
@@ -343,7 +344,12 @@ fn parse_length(value: &str, rem_px: f32) -> Option<f32> {
 }
 
 /// 解析颜色值
-fn parse_color(value: &str) -> Option<Color> {
+///
+/// 支持:
+/// - 关键字: `transparent`, `black`, `white`
+/// - Hex: `#fff`, `#ffffff`, `[#fff]`
+/// - Tailwind: `red-500`, `blue-100`
+pub fn parse_color(value: &str) -> Option<Color> {
     // 关键字
     match value {
         "transparent" => return Some(Color::rgba(0, 0, 0, 0)),
@@ -372,8 +378,10 @@ fn parse_color(value: &str) -> Option<Color> {
     None
 }
 
-/// 解析 TW 颜色名
-fn parse_tw_color(color_name: &str, shade: &str) -> Option<Color> {
+/// 解析 Tailwind 颜色名
+///
+/// 例如: `parse_tw_color("red", "500")` -> `Color::RED_500`
+pub fn parse_tw_color(color_name: &str, shade: &str) -> Option<Color> {
     let shade_num: u16 = shade.parse().ok()?;
 
     match (color_name, shade_num) {

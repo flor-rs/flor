@@ -5,5 +5,5 @@ pub enum ControlState {
     Focus,
     Hover,
     Active,
-    Disable,
+    Disabled,
 }

@@ -1640,7 +1640,7 @@ pub fn parse_state_prefix(class: &str) -> (ControlState, &str) {
     } else if let Some(rest) = class.strip_prefix("active:") {
         (ControlState::Active, rest)
     } else if let Some(rest) = class.strip_prefix("disabled:") {
-        (ControlState::Disable, rest)
+        (ControlState::Disabled, rest)
     } else {
         (ControlState::Normal, class)
     }
@@ -1663,7 +1663,7 @@ impl StateAccumulators {
             ControlState::Hover => &mut self.hover,
             ControlState::Focus => &mut self.focus,
             ControlState::Active => &mut self.active,
-            ControlState::Disable => &mut self.disabled,
+            ControlState::Disabled => &mut self.disabled,
         }
     }
 
@@ -1672,7 +1672,7 @@ impl StateAccumulators {
         self.hover.apply(selector, ControlState::Hover);
         self.focus.apply(selector, ControlState::Focus);
         self.active.apply(selector, ControlState::Active);
-        self.disabled.apply(selector, ControlState::Disable);
+        self.disabled.apply(selector, ControlState::Disabled);
     }
 }
 

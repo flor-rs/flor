@@ -253,7 +253,7 @@ impl ViewId {
     /// 有的控件部分地区需要不同的检测，提供一个语法糖方法
     pub fn control_state_with_pressed(self, pressed: bool) -> ControlState {
         if self.is_disabled() {
-            return ControlState::Disable;
+            return ControlState::Disabled;
         }
         if pressed {
             return ControlState::Active;
@@ -266,7 +266,7 @@ impl ViewId {
 
     pub fn control_state(self) -> ControlState {
         if self.is_disabled() {
-            return ControlState::Disable;
+            return ControlState::Disabled;
         }
         if self.is_hover() {
             return ControlState::Hover;
