@@ -116,6 +116,7 @@ impl ViewId {
                 view.write()
                     .on_update_class(control_state, actual_class)
                     .error_on_err(format!("on_update_class {{ view_id:{} }}", self));
+                self.request_redraw();
             }
         }
     }
