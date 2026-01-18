@@ -1,15 +1,15 @@
 pub mod class;
 pub mod control_state;
 pub mod focus_manager;
+pub mod frame_policy;
 pub mod handler;
+pub mod scroll_state;
 pub mod state_selector;
 pub mod view_builder;
 pub mod view_id;
 pub mod view_state;
 pub mod view_storage;
 pub mod visual_overflow;
-pub mod frame_policy;
-pub mod scroll_state;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
@@ -28,7 +28,6 @@ use flor_graphics_base::RenderContext;
 #[cfg(feature = "drag-drop")]
 use flor_platform_base::{DragData, DragFormat, DropEffect};
 use flor_platform_base::{InputEvent, KeyCode, KeyState, MousePosition, ScrollAxis};
-use log::{debug, trace};
 use std::any::Any;
 use std::time::{Duration, Instant};
 use taffy::{AvailableSpace, Display, Layout, NodeId, Size, Style, TaffyTree};
@@ -37,6 +36,10 @@ use taffy::{AvailableSpace, Display, Layout, NodeId, Size, Style, TaffyTree};
 pub trait View {
     /// 获取视图ID
     fn view_id(&self) -> ViewId;
+
+    fn tag(&self) -> &str {
+        "View"
+    }
 
     fn bus_create(&mut self) -> Result<(), Error> {
         self.call_create()?;
@@ -119,6 +122,15 @@ pub trait View {
             let mut state = state.write();
             if let Some(node_id) = state.node_id {
                 state.layout = *taffy.layout(node_id)?;
+
+                // 如果是可滚动视图，更新 scroll.max
+                let scroll_width = state.layout.scroll_width();
+                let scroll_height = state.layout.scroll_height();
+                if scroll_width > 0.0 || scroll_height > 0.0 {
+                    if let Some(scroll_state) = VIEW_STORAGE.scroll.write().get_mut(view_id) {
+                        scroll_state.max = (scroll_width, scroll_height);
+                    }
+                }
             }
             // 计算绝对位置 = 父级绝对位置 + 自身相对位置
             current_abs_location = (
@@ -165,37 +177,6 @@ pub trait View {
         Ok(min_wait_time)
     }
 
-    fn bus_draw(&mut self, render: &mut FlorRender, abs_location: (f32, f32)) -> Result<(), Error> {
-        let view_id = self.view_id();
-        let views = VIEW_STORAGE.views.read();
-
-        let layout = view_id.layout()?;
-        if view_id.calc_current_style()?.display == Display::None {
-            return Ok(());
-        }
-
-        let abs_location = (
-            abs_location.0 + layout.location.x,
-            abs_location.1 + layout.location.y,
-        );
-        // 自身处理
-        trace!("self_view.draw");
-        let transform_depth = render.get_transform_depth()?;
-        let clip_depth = render.get_clip_depth()?;
-        self.on_draw(render, abs_location, layout)?;
-        // 绘制子控件
-        if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(view_id) {
-            for child_id in child_view_ids {
-                if let Some(view) = views.get(*child_id) {
-                    view.write().bus_draw(render, abs_location)?;
-                }
-            }
-        }
-        render.pop_clip(Some(clip_depth))?;
-        render.pop_transform(Some(transform_depth))?;
-        Ok(())
-    }
-
     fn bus_wheel_scroll_lines_changed(
         &mut self,
         axis: ScrollAxis,
@@ -220,11 +201,11 @@ pub trait View {
         Ok(())
     }
 
-    #[allow(unused_variables)]
-    fn on_hit_test(&self, mouse_position: MousePosition, key_state: KeyState) -> bool {
+    /// 判定：鼠标是否在内容区域（不包含滚动条）
+    fn on_hit_test(&self, mouse_position: MousePosition, _key_state: KeyState) -> bool {
         let view_id = self.view_id();
 
-        // 获取控件的布局信息和绝对位置
+        // 只关心 content size (w, h)，不需要 sb_w, sb_h
         let Ok((abs_x, abs_y, w, h)) = view_id.with_state(|state| {
             (
                 state.abs_location.0,
@@ -236,17 +217,70 @@ pub trait View {
             return false;
         };
 
-        // 鼠标位置
         let mx = mouse_position.x as f32;
         let my = mouse_position.y as f32;
 
-        debug!(
-            "[view({})] on_hit_test: abs_x: {}, abs_y: {}, w: {}, h: {}, mx: {}, my: {}",
-            view_id, abs_x, abs_y, w, h, mx, my
-        );
-
-        // 鼠标在不在范围内（使用绝对位置）
+        // 严格检查：只在内容矩形内
+        // [abs_x, abs_x + w) 和 [abs_y, abs_y + h)
         mx >= abs_x && mx < abs_x + w && my >= abs_y && my < abs_y + h
+    }
+
+    /// 判定：鼠标是否在 Overlay 区域（滚动条、调整手柄等）
+    /// 注意：这个函数在 Hit Test 流程中优先级最高
+    fn on_hit_test_overlay(&self, mouse_position: MousePosition, _key_state: KeyState) -> bool {
+        let view_id = self.view_id();
+
+        // 需要全部尺寸信息
+        let Ok((abs_x, abs_y, w, h, sb_w, sb_h)) = view_id.with_state(|state| {
+            (
+                state.abs_location.0,
+                state.abs_location.1,
+                state.layout.size.width,
+                state.layout.size.height,
+                state.layout.scrollbar_size.width,
+                state.layout.scrollbar_size.height,
+            )
+        }) else {
+            return false;
+        };
+
+        // 如果没有滚动条，直接返回 false
+        if sb_w <= 0.0 && sb_h <= 0.0 {
+            return false;
+        }
+
+        let mx = mouse_position.x as f32;
+        let my = mouse_position.y as f32;
+
+        // 边界定义
+        let right_edge = abs_x + w;  // 内容右边界
+        let bottom_edge = abs_y + h; // 内容下边界
+        let total_w = w + sb_w;      // 总宽度（含右侧滚动条）
+        let total_h = h + sb_h;      // 总高度（含底部滚动条）
+
+        // 1. 检查垂直滚动条区域 (位于右侧)
+        // 区域：X 在 [w, w + sb_w], Y 在 [0, total_h] (通常垂直滚动条高度包含右下角)
+        if sb_w > 0.0 {
+            if mx >= right_edge && mx < abs_x + total_w &&
+                my >= abs_y && my < abs_y + total_h {
+                return true;
+            }
+        }
+
+        // 2. 检查水平滚动条区域 (位于底部)
+        // 区域：Y 在 [h, h + sb_h], X 在 [0, total_w] (通常水平滚动条宽度包含右下角)
+        if sb_h > 0.0 {
+            if my >= bottom_edge && my < abs_y + total_h &&
+                mx >= abs_x && mx < abs_x + total_w {
+                return true;
+            }
+        }
+
+        // 补充说明：
+        // 上述逻辑中，右下角的交汇处 (Corner) 无论是被判定为垂直还是水平滚动条的一部分，
+        // 都会返回 true，这符合 Overlay 拦截的预期。
+
+        false
     }
 
     fn on_create(&mut self) -> Result<(), Error> {
@@ -254,6 +288,7 @@ pub trait View {
     }
 
     fn call_create(&mut self) -> Result<(), Error> {
+        VIEW_STORAGE.active_pending_effect_id(self.view_id());
         self.on_create()?;
         let handler = VIEW_STORAGE
             .handlers

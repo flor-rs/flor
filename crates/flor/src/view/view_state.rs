@@ -1,4 +1,5 @@
 use crate::view::state_selector::LayoutStateSelector;
+use crate::windows::bus_dispatch_entry::LocalRect;
 use std::fmt::{Debug, Formatter};
 use taffy::{Layout, NodeId};
 
@@ -11,7 +12,7 @@ pub struct ViewState {
     pub layout_style: LayoutStateSelector,
     pub dirty_children: bool,
     pub disable: bool,
-    pub z_index: i32,
+    pub cached_overflow_rect: LocalRect,
 }
 
 impl Debug for ViewState {
@@ -32,7 +33,7 @@ impl ViewState {
             layout_style: LayoutStateSelector::default(),
             dirty_children: false,
             disable: false,
-            z_index: 0,
+            cached_overflow_rect: Default::default(),
         }
     }
 }

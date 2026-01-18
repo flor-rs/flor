@@ -1,5 +1,10 @@
 mod draw_entry;
 mod visual_test_entry;
+mod hit_test_entry;
+mod refresh_layout_entry;
+mod wheel_scroll_lines_changed_entry;
+
+pub use refresh_layout_entry::LocalRect;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
@@ -9,7 +14,10 @@ use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::{collect_layout_children, View};
 use crate::windows::bus::{render, render_from_view_id};
 use crate::windows::bus_dispatch_entry::draw_entry::draw_entry;
+use crate::windows::bus_dispatch_entry::hit_test_entry::hit_test_entry;
+use crate::windows::bus_dispatch_entry::refresh_layout_entry::refresh_layout_entry;
 use crate::windows::bus_dispatch_entry::visual_test_entry::visual_test_entry;
+use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_scroll_lines_changed_entry;
 use crate::windows::entry::WindowEntryVisit;
 use atomic_float::{AtomicF32, AtomicF64};
 use flor_graphics_base::RenderContext;
@@ -39,7 +47,7 @@ pub trait WindowBusDispatchEntry {
     fn bus_frame_entry(&self) -> Result<Option<Duration>, Error>;
 
     // 2. 布局与渲染 (Layout & Rendering)
-    fn bus_refresh_layout_entry(&self) -> Result<(), Error>;
+    fn bus_refresh_layout_entry(self) -> Result<(), Error>;
 
     fn bus_re_draw_entry(&self) -> Result<(), Error>;
 
@@ -54,7 +62,7 @@ pub trait WindowBusDispatchEntry {
 
     /// 鼠标滚轮设置变更
     fn bus_wheel_scroll_lines_changed_entry(
-        &mut self,
+        self,
         axis: ScrollAxis,
         delta: f32,
         key_state: KeyState,
@@ -63,7 +71,7 @@ pub trait WindowBusDispatchEntry {
 
     // 3. 命中测试 (Hit Testing)
     /// 交互事件的前置条件，确定事件归属
-    fn bus_hit_test_entry(&self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId;
+    fn bus_hit_test_entry(self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId;
 
     fn bus_visual_test_entry(&self);
 
@@ -222,104 +230,8 @@ impl WindowBusDispatchEntry for WindowId {
         Ok(None)
     }
 
-    fn bus_refresh_layout_entry(&self) -> Result<(), Error> {
-        trace!("enter relayout");
-
-        let Some(window_entry) = self.entry() else {
-            warn!("window not found entry in re_layout_entry function.");
-            return Ok(());
-        };
-
-        let layout_tree = &mut window_entry.taffy_tree.write();
-        let view_id = window_entry.view_id;
-
-        let states = VIEW_STORAGE.states.read();
-        let Some(view_state_cell) = states.get(view_id) else {
-            warn!("View storage's states not found view_id:{view_id:?}");
-            return Ok(());
-        };
-
-        let view_state = view_state_cell.read();
-        let old_node_id = view_state.node_id;
-
-        let mut style_update = view_state
-            .layout_style
-            .calc_update_taffy_style(view_id.control_state());
-
-        // 这里的特殊逻辑：如果 style 有更新，必须强制加上 100% 的尺寸限制
-        if let Some(s) = &mut style_update {
-            s.size = Size::from_percent(1.0, 1.0);
-        }
-
-        drop(view_state);
-
-        let children = collect_layout_children(view_id, layout_tree)?;
-
-        let root_node_id = match (old_node_id, style_update) {
-            (Some(node_id), None) => {
-                if !children.is_empty() {
-                    layout_tree.set_children(node_id, &children)?;
-                }
-                node_id
-            }
-            (Some(node_id), Some(new_style)) => {
-                layout_tree.set_style(node_id, new_style)?;
-                if !children.is_empty() {
-                    layout_tree.set_children(node_id, &children)?;
-                }
-                node_id
-            }
-            (None, style_opt) => {
-                let style = style_opt.unwrap_or_else(|| Style {
-                    size: Size::from_percent(1.0, 1.0),
-                    ..Default::default()
-                });
-                if children.is_empty() {
-                    layout_tree.new_leaf_with_context(style, view_id)?
-                } else {
-                    layout_tree.new_with_children(style, &children)?
-                }
-            }
-        };
-
-        if old_node_id != Some(root_node_id) {
-            let mut view_state = view_state_cell.write();
-            view_state.node_id = Some(root_node_id);
-        }
-
-        let client_size = self.get_client_size()?;
-        layout_tree.compute_layout_with_measure(
-            root_node_id,
-            Size {
-                height: AvailableSpace::Definite(client_size.1 as f32),
-                width: AvailableSpace::Definite(client_size.0 as f32),
-            },
-            |known_dimensions, available_space, _node_id, node_context_view_id, style| {
-                if let Some(view_id) = node_context_view_id {
-                    if let Some(dyn_view) = VIEW_STORAGE.views.read().get(*view_id) {
-                        if let Some(render) = render_from_view_id(*view_id).as_deref() {
-                            let mut render = render.write();
-                            let render = render.deref_mut();
-                            let mut view = dyn_view.write();
-                            return view
-                                .on_measure(known_dimensions, available_space, style, render)
-                                .unwrap_or(Size::ZERO);
-                        }
-                    }
-                }
-                Size::ZERO
-            },
-        )?;
-
-        {
-            trace!("bus_update_layout begin");
-            if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-                view.write().bus_update_layout(layout_tree, (0.0, 0.0))?;
-            }
-            trace!("bus_update_layout end");
-        }
-
-        Ok(())
+    fn bus_refresh_layout_entry(self) -> Result<(), Error> {
+        refresh_layout_entry(self)
     }
 
     fn bus_re_draw_entry(&self) -> Result<(), Error> {
@@ -340,31 +252,17 @@ impl WindowBusDispatchEntry for WindowId {
     fn bus_work_area_changed_entry(&mut self) {}
 
     fn bus_wheel_scroll_lines_changed_entry(
-        &mut self,
+        self,
         axis: ScrollAxis,
         delta: f32,
         key_state: KeyState,
         mouse_position: MousePosition,
     ) {
-        let view_id = self.view_id();
-        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-            view.write().call_wheel_scroll_lines_changed(axis, delta, key_state, mouse_position);
-        }
+        wheel_scroll_lines_changed_entry(self, axis, delta, key_state, mouse_position);
     }
 
-    fn bus_hit_test_entry(&self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId {
-        let cache_guard = VIEW_STORAGE.z_index_sort.read();
-
-        if let Some(render_list) = cache_guard.get(self) {
-            for &view_id in render_list.iter().rev() {
-                if let Some(view_lock) = VIEW_STORAGE.views.read().get(view_id) {
-                    if view_lock.read().on_hit_test(mouse_pos, key_state) {
-                        return view_id;
-                    }
-                }
-            }
-        }
-        self.view_id()
+    fn bus_hit_test_entry(self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId {
+        hit_test_entry(self, mouse_pos, key_state)
     }
 
     fn bus_visual_test_entry(&self) {
@@ -374,7 +272,7 @@ impl WindowBusDispatchEntry for WindowId {
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {
         if let Some(view_id) = self.entry().map(|v| v.capture_view_id).flatten() {
             if let Some(view) = VIEW_STORAGE.views.write().get(view_id) {
-                view.write().call_mouse_leave(key_state, mouse_position);
+                view.write().call_mouse_move(key_state, mouse_position);
                 return;
             }
         }

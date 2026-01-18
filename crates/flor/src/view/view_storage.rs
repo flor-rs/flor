@@ -1,16 +1,17 @@
 use crate::log_error::ResultLogExt;
+use crate::signal;
+use crate::signal::id::EffectId;
 use crate::view::handler::ViewHandler;
 use crate::view::scroll_state::ScrollState;
 use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
 use crate::view::View;
 use crate::windows::entry::WINDOW_ENTRY_MAP;
-use crate::windows::window_view::TryViewId;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use platform::WindowId;
 use rustc_hash::FxHashMap;
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{Key, SecondaryMap, SlotMap};
 use std::fmt::Debug;
 
 /// 全局视图存储
@@ -24,7 +25,7 @@ pub struct ViewStorage {
     /// 视图状态存储
     pub states: RwLock<SecondaryMap<ViewId, RwLock<ViewState>>>,
     pub handlers: RwLock<SecondaryMap<ViewId, RwLock<ViewHandler>>>,
-    /// 父子关系存储
+    /// 父子关系存储，总是根据z-index排序的
     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,
     /// 视图树储存
     pub views: RwLock<SecondaryMap<ViewId, RwLock<Box<dyn View + Send + Sync + 'static>>>>,
@@ -38,6 +39,8 @@ pub struct ViewStorage {
     pub pressed: RwLock<SecondaryMap<ViewId, ()>>,
     pub visual: RwLock<SecondaryMap<ViewId, bool>>,
     pub scroll: RwLock<SecondaryMap<ViewId, ScrollState>>,
+    pub view_z_index: RwLock<SecondaryMap<ViewId, i32>>,
+    pub pending_effect_id: RwLock<SecondaryMap<ViewId, Vec<EffectId>>>,
 }
 
 impl ViewStorage {
@@ -56,6 +59,8 @@ impl ViewStorage {
             pressed: Default::default(),
             visual: Default::default(),
             scroll: Default::default(),
+            view_z_index: Default::default(),
+            pending_effect_id: Default::default(),
         }
     }
 
@@ -91,6 +96,8 @@ impl ViewStorage {
             if parent != child_view_id {
                 if let Some(children) = child_ids.get_mut(parent) {
                     children.push(child_view_id);
+                    // 重新排序
+                    children.sort_by(|x, d| x.z_index().cmp(&d.z_index()));
                 } else {
                     child_ids.insert(parent, vec![child_view_id]);
                 }
@@ -113,7 +120,26 @@ impl ViewStorage {
         }
 
         if let Some(window_id) = parent.window_id() {
-            self.rebuild_render_cache(window_id)
+            // self.rebuild_render_cache(window_id)
+        }
+    }
+
+    pub fn sort_view_ids_by_z_index(&self, childrens: &mut Vec<ViewId>) {
+        childrens.sort_by(|a, b| {
+            // 1. Z-index 降序：让大的排在前面 (Index 0)
+            b.z_index().cmp(&a.z_index())
+                // 2. ID 降序：Z-index 相同时，让后创建的（ID大的）排在前面
+                // 这样符合“后来居上”的视觉覆盖规则
+                .then(b.data().as_ffi().cmp(&a.data().as_ffi()))
+        });
+    }
+
+    pub fn active_pending_effect_id(&self, view_id: ViewId) {
+        if let Some(effect_ids) = self.pending_effect_id.write().remove(view_id) {
+            signal::runtime::RUNTIME
+                .update_queue
+                .lock()
+                .extend(effect_ids);
         }
     }
 
@@ -226,72 +252,78 @@ impl ViewStorage {
         }
     }
 
-    /// 【写操作】重建指定窗口的渲染缓存
-    /// 当布局变化、增删节点、修改 z-index 后调用此方法
-    pub fn rebuild_render_cache(&self, window_id: WindowId) {
-        // 1. 复用之前的递归排序逻辑生成列表
-        let sorted_list = self.generate_sorted_list_internal(window_id);
+    // /// 【写操作】重建指定窗口的渲染缓存
+    // /// 当布局变化、增删节点、修改 z-index 后调用此方法
+    // pub fn rebuild_render_cache(&self, window_id: WindowId) {
+    //     // 1. 复用之前的递归排序逻辑生成列表
+    //     let sorted_list = self.generate_sorted_list_internal(window_id);
+    //
+    //     // 2. 获取写锁并更新缓存
+    //     // FxHashMap 插入非常快
+    //     self.z_index_sort.write().insert(window_id, sorted_list);
+    //
+    //     // log::trace!("Window {:?} render cache updated.", window_id);
+    // }
 
-        // 2. 获取写锁并更新缓存
-        // FxHashMap 插入非常快
-        self.z_index_sort.write().insert(window_id, sorted_list);
+    // /// 内部私有方法：生成排序列表（逻辑同上一个回答，只是搬到了这里）
+    // fn generate_sorted_list_internal(&self, window_id: WindowId) -> Vec<ViewId> {
+    //     let Some(root_id) = window_id.try_view_id() else {
+    //         return vec![];
+    //     };
+    //
+    //     // 预估容量
+    //     let mut list = Vec::with_capacity(128);
+    //
+    //     // 获取读锁（注意死锁：这里只获取读锁，外面 rebuild_render_cache 获取的是 cache 的写锁，互不冲突）
+    //     let child_map = self.child_ids.read();
+    //     let state_map = self.states.read();
+    //
+    //     self.build_recursive(root_id, &child_map, &state_map, &mut list);
+    //     list
+    // }
 
-        // log::trace!("Window {:?} render cache updated.", window_id);
-    }
+    // // 递归构建（同上一个回答）
+    // fn build_recursive(
+    //     &self,
+    //     current_id: ViewId,
+    //     child_map: &SecondaryMap<ViewId, Vec<ViewId>>,
+    //     state_map: &SecondaryMap<ViewId, RwLock<ViewState>>,
+    //     result: &mut Vec<ViewId>,
+    // ) {
+    //     result.push(current_id); // 先入列（背景）
+    //
+    //     if let Some(children) = child_map.get(current_id) {
+    //         if children.is_empty() {
+    //             return;
+    //         }
+    //
+    //         // 提取 (id, z_index, original_index)
+    //         let mut sortable: Vec<(ViewId, i32, usize)> = children
+    //             .iter()
+    //             .enumerate()
+    //             .map(|(idx, &id)| {
+    //                 let z = state_map.get(id).map(|s| s.read().z_index).unwrap_or(0);
+    //                 (id, z, idx)
+    //             })
+    //             .collect();
+    //
+    //         // 稳定排序
+    //         sortable.sort_by(|a, b| a.1.cmp(&b.1).then(a.2.cmp(&b.2)));
+    //
+    //         // 递归
+    //         for (id, _, _) in sortable {
+    //             self.build_recursive(id, child_map, state_map, result);
+    //         }
+    //     }
+    // }
 
-    /// 内部私有方法：生成排序列表（逻辑同上一个回答，只是搬到了这里）
-    fn generate_sorted_list_internal(&self, window_id: WindowId) -> Vec<ViewId> {
-        let Some(root_id) = window_id.try_view_id() else {
-            return vec![];
-        };
-
-        // 预估容量
-        let mut list = Vec::with_capacity(128);
-
-        // 获取读锁（注意死锁：这里只获取读锁，外面 rebuild_render_cache 获取的是 cache 的写锁，互不冲突）
-        let child_map = self.child_ids.read();
-        let state_map = self.states.read();
-
-        self.build_recursive(root_id, &child_map, &state_map, &mut list);
-        list
-    }
-
-    // 递归构建（同上一个回答）
-    fn build_recursive(
+    pub fn set_scroll_internal(
         &self,
-        current_id: ViewId,
-        child_map: &SecondaryMap<ViewId, Vec<ViewId>>,
-        state_map: &SecondaryMap<ViewId, RwLock<ViewState>>,
-        result: &mut Vec<ViewId>,
+        view_id: ViewId,
+        x: Option<f32>,
+        y: Option<f32>,
+        is_delta: bool,
     ) {
-        result.push(current_id); // 先入列（背景）
-
-        if let Some(children) = child_map.get(current_id) {
-            if children.is_empty() {
-                return;
-            }
-
-            // 提取 (id, z_index, original_index)
-            let mut sortable: Vec<(ViewId, i32, usize)> = children
-                .iter()
-                .enumerate()
-                .map(|(idx, &id)| {
-                    let z = state_map.get(id).map(|s| s.read().z_index).unwrap_or(0);
-                    (id, z, idx)
-                })
-                .collect();
-
-            // 稳定排序
-            sortable.sort_by(|a, b| a.1.cmp(&b.1).then(a.2.cmp(&b.2)));
-
-            // 递归
-            for (id, _, _) in sortable {
-                self.build_recursive(id, child_map, state_map, result);
-            }
-        }
-    }
-
-    pub fn set_scroll_internal(&self, view_id: ViewId, x: Option<f32>, y: Option<f32>, is_delta: bool) {
         // 1. 获取写锁
         // 如果 VIEW_STORAGE.scroll 里没有这个 ID，说明它不是一个可滚动的视图，直接返回
         let mut scroll_map = VIEW_STORAGE.scroll.write();
@@ -303,7 +335,11 @@ impl ViewStorage {
 
         // 2. 处理 X 轴
         if let Some(val_x) = x {
-            let target_x = if is_delta { state.current.0 + val_x } else { val_x };
+            let target_x = if is_delta {
+                state.current.0 + val_x
+            } else {
+                val_x
+            };
             // 钳制：不小于 0.0，不大于 max.0 (layout 算出的 scroll_width)
             let clamped_x = target_x.max(0.0).min(state.max.0);
 
@@ -315,7 +351,11 @@ impl ViewStorage {
 
         // 3. 处理 Y 轴
         if let Some(val_y) = y {
-            let target_y = if is_delta { state.current.1 + val_y } else { val_y };
+            let target_y = if is_delta {
+                state.current.1 + val_y
+            } else {
+                val_y
+            };
             // 钳制：不小于 0.0，不大于 max.1 (layout 算出的 scroll_height)
             let clamped_y = target_y.max(0.0).min(state.max.1);
 
