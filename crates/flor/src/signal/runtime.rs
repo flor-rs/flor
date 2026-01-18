@@ -58,7 +58,7 @@ impl Runtime {
         let effect_ids = if let Some(subscribes) = self.subscribe.get(&signal_id) {
             subscribes.value().iter().copied().collect::<Vec<_>>()
         } else {
-            return;
+            vec![signal_id]
         };
         for effect_id in effect_ids {
             if let Some(effect) = self.effects.get(&effect_id) {

@@ -1,4 +1,4 @@
-use crate::signal::effect::updater_effect::create_updater;
+use crate::signal::effect::updater_effect::create_updater_with_id;
 use crate::view::state_selector::LayoutStateSelector;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
@@ -18,7 +18,7 @@ impl<T: View> LayoutBuilder for T {
         let view_id = self.view_id();
 
         // 2. 创建响应式更新器
-        create_updater(
+        let (effect_id, _) = create_updater_with_id(
             move || {
                 let base_style = {
                     let states = VIEW_STORAGE.states.read();
@@ -43,7 +43,7 @@ impl<T: View> LayoutBuilder for T {
                 view_id.request_redraw();
             },
         );
-
+        view_id.pending_effect_id(effect_id);
         self
     }
 }

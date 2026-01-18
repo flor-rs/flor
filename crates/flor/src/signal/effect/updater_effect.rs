@@ -1,5 +1,5 @@
 use crate::signal::effect::signal_effect::SignalEffect;
-use crate::signal::id::Id;
+use crate::signal::id::{EffectId, Id};
 use crate::signal::runtime::{RUNTIME, SCOPE};
 use std::marker::PhantomData;
 
@@ -63,7 +63,10 @@ where
     }
 }
 
-pub fn create_updater<R>(compute: impl Fn() -> R + 'static, on_change: impl Fn(R) + 'static) -> R
+pub fn create_updater<R>(
+    compute: impl Fn() -> R + 'static,
+    on_change: impl Fn(R) + 'static,
+) -> R
 where
     R: 'static,
 {
@@ -77,4 +80,23 @@ where
     let init_value = effect.init_effect();
     RUNTIME.effects.insert(effect_id, Box::new(effect));
     init_value
+}
+
+pub fn create_updater_with_id<R>(
+    compute: impl Fn() -> R + 'static,
+    on_change: impl Fn(R) + 'static,
+) -> (EffectId, R)
+where
+    R: 'static,
+{
+    let effect_id = Id::next();
+    let effect = UpdaterEffect {
+        id: effect_id,
+        compute,
+        on_change,
+        _type: PhantomData::default(),
+    };
+    let init_value = effect.init_effect();
+    RUNTIME.effects.insert(effect_id, Box::new(effect));
+    (effect_id, init_value)
 }

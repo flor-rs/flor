@@ -3,6 +3,7 @@ use crate::log_error::ResultLogExt;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
+use crate::signal::id::EffectId;
 use crate::view::class::ClassLoader;
 use crate::view::control_state::ControlState;
 use crate::view::state_selector::{parse_state_prefix, CalcTaffyStyle, LayoutStateSelector};
@@ -304,12 +305,34 @@ impl ViewId {
         }
     }
 
-    pub fn update_z_index(self, z_index: i32) {
-        let _ = self.with_state_mut(|state| {
-            state.z_index = z_index;
-        });
-        if let Some(window_id) = self.window_id() {
-            VIEW_STORAGE.rebuild_render_cache(window_id)
+    pub fn z_index(self) -> i32 {
+        VIEW_STORAGE
+            .view_z_index
+            .read()
+            .get(self)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub fn set_z_index(self, z_index: i32) {
+        let mut x = VIEW_STORAGE.view_z_index.write();
+        x.insert(self, z_index);
+        if let Some(parent_view_id) = self.parent_view_id() {
+            let mut child_ids = VIEW_STORAGE.child_ids.write();
+            if let Some(childrens) = child_ids.get_mut(parent_view_id) {
+                if childrens.len() > 1 {
+                    childrens.sort_by(|x, d| x.z_index().cmp(&d.z_index()));
+                }
+            }
+        }
+    }
+
+    pub fn pending_effect_id(self, effect_id: EffectId) {
+        let mut pending_effect_id = VIEW_STORAGE.pending_effect_id.write();
+        if let Some(effect_ids) = pending_effect_id.get_mut(self) {
+            effect_ids.push(effect_id);
+        } else {
+            pending_effect_id.insert(self, vec![effect_id]);
         }
     }
 

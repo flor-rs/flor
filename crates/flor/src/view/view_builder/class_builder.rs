@@ -1,4 +1,4 @@
-use crate::signal::effect::updater_effect::create_updater;
+use crate::signal::effect::updater_effect::create_updater_with_id;
 use crate::view::View;
 
 // 使用 define_prop! 宏生成 ClassProp trait
@@ -21,7 +21,7 @@ where
 
         // create_updater 的第一个参数通常是一个 Fn，会多次执行以重新计算
         // class_str 被 move 进这个闭包，成为闭包环境的一部分
-        let class_str = create_updater(
+        let (effect_id, class_str) = create_updater_with_id(
             move || {
                 // 无论是 String 还是 Fn，统一调用 make()
                 // 如果是 String，这里就相当于取环境里的变量
@@ -32,6 +32,7 @@ where
                 view_id.update_class(class_str);
             },
         );
+        view_id.pending_effect_id(effect_id);
         view_id.update_class(class_str);
         self
     }
