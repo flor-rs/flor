@@ -1,5 +1,5 @@
 use crate::graphics::{ScaleMode, Shadow};
-use crate::types::transform2d::Transform2D;
+use crate::types::Transform2D;
 
 /// 图片绘制可选参数
 #[derive(Clone, Debug, Default)]

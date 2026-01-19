@@ -2,7 +2,7 @@ use crate::graphics::{
     BrushHandle, Color, Gradient, HitTestResult, ImageDrawOptions, ImageHandle, Path,
     PathDrawOptions, SurfaceId, TextDrawOptions, TextFormatHandle,
 };
-use crate::types::transform2d::Transform2D;
+use crate::types::Transform2D;
 #[cfg(feature = "svg")]
 use crate::SvgDrawOptions;
 #[cfg(feature = "svg")]

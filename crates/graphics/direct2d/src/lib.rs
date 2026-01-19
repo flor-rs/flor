@@ -107,7 +107,7 @@ use crate::memory_font::{get_family_name_from_face, MemoryFontFileLoader};
 use crate::color::AsD2dColor;
 use crate::encode::encode_unicode;
 pub use error::*;
-use flor_base::types::transform2d::Transform2D;
+use flor_base::types::Transform2D;
 
 pub static RENDER_FACTORY: OnceLock<RenderFactory> = OnceLock::new();
 
@@ -2404,6 +2404,37 @@ impl RenderContext for D2DRender {
 
     fn get_transform_depth(&mut self) -> Result<u32, Self::Error> {
         Ok(self.transform_stack.len() as u32)
+    }
+
+    fn get_relative_transform(&self, depth: u32) -> Result<Transform2D, Self::Error> {
+        let start_index = depth as usize;
+
+        // 1. 越界检查
+        if start_index > self.transform_stack.len() {
+            return Err(Self::Error::InvalidDepthIndex(depth));
+        }
+
+        // 2. 从指定深度开始，一直乘到栈顶
+        // 初始值设为单位矩阵
+        let mut result = Matrix3x2::default();
+
+        // 遍历 slice：从 depth 到 结尾
+        // 逻辑：将这些后续发生的变换叠加起来
+        for transform in &self.transform_stack[start_index..] {
+            // 注意乘法顺序：
+            // 如果 stack 里的顺序是 [父, 子, 孙...]
+            // 结果 = 结果 * 下一层
+            result = result * transform;
+        }
+
+        Ok(Transform2D {
+            m11: result.M11,
+            m12: result.M12,
+            m21: result.M21,
+            m22: result.M22,
+            dx: result.M31,
+            dy: result.M32,
+        })
     }
 
 

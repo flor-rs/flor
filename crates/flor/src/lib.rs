@@ -34,6 +34,7 @@ use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WINDOW_ENTRY_MAP;
 #[cfg(feature = "clipboard")]
 pub use arboard;
+pub use flor_base::types;
 #[cfg(feature = "tray")]
 use platform::{base::TrayEvent, base::TrayManagerEntry, base::TrayOptions, Tray, TrayId};
 pub use slotmap;

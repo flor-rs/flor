@@ -17,7 +17,7 @@ use flor_base::graphics::{
     Color, Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
     TextDrawOptions,
 };
-use flor_base::types::transform2d::Transform2D;
+use flor_base::types::Transform2D;
 use graphics::D2DRender;
 use platform::WindowId;
 
