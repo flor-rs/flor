@@ -14,15 +14,15 @@ license.workspace = true
 categories.workspace = true
 
 [features]
-svg = ["windows/Win32_UI_Shell", "flor-graphics-base/svg"]
-memory-font = ["flor-graphics-base/memory-font", "windows-core", "windows/Foundation"]
+svg = ["windows/Win32_UI_Shell", "flor-base/svg"]
+memory-font = ["flor-base/memory-font", "windows-core", "windows/Foundation"]
 
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }
 rustc-hash = { workspace = true }
 once_cell = { workspace = true }
-flor-graphics-base = { workspace = true }
+flor-base = { workspace = true, features = ["graphics"] }
 lru = { workspace = true }
 parking_lot = { workspace = true }
 windows = { workspace = true, features = ["Win32_Foundation",

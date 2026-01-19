@@ -1,6 +1,6 @@
 use crate::render::backend_error::FlorRenderError;
 use crate::view::view_id::ViewId;
-use flor_graphics_base::ColorParseError;
+use flor_base::graphics::ColorParseError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

@@ -1,5 +1,5 @@
 use crate::view::view_id::ViewId;
-use flor_platform_base::{KeyState, MousePosition};
+use flor_base::platform::{KeyState, MousePosition};
 use std::sync::Arc;
 
 #[derive(Clone)]

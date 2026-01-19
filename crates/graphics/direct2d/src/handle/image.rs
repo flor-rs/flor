@@ -1,6 +1,6 @@
 mod frame_metadata;
 
-use flor_graphics_base::ImageHandle;
+use flor_base::graphics::ImageHandle;
 use lru::LruCache;
 use parking_lot::Mutex;
 use std::mem::ManuallyDrop;
@@ -362,7 +362,7 @@ impl D2DImageHandle {
     ) -> Result<Self, D2DBackendError> {
         if raw_bytes.len() != delays.len() {
             return Err(D2DBackendError::RendererBaseError(
-                flor_graphics_base::Error::ImageFrameDelayMismatch(raw_bytes.len(), delays.len()),
+                flor_base::graphics::Error::ImageFrameDelayMismatch(raw_bytes.len(), delays.len()),
             ));
         }
 

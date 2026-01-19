@@ -1,4 +1,4 @@
-use flor_graphics_base::ImageHandle;
+use flor_base::graphics::ImageHandle;
 use graphics::handle::D2DImageHandle;
 
 #[derive(Debug, Clone)]

@@ -1,4 +1,4 @@
-use flor_graphics_base::{FontStretch, FontStyle, FontWeight, ParagraphAlignment, TextAlignment, TextFormatHandle, TextTrimming, WordWrapping};
+use flor_base::graphics::{FontStretch, FontStyle, FontWeight, ParagraphAlignment, TextAlignment, TextFormatHandle, TextTrimming, WordWrapping};
 use graphics::handle::D2DTextFormatHandle;
 
 #[derive(Debug, Clone)]

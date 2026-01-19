@@ -3,7 +3,7 @@ use crate::view::view_id::ViewId;
 use atomic_float::AtomicF32;
 use dashmap::mapref::one::{Ref, RefMut};
 use dashmap::DashMap;
-use flor_graphics_base::Color;
+use flor_base::graphics::Color;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use platform::WindowId;

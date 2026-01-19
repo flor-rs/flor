@@ -1,7 +1,7 @@
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
-use flor_platform_base::{KeyState, MousePosition, ScrollAxis};
+use flor_base::platform::{KeyState, MousePosition, ScrollAxis};
 use log::{debug, warn};
 use platform::WindowId;
 use taffy::{Display, Overflow};

@@ -1,6 +1,6 @@
 use crate::view::handler::Handler;
 use crate::view::view_id::ViewId;
-use flor_platform_base::{KeyState, MousePosition, ScrollAxis};
+use flor_base::platform::{KeyState, MousePosition, ScrollAxis};
 use std::sync::Arc;
 
 pub type OnResizeHandler = Handler;

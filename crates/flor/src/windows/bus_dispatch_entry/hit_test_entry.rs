@@ -14,7 +14,7 @@
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
-use flor_platform_base::{KeyState, MousePosition};
+use flor_base::platform::{KeyState, MousePosition};
 use platform::WindowId;
 use taffy::{Display, Overflow, Point};
 

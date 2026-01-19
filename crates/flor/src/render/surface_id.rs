@@ -1,4 +1,4 @@
-use flor_graphics_base::SurfaceId;
+use flor_base::graphics::SurfaceId;
 use graphics::handle::D2DSurfaceId;
 
 #[derive(Debug,Clone)]

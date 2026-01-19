@@ -20,13 +20,13 @@ use crate::windows::bus_dispatch_entry::visual_test_entry::visual_test_entry;
 use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_scroll_lines_changed_entry;
 use crate::windows::entry::WindowEntryVisit;
 use atomic_float::{AtomicF32, AtomicF64};
-use flor_graphics_base::RenderContext;
+use flor_base::graphics::RenderContext;
 #[cfg(feature = "theme-change")]
-use flor_platform_base::ThemeMode;
+use flor_base::platform::ThemeMode;
 #[cfg(feature = "drag-drop")]
-use flor_platform_base::{DragData, DragFormat, DropEffect};
-use flor_platform_base::{InputEvent, KeyCode, KeyState, WindowApi};
-use flor_platform_base::{MousePosition, ScrollAxis};
+use flor_base::platform::{DragData, DragFormat, DropEffect};
+use flor_base::platform::{InputEvent, KeyCode, KeyState, WindowApi};
+use flor_base::platform::{MousePosition, ScrollAxis};
 use log::{trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
@@ -678,7 +678,7 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn request_redraw(&self) {
-        flor_platform_base::WindowOperations::request_redraw(self)
+        flor_base::platform::WindowOperations::request_redraw(self)
             .warn_on_err("request_redraw fail");
     }
 

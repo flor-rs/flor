@@ -1,4 +1,4 @@
-use flor_graphics_base::BrushHandle;
+use flor_base::graphics::BrushHandle;
 use windows::Win32::Graphics::Direct2D::ID2D1Brush;
 
 #[derive(Debug, Clone)]

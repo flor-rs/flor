@@ -1,4 +1,4 @@
-use crate::WindowMode;
+use crate::platform::WindowMode;
 
 pub trait WindowApi {
     type Error;

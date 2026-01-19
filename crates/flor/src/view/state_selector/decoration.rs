@@ -36,7 +36,7 @@
 //!
 //! 支持状态前缀: `hover:`, `focus:`, `active:`, `disabled:`
 
-use flor_graphics_base::Color;
+use flor_base::graphics::Color;
 
 // ============================================================================
 // Public Types

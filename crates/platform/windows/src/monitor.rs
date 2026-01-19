@@ -1,5 +1,5 @@
 use crate::{Error, WindowId};
-use flor_platform_base::MonitorApi;
+use flor_base::platform::MonitorApi;
 use std::mem::size_of;
 use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, POINT, RECT};

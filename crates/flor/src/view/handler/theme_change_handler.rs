@@ -1,5 +1,5 @@
 use crate::view::view_id::ViewId;
-use flor_platform_base::ThemeMode;
+use flor_base::platform::ThemeMode;
 use std::sync::Arc;
 
 #[derive(Clone)]

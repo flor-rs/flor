@@ -1,6 +1,6 @@
 use crate::conversions::encode_wide::encode_wide;
 use crate::Error;
-use flor_platform_base::CursorIcon;
+use flor_base::platform::CursorIcon;
 use windows::Win32::Graphics::Gdi::CreateBitmap;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, DestroyCursor, LoadCursorW, LoadImageW, HCURSOR, ICONINFO, IDC_APPSTARTING,
@@ -18,7 +18,7 @@ pub struct Cursor {
 unsafe impl Send for Cursor {}
 unsafe impl Sync for Cursor {}
 
-impl flor_platform_base::CursorHandle for Cursor {
+impl flor_base::platform::CursorHandle for Cursor {
     type Handle = HCURSOR;
     type Error = Error;
 

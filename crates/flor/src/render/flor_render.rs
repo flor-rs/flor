@@ -12,11 +12,12 @@ use crate::render::svg_handle::FlorSvgHandle;
 use crate::render::text_format_handle::FlorTextFormatHandle;
 use crate::render::FlorBrushHandle;
 #[cfg(feature = "svg")]
-use flor_graphics_base::SvgDrawOptions;
-use flor_graphics_base::{
+use flor_base::graphics::SvgDrawOptions;
+use flor_base::graphics::{
     Color, Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
-    TextDrawOptions, Transform2D,
+    TextDrawOptions,
 };
+use flor_base::types::transform2d::Transform2D;
 use graphics::D2DRender;
 use platform::WindowId;
 

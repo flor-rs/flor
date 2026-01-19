@@ -1,7 +1,7 @@
 use crate::conversions::encode_wide::encode_wide;
 use crate::cursor::Cursor;
 use crate::window_id::WindowId;
-use flor_platform_base::{CursorHandle, WindowApi, WindowMode, WindowOperations};
+use flor_base::platform::{CursorHandle, WindowApi, WindowMode, WindowOperations};
 use once_cell::sync::Lazy;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{ClientToScreen, InvalidateRect, UpdateWindow};

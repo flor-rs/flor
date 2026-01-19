@@ -46,10 +46,9 @@ log = { workspace = true }
 once_cell = { workspace = true }
 rustc-hash = { workspace = true }
 thiserror = { workspace = true }
-flor-graphics-base = { workspace = true }
+flor-base = { workspace = true }
 #graphics-opengl = { workspace = true, optional = true }
 flor-graphics-direct2d = { workspace = true, optional = true }
-flor-platform-base = { workspace = true }
 taffy = { workspace = true }
 parking_lot = "0.12"
 slotmap = { workspace = true }

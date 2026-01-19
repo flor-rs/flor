@@ -1,5 +1,5 @@
 use crate::view::view_id::ViewId;
-use flor_platform_base::KeyCode;
+use flor_base::platform::KeyCode;
 use std::sync::Arc;
 
 #[derive(Clone)]

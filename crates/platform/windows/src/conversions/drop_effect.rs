@@ -1,4 +1,4 @@
-use flor_platform_base::DropEffect;
+use flor_base::platform::DropEffect;
 use windows::Win32::System::Ole::{
     DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE,
     DROPEFFECT_SCROLL,

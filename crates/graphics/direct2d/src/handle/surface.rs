@@ -1,4 +1,4 @@
-use flor_graphics_base::SurfaceId;
+use flor_base::graphics::SurfaceId;
 use windows::Win32::Graphics::Direct2D::ID2D1BitmapRenderTarget;
 
 #[derive(Debug, Clone)]

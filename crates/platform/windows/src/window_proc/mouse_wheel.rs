@@ -2,7 +2,7 @@ use crate::conversions::key_state::IntoKeyState;
 use crate::conversions::mouse_position::IntoMousePosition;
 use crate::conversions::word::hiword_i16;
 use crate::proc;
-use flor_platform_base::{HandleResult, Message, MousePosition, ScrollAxis};
+use flor_base::platform::{HandleResult, Message, MousePosition, ScrollAxis};
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;

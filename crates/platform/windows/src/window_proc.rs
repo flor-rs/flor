@@ -19,8 +19,8 @@ use crate::conversions::mouse_position::IntoMousePosition;
 use crate::conversions::word::{hiword_u16, loword_u16};
 use crate::proc_handler::proc;
 use crate::window_proc::mouse_wheel::mouse_wheel;
-use flor_platform_base::{HandleResult, InputEvent, ScrollAxis};
-use flor_platform_base::{KeyCode, Message};
+use flor_base::platform::{HandleResult, InputEvent, ScrollAxis};
+use flor_base::platform::{KeyCode, Message};
 
 pub(crate) unsafe extern "system" fn window_proc(
     hwnd: HWND,
@@ -341,7 +341,7 @@ unsafe fn is_lparam_str(lparam: LPARAM, target: &str) -> bool {
 
 /// 查询当前注册表，判断是深色还是浅色
 #[cfg(feature = "theme-change")]
-fn get_current_theme() -> flor_platform_base::ThemeMode {
+fn get_current_theme() -> flor_base::platform::ThemeMode {
     unsafe {
         let mut value: u32 = 0;
         let mut size = size_of::<u32>() as u32;
@@ -362,9 +362,9 @@ fn get_current_theme() -> flor_platform_base::ThemeMode {
 
         // 0 = Dark, 1 = Light. 读取失败默认 Light
         if result.is_ok() && value == 0 {
-            flor_platform_base::ThemeMode::Dark
+            flor_base::platform::ThemeMode::Dark
         } else {
-            flor_platform_base::ThemeMode::Light
+            flor_base::platform::ThemeMode::Light
         }
     }
 }

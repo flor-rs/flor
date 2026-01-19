@@ -1,4 +1,4 @@
-use flor_graphics_base::Error;
+use flor_base::graphics::Error;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;

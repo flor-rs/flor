@@ -1,7 +1,7 @@
 use crate::conversions::drop_effect::ToWinDropEffect;
 use crate::conversions::key_state::IntoKeyState;
 use crate::{proc, WindowId};
-use flor_platform_base::{DragData, DragFormat, DropEffect, Message, MousePosition};
+use flor_base::platform::{DragData, DragFormat, DropEffect, Message, MousePosition};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;

@@ -13,10 +13,10 @@ use crate::view::View;
 use crate::windows::bus::render_from_view_id;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WindowEntryVisit;
-use flor_graphics_base::RenderContext;
-use flor_platform_base::WindowOperations;
+use flor_base::graphics::RenderContext;
+use flor_base::platform::WindowOperations;
 #[cfg(feature = "drag-drop")]
-use flor_platform_base::{DragFormat, DropEffect, KeyState, MousePosition};
+use flor_base::platform::{DragFormat, DropEffect, KeyState, MousePosition};
 use once_cell::sync::Lazy;
 use platform::WindowId;
 use rustc_hash::FxHashMap;

@@ -1,4 +1,4 @@
-use flor_graphics_base::BrushHandle;
+use flor_base::graphics::BrushHandle;
 use graphics::handle::D2DBrushHandle;
 
 #[derive(Debug, Clone)]

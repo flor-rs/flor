@@ -1,8 +1,6 @@
 #[cfg(feature = "drag-drop")]
 use crate::drag_drop::{DragFormat, DropEffect};
-use crate::key_code::KeyCode;
-use crate::key_state::KeyState;
-use crate::mouse_position::MousePosition;
+use crate::platform::{KeyCode, KeyState, MousePosition};
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::path::PathBuf;

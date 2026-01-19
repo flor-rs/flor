@@ -5,7 +5,7 @@ use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render_from_view_id;
 use crate::windows::entry::WindowEntryVisit;
-use flor_platform_base::WindowApi;
+use flor_base::platform::WindowApi;
 use log::{trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;

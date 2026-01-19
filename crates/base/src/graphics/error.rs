@@ -24,5 +24,5 @@ pub enum Error {
     TextFormatHandleNotFound(usize),
 
     #[error("color parse error: `{0}`")]
-    ColorParseColor(#[from] crate::ColorParseError),
+    ColorParseColor(#[from] crate::graphics::ColorParseError),
 }

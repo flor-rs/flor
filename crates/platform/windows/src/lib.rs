@@ -27,7 +27,7 @@ pub use monitor::*;
 pub use tray::*;
 
 pub mod base {
-    pub use flor_platform_base::*;
+    pub use flor_base::platform::*;
 }
 
 pub mod events {

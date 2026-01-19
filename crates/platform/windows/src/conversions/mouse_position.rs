@@ -1,4 +1,4 @@
-use flor_platform_base::MousePosition;
+use flor_base::platform::MousePosition;
 
 pub trait IntoMousePosition {
     fn into_mouse_position(self) -> MousePosition;

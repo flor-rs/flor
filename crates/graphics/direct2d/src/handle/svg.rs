@@ -1,4 +1,4 @@
-use flor_graphics_base::SvgHandle;
+use flor_base::graphics::SvgHandle;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use windows::Win32::Graphics::Direct2D::{ID2D1CommandList, ID2D1Effect, ID2D1SvgDocument};

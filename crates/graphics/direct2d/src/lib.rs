@@ -5,10 +5,10 @@ use crate::handle::D2DTextFormatHandle;
 #[cfg(feature = "svg")]
 use crate::handle::{D2DSvgHandle, SvgShadowCache};
 use crate::into_d2d_transform::IntoD2DTransform;
-use flor_graphics_base::{
+use flor_base::graphics::{
     Color, Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
     PathDrawOptions, Render, RenderContext, ScaleMode, TextAlignment, TextDrawOptions,
-    TextFormatHandle, TextTrimming, Transform2D, WordWrapping,
+    TextFormatHandle, TextTrimming, WordWrapping,
 };
 use log::debug;
 use lru::LruCache;
@@ -87,11 +87,10 @@ use windows_numerics::{Matrix3x2, Vector2};
 #[cfg(not(target_os = "windows"))]
 compile_error!("The 'direct2d' feature is only supported on Windows platforms.");
 
-mod brush;
 mod error;
 
 pub mod base {
-    pub use flor_graphics_base::*;
+    pub use flor_base::graphics::*;
 }
 pub mod into_d2d_transform;
 
@@ -108,6 +107,7 @@ use crate::memory_font::{get_family_name_from_face, MemoryFontFileLoader};
 use crate::color::AsD2dColor;
 use crate::encode::encode_unicode;
 pub use error::*;
+use flor_base::types::transform2d::Transform2D;
 
 pub static RENDER_FACTORY: OnceLock<RenderFactory> = OnceLock::new();
 

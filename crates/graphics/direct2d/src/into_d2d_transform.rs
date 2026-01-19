@@ -1,5 +1,5 @@
+use flor_base::types::transform2d::Transform2D;
 use windows_numerics::Matrix3x2;
-use flor_graphics_base::Transform2D;
 
 pub trait IntoD2DTransform {
     fn into_transform(self) -> Matrix3x2;

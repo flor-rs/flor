@@ -1,6 +1,6 @@
 use crate::window_id::WindowId;
-use flor_platform_base::Message;
-use flor_platform_base::HandleResult;
+use flor_base::platform::HandleResult;
+use flor_base::platform::Message;
 use log::warn;
 use once_cell::sync::Lazy;
 use parking_lot::lock_api::RwLockReadGuard;

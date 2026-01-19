@@ -5,9 +5,8 @@ members = [
     "crates/macros",
     "crates/graphics/opengl",
     "crates/graphics/direct2d",
-    "crates/platform/base",
     "crates/platform/windows",
-    "crates/graphics/base",
+    "crates/base",
 ]
 
 [workspace.package]
@@ -22,13 +21,12 @@ repository = ""
 
 [workspace.dependencies]
 atomic_float = "1.1.0"
-flor-macros = { version = "0.1.0", path = "crates/macros" }
 flor = { version = "0.1.0", path = "crates/flor" }
-flor-platform-base = { version = "0.1.0", path = "crates/platform/base" }
-flor-platform-windows = { version = "0.1.0", path = "crates/platform/windows" }
-flor-graphics-base = { version = "0.1.0", path = "./crates/graphics/base" }
+flor-base = { version = "0.1.0", path = "crates/base" }
 flor-graphics-opengl = { version = "0.1.0", path = "./crates/graphics/opengl" }
 flor-graphics-direct2d = { version = "0.1.0", path = "./crates/graphics/direct2d" }
+flor-macros = { version = "0.1.0", path = "crates/macros" }
+flor-platform-windows = { version = "0.1.0", path = "crates/platform/windows" }
 dashmap = "*"
 image = "0.25"
 log = "0.4"

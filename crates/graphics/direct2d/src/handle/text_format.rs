@@ -1,4 +1,4 @@
-use flor_graphics_base::{
+use flor_base::graphics::{
     FontStretch, FontStyle, FontWeight, ParagraphAlignment, TextAlignment, TextFormatHandle,
     TextTrimming, WordWrapping,
 };

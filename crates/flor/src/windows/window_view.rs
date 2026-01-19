@@ -3,7 +3,7 @@ use crate::render::FlorRender;
 use crate::view::view_id::ViewId;
 use crate::view::View;
 use crate::windows::entry::{WindowEntryVisit, WINDOW_ENTRY_MAP};
-use flor_graphics_base::{Color, RenderContext};
+use flor_base::graphics::{Color, RenderContext};
 use log::trace;
 use platform::WindowId;
 use std::sync::atomic::Ordering;

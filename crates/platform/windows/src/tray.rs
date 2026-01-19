@@ -1,7 +1,7 @@
 use crate::conversions::encode_wide::encode_wide;
 use crate::window::get_instance_handle;
 use crate::{Error, WindowId};
-use flor_platform_base::{IconSource, MouseButton, TrayEvent, TrayManagerEntry, TrayOptions};
+use flor_base::platform::{IconSource, MouseButton, TrayEvent, TrayManagerEntry, TrayOptions};
 // 确保引入 IconSource
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
@@ -35,7 +35,7 @@ new_key_type! {
     pub struct TrayId;
 }
 
-impl flor_platform_base::TrayId for TrayId {}
+impl flor_base::platform::TrayId for TrayId {}
 
 struct TrayHIcon(pub HICON);
 unsafe impl Send for TrayHIcon {}
