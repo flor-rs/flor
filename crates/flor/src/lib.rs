@@ -89,10 +89,8 @@ impl FlorGui {
     }
 
     pub fn exit(&self) {
-        if ALLOW_NO_WINDOWS_LOOP.load(Ordering::Acquire) {
-            platform::exit();
-            EXIT.store(true, Ordering::Release);
-        }
+        platform::exit();
+        EXIT.store(true, Ordering::Release);
     }
 
     pub fn event_loop(&self) -> Result<(), Error> {
@@ -112,7 +110,7 @@ impl FlorGui {
             let allow = ALLOW_NO_WINDOWS_LOOP.load(Ordering::Acquire);
             trace!("allow_no_windows_loop: {}", allow);
 
-            if !allow && EXIT.load(Ordering::Acquire) {
+            if (!allow && RENDERS.is_empty()) || EXIT.load(Ordering::Acquire) {
                 info!("application exit.");
                 break Ok(());
             }
