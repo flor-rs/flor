@@ -1,7 +1,7 @@
 # Style 派生宏参考
 
-`#[derive(Style)]` 是 flor 框架中用于生成控件样式系统辅助代码的过程宏。它为枚举类型自动生成完整的样式管理体系，包括类型、trait
-扩展和状态管理。
+`#[derive(Style)]` 是 flor 框架中用于生成控件样式系统或其他参数的辅助代码的过程宏。它为枚举类型自动生成完整的样式管理体系，包括类型、trait
+扩展、状态管理和 `StyleBuilder` 实现。
 
 ---
 
@@ -12,7 +12,7 @@ use flor_macros::Style;
 use flor::graphics::base::Color;
 
 #[derive(Clone, Debug, Style)]
-pub enum LabelStyle {
+pub enum LabelStyle {  // 自动为 Label 控件生成 StyleBuilder
     TextColor(Color),
     FontSize(f32),
     FontFamily(String),
@@ -29,6 +29,7 @@ pub enum LabelStyle {
 | `LabelStyleStateSelectorExt`   | `StateSelector` 的链式方法 trait                     |
 | `LabelStyleStateSelector`      | `StateSelector<LabelStyleKey, LabelStyle>` 类型别名 |
 | `impl LabelStyle::update_view` | 更新视图样式的辅助方法                                     |
+| `impl StyleBuilder for Label`  | **自动生成** `.style()` 链式方法 (约定优于配置)               |
 
 ---
 
@@ -36,11 +37,65 @@ pub enum LabelStyle {
 
 Style 宏的设计遵循以下原则:
 
-1. **声明式**: 只需定义枚举变体，宏自动推导所有辅助代码
-2. **类型安全**: 每个样式属性都有明确的类型，编译期检查
-3. **状态感知**: 原生支持 Normal/Hover/Focus/Active/Disabled 状态
-4. **链式 API**: 生成流畅的 builder 风格接口
-5. **响应式**: 与 flor 信号系统无缝集成
+1. **约定优于配置**: 枚举名以 `Style` 结尾时，自动推导控件名并生成 `StyleBuilder`
+2. **声明式**: 只需定义枚举变体，宏自动推导所有辅助代码
+3. **类型安全**: 每个样式属性都有明确的类型，编译期检查
+4. **状态感知**: 原生支持 Normal/Hover/Focus/Active/Disabled 状态
+5. **链式 API**: 生成流畅的 builder 风格接口
+6. **响应式**: 与 flor 信号系统无缝集成
+
+---
+
+## StyleBuilder 自动生成
+
+### 约定规则
+
+**默认行为**：如果枚举名以 `Style` 结尾，宏会自动：
+
+- 去掉 `Style` 后缀得到控件名（如 `LabelStyle` → `Label`）
+- 为该控件生成 `StyleBuilder<LabelStyleStateSelector>` 实现
+
+```rust
+// 枚举名: LabelStyle
+// 自动推导控件名: Label
+// 自动生成: impl StyleBuilder<LabelStyleStateSelector> for Label
+#[derive(Clone, Debug, Style)]
+pub enum LabelStyle {
+    TextColor(Color),
+}
+```
+
+### 显式指定控件名
+
+当枚举名不符合 `XxxStyle` 命名规范时，使用 `#[style(control = ControlName)]`：
+
+```rust
+#[derive(Clone, Debug, Style)]
+#[style(control = MyButton)]  // 显式指定为 MyButton 生成 StyleBuilder
+pub enum ButtonAppearance {
+    BackgroundColor(Color),
+}
+```
+
+### 跳过 StyleBuilder 生成
+
+使用 `#[style(builder = false)]` 跳过 StyleBuilder 生成，需手动实现：
+
+```rust
+#[derive(Clone, Debug, Style)]
+#[style(builder = false)]  // 不生成 StyleBuilder
+pub enum CustomStyle {
+    Value(f32),
+}
+
+// 手动实现 StyleBuilder
+impl StyleBuilder<CustomStyleStateSelector> for MyControl {
+    fn style(mut self, style_fn: impl Fn(CustomStyleStateSelector) -> CustomStyleStateSelector) -> Self {
+        self.style = style_fn(self.style);
+        self
+    }
+}
+```
 
 ---
 
@@ -164,18 +219,20 @@ impl Label {
 通过状态切换方法 + 属性设置方法构建样式:
 
 ```rust
-// 设置 Normal 状态样式
-let style = StateSelector::default ()
-.normal()                           // 切换到 Normal 状态
-.text_color(Color::BLACK)           // 设置文字颜色
-.font_size(16.0)                    // 设置字体大小
-.background(Background::Color(Color::WHITE));
+fn example() {
+    // 设置 Normal 状态样式
+    let style = StateSelector::default()
+        .normal()                           // 切换到 Normal 状态
+        .text_color(Color::BLACK)           // 设置文字颜色
+        .font_size(16.0)                    // 设置字体大小
+        .background(Background::Color(Color::WHITE));
 
-// 添加 Hover 状态样式
-let style = style
-.hover()                            // 切换到 Hover 状态
-.text_color(Color::BLUE)            // Hover 时文字变蓝
-.background(Background::Color(Color::rgba(0.9, 0.9, 0.9, 1.0)));
+    // 添加 Hover 状态样式
+    let style = style
+        .hover()                            // 切换到 Hover 状态
+        .text_color(Color::BLUE)            // Hover 时文字变蓝
+        .background(Background::Color(Color::rgba(0.9, 0.9, 0.9, 1.0)));    
+}
 ```
 
 ### 获取计算后样式
@@ -208,10 +265,109 @@ fn on_draw(&mut self, render: &mut FlorRender, abs_location: (f32, f32), layout:
 fn on_update_state(&mut self, state: Box<dyn Any>) {
     // 先处理其他状态更新...
 
-    // 尝试处理样式更新
+    // 尝试处理样式更新 (LabelStyleUpdate 由 Style 宏生成)
     if let Ok(update) = state.downcast::<LabelStyleUpdate>() {
         LabelStyle::update_view(&mut self.style, *update);
     }
+}
+```
+
+### `update_view` 方法详解
+
+`update_view` 是 Style 宏为每个样式枚举自动生成的静态方法，用于将 `XxxStyleUpdate` 更新应用到样式选择器中。
+
+**方法签名**:
+
+```rust
+impl LabelStyle {
+    pub fn update_view(
+        selector: &mut LabelStyleStateSelector,
+        update: LabelStyleUpdate
+    ) {
+        // 根据 update 的变体，更新对应状态的对应属性
+    }
+}
+```
+
+**参数说明**:
+
+| 参数       | 类型                           | 说明              |
+|----------|------------------------------|:----------------|
+| selector | `&mut XxxStyleStateSelector` | 要更新的样式选择器（可变引用） |
+| update   | `XxxStyleUpdate`             | 包含控件状态和新值的更新对象  |
+
+**工作原理**:
+
+1. `XxxStyleUpdate` 枚举变体包含 `ControlState` 和实际值
+2. `update_view` 解构更新对象，切换到对应状态，设置对应属性
+
+**生成的代码示例** (以 `LabelStyle::TextColor` 为例):
+
+```rust
+impl LabelStyle {
+    pub fn update_view(selector: &mut LabelStyleStateSelector, update: LabelStyleUpdate) {
+        match update {
+            LabelStyleUpdate::TextColor(state, color) => {
+                *selector = selector.clone().switch_state(state).text_color(color);
+            }
+            LabelStyleUpdate::FontSize(state, size) => {
+                *selector = selector.clone().switch_state(state).font_size(size);
+            }
+            // ... 其他变体
+        }
+    }
+}
+```
+
+### 完整使用流程
+
+使用 Style 宏开发控件样式的步骤：
+
+**第一步：定义 Style 枚举**
+
+```rust
+#[derive(Clone, Debug, Style)]
+pub enum LabelStyle {  // 命名为 XxxStyle，自动为 Xxx 生成 StyleBuilder
+    TextColor(Color),
+    FontSize(f32),
+    FontFamily(String),
+}
+```
+
+**第二步：在控件中声明样式字段**
+
+```rust
+pub struct Label {
+    view_id: ViewId,
+    title: String,
+    style: LabelStyleStateSelector,  // 由宏生成的类型别名
+}
+```
+
+**第三步：实现 `on_update_state` 处理样式更新**
+
+```rust
+fn on_update_state(&mut self, state: Box<dyn Any>) {
+    // 处理样式更新
+    if let Ok(update) = state.downcast::<LabelStyleUpdate>() {
+        LabelStyle::update_view(&mut self.style, *update);
+    }
+}
+```
+
+**第四步：使用**
+
+```rust
+fn example() {
+    // 创建控件并设置样式（StyleBuilder 已自动生成）
+    let my_label = label("Hello World")
+        .style(|s| s
+            .normal()
+            .text_color(Color::BLACK)
+            .font_size(16.0)
+            .hover()
+            .text_color(Color::BLUE)
+        );
 }
 ```
 
@@ -237,14 +393,16 @@ fn on_update_state(&mut self, state: Box<dyn Any>) {
 2. 如果当前状态不是 Normal，则用当前状态的样式覆盖
 
 ```rust
-// 示例
-let style = StateSelector::default ()
-.normal().text_color(Color::BLACK).font_size(14.0)
-.hover().text_color(Color::BLUE);  // 只覆盖 text_color
+fn example() {
+    // 示例
+    let style = StateSelector::default()
+        .normal().text_color(Color::BLACK).font_size(14.0)
+        .hover().text_color(Color::BLUE);  // 只覆盖 text_color
 
-let computed = style.compute_style(ControlState::Hover);
-// computed.text_color = Some(Color::BLUE)   <- Hover 覆盖
-// computed.font_size = Some(14.0)           <- 继承自 Normal
+    let computed = style.compute_style(ControlState::Hover);
+    // computed.text_color = Some(Color::BLUE)   <- Hover 覆盖
+    // computed.font_size = Some(14.0)           <- 继承自 Normal
+}
 ```
 
 ---
@@ -297,14 +455,16 @@ impl StyleBuilder<LabelStyleStateSelector> for Label {
 使用示例:
 
 ```rust
-let label = label("Hello")
-.style( | s| s
-.normal()
-.text_color(Color::from_hex_str("1E293B").unwrap())
-.font_size(16.0)
-.hover()
-.text_color(Color::from_hex_str("3B82F6").unwrap())
-);
+fn example() {
+    let label = label("Hello")
+        .style(|s| s
+            .normal()
+            .text_color(Color::from_hex_str("1E293B").unwrap())
+            .font_size(16.0)
+            .hover()
+            .text_color(Color::from_hex_str("3B82F6").unwrap())
+        );
+}
 ```
 
 ---
