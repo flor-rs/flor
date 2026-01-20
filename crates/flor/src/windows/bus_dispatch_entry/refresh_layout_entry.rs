@@ -6,10 +6,11 @@ use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render_from_view_id;
 use crate::windows::entry::WindowEntryVisit;
 use flor_base::platform::WindowApi;
+use flor_base::types::Transform2D;
 use log::{trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
-use taffy::{AvailableSpace, Point, Size, Style};
+use taffy::{AvailableSpace, Size, Style};
 
 pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
     trace!("enter relayout");
@@ -108,35 +109,79 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
         trace!("bus_update_layout end");
     }
 
+    // 计算累积变换：从根控件遍历，累加 transform 到 accumulated_transform
+    compute_accumulated_transforms(view_id);
+
     Ok(())
 }
 
-/// 本地矩形，用于表示控件的边界
-/// 保留此类型供可能的其他用途
-#[derive(Clone, Copy, Debug, Default)]
-pub struct LocalRect {
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-}
+/// 计算累积变换矩阵
+///
+/// accumulated_transform 代表：控件局部坐标(0,0) → 窗口坐标 的完整变换
+///
+/// 变换链（按行向量乘法顺序）：
+/// accumulated = parent_accumulated 
+///     * translation(layout.location.x, layout.location.y)  // 平移到当前控件位置
+///     * local_transform                                     // 控件自身变换
+///     * translation(-scroll_x, -scroll_y)                   // scroll 偏移
+fn compute_accumulated_transforms(start_view_id: ViewId) {
+    let child_ids = VIEW_STORAGE.child_ids.read();
+    let states = VIEW_STORAGE.states.read();
+    let transform_map = VIEW_STORAGE.transform.read();
+    let scroll_map = VIEW_STORAGE.scroll.read();
+    let mut accumulated_map = VIEW_STORAGE.accumulated_transform.write();
 
-impl LocalRect {
-    pub fn from_layout(size: Size<f32>) -> Self {
-        Self {
-            x: 0.0,
-            y: 0.0,
-            w: size.width,
-            h: size.height,
+    // (view_id, parent_accumulated_transform)
+    // 根节点的父变换是 Identity（或 None）
+    let mut stack = vec![(start_view_id, Transform2D::IDENTITY)];
+
+    while let Some((view_id, parent_accumulated)) = stack.pop() {
+        // 1. 获取当前控件的 layout.location（相对于父控件的位置）
+        let location = states
+            .get(view_id)
+            .map(|s| {
+                let state = s.read();
+                (state.layout.location.x, state.layout.location.y)
+            })
+            .unwrap_or((0.0, 0.0));
+
+        // 2. 获取控件自身的 transform
+        let local_transform = transform_map.get(view_id).copied();
+
+        // 3. 获取 scroll offset
+        let scroll_offset = scroll_map
+            .get(view_id)
+            .map(|s| s.current)
+            .unwrap_or((0.0, 0.0));
+
+        // 4. 计算当前控件的累积变换
+        // 顺序：parent_accumulated * translation(location) * local_transform * translation(-scroll)
+        let mut current_accumulated = parent_accumulated
+            .then_translate(location.0, location.1);
+
+        if let Some(local_tf) = local_transform {
+            current_accumulated = current_accumulated * local_tf;
         }
-    }
 
-    /// 检查矩形是否有效（宽高都大于0）
-    pub fn is_valid(&self) -> bool {
-        self.w > 0.0 && self.h > 0.0
-    }
+        // scroll 只影响子控件，所以要作为传递给子控件的变换的一部分
+        // 但对于当前控件自身的命中测试，不需要 scroll
+        // 所以这里我们存储不含 scroll 的版本，给子控件传递含 scroll 的版本
 
-    pub fn contains(&self, p: Point<f32>) -> bool {
-        p.x >= self.x && p.x <= self.x + self.w && p.y >= self.y && p.y <= self.y + self.h
+        // 存储当前控件的累积变换（用于命中测试自身）
+        accumulated_map.insert(view_id, current_accumulated);
+
+        // 5. 计算传递给子控件的累积变换（包含 scroll）
+        let child_parent_accumulated = if scroll_offset.0 != 0.0 || scroll_offset.1 != 0.0 {
+            current_accumulated.then_translate(-scroll_offset.0, -scroll_offset.1)
+        } else {
+            current_accumulated
+        };
+
+        // 6. 处理子控件
+        if let Some(children) = child_ids.get(view_id) {
+            for &child_id in children {
+                stack.push((child_id, child_parent_accumulated));
+            }
+        }
     }
 }

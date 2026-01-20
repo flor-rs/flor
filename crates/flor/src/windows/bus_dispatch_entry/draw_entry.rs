@@ -10,7 +10,7 @@ use taffy::{Display, Layout, Overflow, Point};
 enum DrawStage {
     Enter,
     Exit {
-        transform_depth: Option<u32>,
+        transform_depth: u32,
         clip_depth: Option<u32>,
         layout: Layout,
     },
@@ -25,6 +25,7 @@ struct DrawFrame {
 pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error> {
     let views = VIEW_STORAGE.views.read();
     let child_map = VIEW_STORAGE.child_ids.read();
+    let view_transform = VIEW_STORAGE.transform.read();
 
     let mut stack = Vec::with_capacity(64);
 
@@ -59,10 +60,14 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                 );
 
                 trace!("view({}).draw_entry", view_id);
-
-                let mut transform_depth = None;
+                let transform_depth = render.get_transform_depth()?;
                 let mut clip_depth = None;
                 let mut clip_content = None;
+
+                // 额外的变换参数，放到get_transform_depth后面，就会被正常pop掉了
+                if let Some(transform) = view_transform.get(view_id) {
+                    render.push_transform(transform)?;
+                }
 
                 if style.overflow != Point::<Overflow>::default() {
                     clip_depth = Some(render.get_clip_depth()?);
@@ -115,7 +120,6 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
 
                 if let Some((scroll_x, scroll_y)) = view_id.scroll_offset() {
                     if scroll_x != 0.0 || scroll_y != 0.0 {
-                        transform_depth = Some(render.get_transform_depth()?);
                         render.push_transform(&Transform2D::translation(-scroll_x, -scroll_y))?;
                     }
                 }
@@ -150,9 +154,7 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                     continue;
                 };
 
-                if transform_depth.is_some() {
-                    render.pop_transform(transform_depth)?;
-                }
+                render.pop_transform(Some(transform_depth))?;
                 if clip_depth.is_some() {
                     render.pop_clip(clip_depth)?;
                 }

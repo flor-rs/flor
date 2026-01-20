@@ -200,6 +200,13 @@ impl Transform2D {
         *self == Self::IDENTITY
     }
 
+    /// 判断变换是否保持轴对齐（即没有旋转或倾斜）
+    /// 如果 m12 和 m21 均为 0，则变换后的矩形仍然是轴对齐的矩形。
+    pub fn is_axis_aligned(&self) -> bool {
+        let eps = 1e-5;
+        self.m12.abs() < eps && self.m21.abs() < eps
+    }
+
     // =========================================================
     // 应用变换 (Apply)
     // =========================================================
@@ -237,6 +244,57 @@ impl Transform2D {
         let max_y = y1.max(y2).max(y3).max(y4);
 
         (min_x, min_y, max_x - min_x, max_y - min_y) // Returns (x, y, w, h)
+    }
+
+    /// 逆变换点（将全局/屏幕坐标转换回局部坐标）
+    ///
+    /// 用于命中测试：将鼠标点击的屏幕坐标转换为控件内部坐标
+    ///
+    /// # 返回值
+    /// - `Some((local_x, local_y))` - 成功转换后的局部坐标
+    /// - `None` - 矩阵不可逆（行列式为 0）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let transform = Transform2D::translation(100.0, 50.0).then_scale(2.0, 2.0);
+    /// // 屏幕坐标 (120, 70) 对应的局部坐标
+    /// let local = transform.inverse_transform_point(120.0, 70.0);
+    /// // local = Some((10.0, 10.0))
+    /// ```
+    #[inline]
+    pub fn inverse_transform_point(&self, x: f32, y: f32) -> Option<(f32, f32)> {
+        let det = self.determinant();
+        if det.abs() < 1e-6 {
+            return None;
+        }
+        let inv_det = 1.0 / det;
+
+        // 先减去平移，再应用逆线性变换
+        let x_no_translate = x - self.dx;
+        let y_no_translate = y - self.dy;
+
+        Some((
+            (x_no_translate * self.m22 - y_no_translate * self.m21) * inv_det,
+            (-x_no_translate * self.m12 + y_no_translate * self.m11) * inv_det,
+        ))
+    }
+
+    /// 逆变换点（不检查，直接返回结果）
+    ///
+    /// 如果你确定矩阵是可逆的，可以使用此方法避免 Option 开销
+    ///
+    /// # Panics
+    /// 如果矩阵不可逆（行列式接近 0），结果将是 NaN 或 Infinity
+    #[inline]
+    pub fn inverse_transform_point_unchecked(&self, x: f32, y: f32) -> (f32, f32) {
+        let inv_det = 1.0 / self.determinant();
+        let x_no_translate = x - self.dx;
+        let y_no_translate = y - self.dy;
+
+        (
+            (x_no_translate * self.m22 - y_no_translate * self.m21) * inv_det,
+            (-x_no_translate * self.m12 + y_no_translate * self.m11) * inv_det,
+        )
     }
 }
 

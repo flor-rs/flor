@@ -1,20 +1,18 @@
 //! 命中测试入口
 //!
 //! 设计思路：
-//! 1. 使用绝对坐标 (abs_location) 进行命中测试，与 draw_entry 保持一致
+//! 1. 使用 accumulated_transform 进行坐标变换
+//!    - accumulated_transform 代表：控件局部坐标(0,0) → 窗口坐标
+//!    - 命中测试时用逆变换把鼠标窗口坐标转为控件局部坐标
 //! 2. 两阶段命中：先检查 overlay 层（滚动条等），再检查 main 层
 //! 3. 递归深度优先，后绘制的元素先检测（z-order：最上层优先）
-//! 4. 正确处理 clip 和 scroll offset
-//!
-//! 关键点：
-//! - abs_location 是"逻辑位置"（不考虑 scroll）
-//! - 在绘制时，scroll 是通过 transform 来实现的
-//! - 在命中测试时，需要累积祖先的 scroll offset 来计算"可视位置"
+//! 4. 正确处理 clip
 
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
 use flor_base::platform::{KeyState, MousePosition};
+use flor_base::types::Transform2D;
 use platform::WindowId;
 use taffy::{Display, Overflow, Point};
 
@@ -47,19 +45,19 @@ pub fn hit_test_entry(
     let child_ids = VIEW_STORAGE.child_ids.read();
     let states = VIEW_STORAGE.states.read();
     let visual = VIEW_STORAGE.visual.read();
+    let accumulated_transform = VIEW_STORAGE.accumulated_transform.read();
 
     // 执行命中测试
-    // accumulated_scroll 表示从根节点到当前节点累积的滚动偏移
     if let Some(result) = hit_test_recursive(
         root_id,
         mouse_point,
         key_state,
-        (0.0, 0.0), // 根节点没有累积的滚动偏移
-        None,       // 根节点没有 clip
+        None, // 根节点没有 clip
         &views,
         &child_ids,
         &states,
         &visual,
+        &accumulated_transform,
     ) {
         result.view_id
     } else {
@@ -71,9 +69,8 @@ pub fn hit_test_entry(
 ///
 /// # 参数
 /// - `view_id`: 当前节点
-/// - `mouse_point`: 鼠标位置（相对于窗口）
-/// - `accumulated_scroll`: 从根节点到当前节点累积的滚动偏移
-/// - `parent_clip`: 父节点的 clip 区域
+/// - `mouse_point`: 鼠标位置（相对于窗口，窗口坐标系）
+/// - `parent_clip`: 父节点的 clip 区域（窗口坐标系）
 ///
 /// # 返回
 /// - Some(result): 命中了某个节点
@@ -82,12 +79,15 @@ fn hit_test_recursive(
     view_id: ViewId,
     mouse_point: (f32, f32),
     key_state: KeyState,
-    accumulated_scroll: (f32, f32),
     parent_clip: Option<ClipRect>,
-    views: &slotmap::SecondaryMap<ViewId, parking_lot::RwLock<Box<dyn crate::view::View + Send + Sync>>>,
+    views: &slotmap::SecondaryMap<
+        ViewId,
+        parking_lot::RwLock<Box<dyn crate::view::View + Send + Sync>>,
+    >,
     child_ids: &slotmap::SecondaryMap<ViewId, Vec<ViewId>>,
     states: &slotmap::SecondaryMap<ViewId, parking_lot::RwLock<crate::view::view_state::ViewState>>,
     visual: &slotmap::SecondaryMap<ViewId, bool>,
+    accumulated_transform: &slotmap::SecondaryMap<ViewId, Transform2D>,
 ) -> Option<HitTestResult> {
     // 1. 检查可见性
     if let Some(&is_visual) = visual.get(view_id) {
@@ -106,27 +106,32 @@ fn hit_test_recursive(
         return None;
     }
 
-    // 4. 获取节点的绝对位置和尺寸
-    let abs_location = state.abs_location;
+    // 4. 获取控件尺寸
     let layout_size = state.layout.size;
 
-    // 5. 计算"可视位置" = 逻辑位置 - 累积的滚动偏移
-    // 这是因为绘制时使用 transform(-scroll) 来偏移内容
-    let visual_location = (
-        abs_location.0 - accumulated_scroll.0,
-        abs_location.1 - accumulated_scroll.1,
-    );
+    // 释放 state 锁，避免死锁
+    drop(state);
 
-    // 6. 计算当前节点的可视边界矩形
-    let node_rect = Rect {
-        x: visual_location.0,
-        y: visual_location.1,
-        w: layout_size.width,
-        h: layout_size.height,
+    // 5. 获取累积变换，把鼠标窗口坐标转为控件局部坐标
+    let local_mouse_point = if let Some(transform) = accumulated_transform.get(view_id) {
+        if let Some(local) = transform.inverse_transform_point(mouse_point.0, mouse_point.1) {
+            local
+        } else {
+            // 变换不可逆（如缩放为0），跳过
+            return None;
+        }
+    } else {
+        // 没有累积变换，使用原始鼠标坐标
+        // 这不应该发生，但作为后备
+        mouse_point
     };
 
-    // 7. 计算当前节点的 clip 区域（如果有 overflow 设置）
+    // 6. 计算当前节点的 clip 区域（窗口坐标系）
+    // 注意：clip 区域需要在窗口坐标系中计算，因为鼠标坐标也是窗口坐标
     let current_clip = if style.overflow != Point::<Overflow>::default() {
+        // 将控件的四个角变换到窗口坐标系，计算轴对齐包围盒
+        let transform = accumulated_transform.get(view_id).copied().unwrap_or(Transform2D::IDENTITY);
+        
         let mut clip = ClipRect {
             left: f32::NEG_INFINITY,
             top: f32::NEG_INFINITY,
@@ -134,13 +139,18 @@ fn hit_test_recursive(
             bottom: f32::INFINITY,
         };
 
-        if style.overflow.x != Overflow::Visible {
-            clip.left = visual_location.0;
-            clip.right = visual_location.0 + layout_size.width;
-        }
-        if style.overflow.y != Overflow::Visible {
-            clip.top = visual_location.1;
-            clip.bottom = visual_location.1 + layout_size.height;
+        if style.overflow.x != Overflow::Visible || style.overflow.y != Overflow::Visible {
+            // 变换控件边界到窗口坐标系
+            let (min_x, min_y, w, h) = transform.transform_rect(0.0, 0.0, layout_size.width, layout_size.height);
+
+            if style.overflow.x != Overflow::Visible {
+                clip.left = min_x;
+                clip.right = min_x + w;
+            }
+            if style.overflow.y != Overflow::Visible {
+                clip.top = min_y;
+                clip.bottom = min_y + h;
+            }
         }
 
         // 与父级 clip 取交集
@@ -149,27 +159,21 @@ fn hit_test_recursive(
         parent_clip
     };
 
-    // 8. 如果鼠标不在 clip 区域内，整个分支都可以跳过（剪枝优化）
+    // 7. 如果鼠标不在 clip 区域内（窗口坐标系检查），整个分支都可以跳过
     if let Some(clip) = current_clip {
         if !clip.contains(mouse_point) {
             return None;
         }
     }
 
-    // 9. 获取当前节点的滚动偏移
-    let scroll_offset = view_id.scroll_offset().unwrap_or((0.0, 0.0));
-
-    // 释放 state 锁，避免死锁
-    drop(state);
-
-    // 10. 检查 overlay 层（滚动条等）
-    // overlay 不受 scroll 影响，使用可视位置
+    // 8. 检查 overlay 层（滚动条等）
+    // overlay 使用控件局部坐标
     if let Some(view_lock) = views.get(view_id) {
         let view = view_lock.read();
         if view.on_hit_test_overlay(
             MousePosition {
-                x: mouse_point.0 as i32,
-                y: mouse_point.1 as i32,
+                x: local_mouse_point.0 as i32,
+                y: local_mouse_point.1 as i32,
             },
             key_state,
         ) {
@@ -180,41 +184,39 @@ fn hit_test_recursive(
         }
     }
 
-    // 11. 计算传递给子节点的累积滚动偏移
-    // 子节点的内容会被当前节点的 scroll offset 影响
-    let child_accumulated_scroll = (
-        accumulated_scroll.0 + scroll_offset.0,
-        accumulated_scroll.1 + scroll_offset.1,
-    );
-
-    // 12. 检查子节点（反向遍历：最后绘制的最先检测）
+    // 9. 检查子节点（反向遍历：最后绘制的最先检测）
     if let Some(children) = child_ids.get(view_id) {
         for &child_id in children.iter().rev() {
             if let Some(result) = hit_test_recursive(
                 child_id,
-                mouse_point,
+                mouse_point, // 传递原始窗口坐标，每个子节点用自己的 accumulated_transform
                 key_state,
-                child_accumulated_scroll,
                 current_clip,
                 views,
                 child_ids,
                 states,
                 visual,
+                accumulated_transform,
             ) {
                 return Some(result);
             }
         }
     }
 
-    // 13. 检查自身（main 层）
-    // 只有当鼠标在节点可视边界内时才进行具体的命中测试
-    if node_rect.contains(mouse_point) {
+    // 10. 检查自身（main 层）
+    // 使用控件局部坐标检查是否在 (0, 0, width, height) 范围内
+    let in_bounds = local_mouse_point.0 >= 0.0
+        && local_mouse_point.0 <= layout_size.width
+        && local_mouse_point.1 >= 0.0
+        && local_mouse_point.1 <= layout_size.height;
+
+    if in_bounds {
         if let Some(view_lock) = views.get(view_id) {
             let view = view_lock.read();
             if view.on_hit_test(
                 MousePosition {
-                    x: mouse_point.0 as i32,
-                    y: mouse_point.1 as i32,
+                    x: local_mouse_point.0 as i32,
+                    y: local_mouse_point.1 as i32,
                 },
                 key_state,
             ) {
@@ -229,23 +231,6 @@ fn hit_test_recursive(
     None
 }
 
-/// 矩形（用于边界检查）
-#[derive(Clone, Copy, Debug)]
-struct Rect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-}
-
-impl Rect {
-    fn contains(&self, point: (f32, f32)) -> bool {
-        point.0 >= self.x
-            && point.0 <= self.x + self.w
-            && point.1 >= self.y
-            && point.1 <= self.y + self.h
-    }
-}
 
 /// 裁剪区域
 #[derive(Clone, Copy, Debug)]

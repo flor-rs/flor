@@ -7,6 +7,7 @@ use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
 use crate::view::View;
 use crate::windows::entry::WINDOW_ENTRY_MAP;
+use flor_base::types::Transform2D;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use platform::WindowId;
@@ -41,6 +42,10 @@ pub struct ViewStorage {
     pub scroll: RwLock<SecondaryMap<ViewId, ScrollState>>,
     pub view_z_index: RwLock<SecondaryMap<ViewId, i32>>,
     pub pending_effect_id: RwLock<SecondaryMap<ViewId, Vec<EffectId>>>,
+    // 设置的 变换 ，这个在绘制时需要用到，在布局时，需要用来计算
+    pub transform: RwLock<SecondaryMap<ViewId, Transform2D>>,
+    // 当前控件累积的 变换 ，这个用来处理命中测试，在布局时计算
+    pub accumulated_transform: RwLock<SecondaryMap<ViewId, Transform2D>>,
 }
 
 impl ViewStorage {
@@ -61,6 +66,8 @@ impl ViewStorage {
             scroll: Default::default(),
             view_z_index: Default::default(),
             pending_effect_id: Default::default(),
+            transform: Default::default(),
+            accumulated_transform: Default::default(),
         }
     }
 
@@ -117,10 +124,6 @@ impl ViewStorage {
         let windows_ids = { VIEW_STORAGE.window_ids.read().get(parent).cloned() };
         if let Some(window_id) = windows_ids {
             Self::set_all_child_window_id(child_view_id, window_id);
-        }
-
-        if let Some(window_id) = parent.window_id() {
-            // self.rebuild_render_cache(window_id)
         }
     }
 

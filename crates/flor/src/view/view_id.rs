@@ -14,9 +14,10 @@ use crate::windows::bus::render_from_view_id;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WindowEntryVisit;
 use flor_base::graphics::RenderContext;
-use flor_base::platform::WindowOperations;
 #[cfg(feature = "drag-drop")]
-use flor_base::platform::{DragFormat, DropEffect, KeyState, MousePosition};
+use flor_base::platform::{DragFormat, DropEffect, KeyState};
+use flor_base::platform::{MousePosition, WindowOperations};
+use flor_base::types::Transform2D;
 use once_cell::sync::Lazy;
 use platform::WindowId;
 use rustc_hash::FxHashMap;
@@ -178,11 +179,7 @@ impl ViewId {
     /// 返回值: (x, y)
     /// 如果控件不可滚动，返回 (0.0, 0.0)
     pub fn scroll_offset(self) -> Option<(f32, f32)> {
-        VIEW_STORAGE
-            .scroll
-            .read()
-            .get(self)
-            .map(|s| s.current)
+        VIEW_STORAGE.scroll.read().get(self).map(|s| s.current)
     }
 
     /// 获取最大可滚动范围 (Max Scroll Range)
@@ -190,11 +187,7 @@ impl ViewId {
     /// 这对应 Taffy 计算出的 `scroll_width/height`。
     /// 比如内容宽 150，视口宽 100，这里返回 (50.0, 0.0)。
     pub fn max_scroll_offset(self) -> Option<(f32, f32)> {
-        VIEW_STORAGE
-            .scroll
-            .read()
-            .get(self)
-            .map(|s| s.max)
+        VIEW_STORAGE.scroll.read().get(self).map(|s| s.max)
     }
 
     /// 绝对滚动：滚动到指定位置 (x, y)
@@ -387,6 +380,63 @@ impl ViewId {
             window_id.release_mouse()?;
         }
         Ok(())
+    }
+
+    // ========================================================================
+    // 声明式 Transform API
+    // ========================================================================
+
+    /// 设置控件的声明式变换
+    ///
+    /// 这个变换会影响控件自身及其所有子控件的绘制和命中测试。
+    /// 常用于旋转、缩放等效果。
+    ///
+    /// # 示例
+    /// ```rust
+    /// // 绕中心旋转 20 度
+    /// view_id.set_transform(Transform2D::rotate_at_degrees(20.0, cx, cy));
+    ///
+    /// // 缩放 1.5 倍
+    /// view_id.set_transform(Transform2D::scale_at(1.5, 1.5, cx, cy));
+    /// ```
+    pub fn set_transform(self, transform: Transform2D) {
+        VIEW_STORAGE.transform.write().insert(self, transform);
+        self.request_redraw();
+    }
+
+    /// 获取控件的声明式变换
+    ///
+    /// 如果没有设置变换，返回 None
+    pub fn get_transform(self) -> Option<Transform2D> {
+        VIEW_STORAGE.transform.read().get(self).copied()
+    }
+
+    /// 清除控件的声明式变换
+    pub fn clear_transform(self) {
+        VIEW_STORAGE.transform.write().remove(self);
+        self.request_redraw();
+    }
+
+    /// 把窗口坐标转换为控件局部坐标
+    ///
+    /// 使用 accumulated_transform 的逆变换，将鼠标的窗口坐标转换为
+    /// 控件局部坐标（0,0 = 控件左上角）。
+    ///
+    /// 如果没有累积变换数据，返回原始坐标。
+    pub fn window_to_local_position(self, mouse_pos: MousePosition) -> MousePosition {
+        let accumulated_transform = VIEW_STORAGE.accumulated_transform.read();
+        if let Some(transform) = accumulated_transform.get(self) {
+            if let Some((local_x, local_y)) =
+                transform.inverse_transform_point(mouse_pos.x as f32, mouse_pos.y as f32)
+            {
+                return MousePosition {
+                    x: local_x as i32,
+                    y: local_y as i32,
+                };
+            }
+        }
+        // 没有变换或变换不可逆，返回原始坐标
+        mouse_pos
     }
 }
 

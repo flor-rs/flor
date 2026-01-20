@@ -202,14 +202,14 @@ pub trait View {
     }
 
     /// 判定：鼠标是否在内容区域（不包含滚动条）
+    ///
+    /// 注意：mouse_position 是控件局部坐标（0,0 = 控件左上角）
     fn on_hit_test(&self, mouse_position: MousePosition, _key_state: KeyState) -> bool {
         let view_id = self.view_id();
 
-        // 只关心 content size (w, h)，不需要 sb_w, sb_h
-        let Ok((abs_x, abs_y, w, h)) = view_id.with_state(|state| {
+        // 获取控件尺寸
+        let Ok((w, h)) = view_id.with_state(|state| {
             (
-                state.abs_location.0,
-                state.abs_location.1,
                 state.layout.size.width,
                 state.layout.size.height,
             )
@@ -220,21 +220,21 @@ pub trait View {
         let mx = mouse_position.x as f32;
         let my = mouse_position.y as f32;
 
-        // 严格检查：只在内容矩形内
-        // [abs_x, abs_x + w) 和 [abs_y, abs_y + h)
-        mx >= abs_x && mx < abs_x + w && my >= abs_y && my < abs_y + h
+        // 检查是否在内容矩形内（局部坐标系）
+        // [0, w) 和 [0, h)
+        mx >= 0.0 && mx < w && my >= 0.0 && my < h
     }
 
     /// 判定：鼠标是否在 Overlay 区域（滚动条、调整手柄等）
     /// 注意：这个函数在 Hit Test 流程中优先级最高
+    ///
+    /// mouse_position 是控件局部坐标（0,0 = 控件左上角）
     fn on_hit_test_overlay(&self, mouse_position: MousePosition, _key_state: KeyState) -> bool {
         let view_id = self.view_id();
 
-        // 需要全部尺寸信息
-        let Ok((abs_x, abs_y, w, h, sb_w, sb_h)) = view_id.with_state(|state| {
+        // 需要尺寸信息（不再需要 abs_location）
+        let Ok((w, h, sb_w, sb_h)) = view_id.with_state(|state| {
             (
-                state.abs_location.0,
-                state.abs_location.1,
                 state.layout.size.width,
                 state.layout.size.height,
                 state.layout.scrollbar_size.width,
@@ -252,26 +252,26 @@ pub trait View {
         let mx = mouse_position.x as f32;
         let my = mouse_position.y as f32;
 
-        // 边界定义
-        let right_edge = abs_x + w;  // 内容右边界
-        let bottom_edge = abs_y + h; // 内容下边界
-        let total_w = w + sb_w;      // 总宽度（含右侧滚动条）
-        let total_h = h + sb_h;      // 总高度（含底部滚动条）
+        // 边界定义（局部坐标系，原点在控件左上角）
+        let right_edge = w;           // 内容右边界
+        let bottom_edge = h;          // 内容下边界
+        let total_w = w + sb_w;       // 总宽度（含右侧滚动条）
+        let total_h = h + sb_h;       // 总高度（含底部滚动条）
 
         // 1. 检查垂直滚动条区域 (位于右侧)
-        // 区域：X 在 [w, w + sb_w], Y 在 [0, total_h] (通常垂直滚动条高度包含右下角)
+        // 区域：X 在 [w, w + sb_w), Y 在 [0, total_h)
         if sb_w > 0.0 {
-            if mx >= right_edge && mx < abs_x + total_w &&
-                my >= abs_y && my < abs_y + total_h {
+            if mx >= right_edge && mx < total_w &&
+                my >= 0.0 && my < total_h {
                 return true;
             }
         }
 
         // 2. 检查水平滚动条区域 (位于底部)
-        // 区域：Y 在 [h, h + sb_h], X 在 [0, total_w] (通常水平滚动条宽度包含右下角)
+        // 区域：Y 在 [h, h + sb_h), X 在 [0, total_w)
         if sb_h > 0.0 {
-            if my >= bottom_edge && my < abs_y + total_h &&
-                mx >= abs_x && mx < abs_x + total_w {
+            if my >= bottom_edge && my < total_h &&
+                mx >= 0.0 && mx < total_w {
                 return true;
             }
         }

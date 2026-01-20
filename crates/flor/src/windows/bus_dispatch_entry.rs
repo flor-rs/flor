@@ -1,18 +1,15 @@
 mod draw_entry;
-mod visual_test_entry;
 mod hit_test_entry;
 mod refresh_layout_entry;
+mod visual_test_entry;
 mod wheel_scroll_lines_changed_entry;
-
-pub use refresh_layout_entry::LocalRect;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
-use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::{collect_layout_children, View};
-use crate::windows::bus::{render, render_from_view_id};
+use crate::view::View;
+use crate::windows::bus::render;
 use crate::windows::bus_dispatch_entry::draw_entry::draw_entry;
 use crate::windows::bus_dispatch_entry::hit_test_entry::hit_test_entry;
 use crate::windows::bus_dispatch_entry::refresh_layout_entry::refresh_layout_entry;
@@ -21,19 +18,18 @@ use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_
 use crate::windows::entry::WindowEntryVisit;
 use atomic_float::{AtomicF32, AtomicF64};
 use flor_base::graphics::RenderContext;
-#[cfg(feature = "theme-change")]
-use flor_base::platform::ThemeMode;
-#[cfg(feature = "drag-drop")]
-use flor_base::platform::{DragData, DragFormat, DropEffect};
-use flor_base::platform::{InputEvent, KeyCode, KeyState, WindowApi};
+use flor_base::platform::{InputEvent, KeyCode, KeyState};
 use flor_base::platform::{MousePosition, ScrollAxis};
-use log::{trace, warn};
+#[cfg(feature = "theme-change")]
+use flor_platform_base::ThemeMode;
+#[cfg(feature = "drag-drop")]
+use flor_platform_base::{DragData, DragFormat, DropEffect};
+use log::trace;
 use platform::WindowId;
 use std::ops::DerefMut;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use taffy::{AvailableSpace, Size, Style};
 
 /// 总线的事件分发入口，给窗口用的
 pub trait WindowBusDispatchEntry {
@@ -272,7 +268,9 @@ impl WindowBusDispatchEntry for WindowId {
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {
         if let Some(view_id) = self.entry().map(|v| v.capture_view_id).flatten() {
             if let Some(view) = VIEW_STORAGE.views.write().get(view_id) {
-                view.write().call_mouse_move(key_state, mouse_position);
+                // 转换为控件局部坐标
+                let local_pos = view_id.window_to_local_position(mouse_position);
+                view.write().call_mouse_move(key_state, local_pos);
                 return;
             }
         }
@@ -292,10 +290,11 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(old_id) = old_hovered_id {
             if old_id != new_hovered_id {
                 if let Some(view_lock) = views.get(old_id) {
-                    // 旧的离开
+                    // 旧的离开（转换为控件局部坐标）
+                    let local_pos = old_id.window_to_local_position(mouse_position);
                     view_lock
                         .write()
-                        .call_mouse_leave(key_state, mouse_position);
+                        .call_mouse_leave(key_state, local_pos);
                 }
             }
         }
@@ -307,10 +306,11 @@ impl WindowBusDispatchEntry for WindowId {
         // 注意：这里不需要unwrap new_hovered_id，因为它就是 ViewId
         if old_hovered_id != Some(new_hovered_id) {
             if let Some(view_lock) = views.get(new_hovered_id) {
-                // 新的进入
+                // 新的进入（转换为控件局部坐标）
+                let local_pos = new_hovered_id.window_to_local_position(mouse_position);
                 view_lock
                     .write()
-                    .call_mouse_enter(key_state, mouse_position);
+                    .call_mouse_enter(key_state, local_pos);
             }
         }
 
@@ -319,7 +319,9 @@ impl WindowBusDispatchEntry for WindowId {
         // 条件：只要在窗口内，当前命中的这个 View 就要持续收到 Move
         // =========================================================
         if let Some(view_lock) = views.get(new_hovered_id) {
-            view_lock.write().call_mouse_move(key_state, mouse_position);
+            // 转换为控件局部坐标
+            let local_pos = new_hovered_id.window_to_local_position(mouse_position);
+            view_lock.write().call_mouse_move(key_state, local_pos);
         }
 
         // =========================================================
@@ -355,7 +357,9 @@ impl WindowBusDispatchEntry for WindowId {
             self.entry_mut()
                 .map(|mut v| v.l_down_view_id = Some(view_id));
             VIEW_STORAGE.pressed.write().insert(view_id, ());
-            view.write().call_button_down(key_state, mouse_position);
+            // 转换为控件局部坐标
+            let local_pos = view_id.window_to_local_position(mouse_position);
+            view.write().call_button_down(key_state, local_pos);
             self.request_redraw();
         }
     }
@@ -367,15 +371,17 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            // 转换为控件局部坐标
+            let local_pos = view_id.window_to_local_position(mouse_position);
             // 合成事件，点击
             if let Some(spawn_click) = self.entry().map(|v| v.l_down_view_id == Some(view_id)) {
                 if spawn_click {
-                    view.write().call_click(key_state, mouse_position);
+                    view.write().call_click(key_state, local_pos);
                     view_id.set_focus();
                 }
             }
             VIEW_STORAGE.pressed.write().remove(view_id);
-            view.write().call_button_up(key_state, mouse_position);
+            view.write().call_button_up(key_state, local_pos);
         }
     }
 
@@ -386,7 +392,8 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-            view.write().call_double_click(key_state, mouse_position);
+            let local_pos = view_id.window_to_local_position(mouse_position);
+            view.write().call_double_click(key_state, local_pos);
         }
     }
 
@@ -401,8 +408,9 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             self.entry_mut()
                 .map(|mut v| v.r_down_view_id = Some(view_id));
+            let local_pos = view_id.window_to_local_position(mouse_position);
             view.write()
-                .call_right_button_down(key_state, mouse_position);
+                .call_right_button_down(key_state, local_pos);
         }
     }
 
@@ -413,13 +421,14 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            let local_pos = view_id.window_to_local_position(mouse_position);
             if let Some(spawn_click) = self.entry().map(|v| v.r_down_view_id == Some(view_id)) {
                 if spawn_click {
                     view.write()
-                        .call_right_button_click(key_state, mouse_position);
+                        .call_right_button_click(key_state, local_pos);
                 }
             }
-            view.write().call_right_button_up(key_state, mouse_position);
+            view.write().call_right_button_up(key_state, local_pos);
         }
     }
 
@@ -434,8 +443,9 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            let local_pos = view_id.window_to_local_position(mouse_position);
             view.write()
-                .call_right_button_double_click(key_state, mouse_position);
+                .call_right_button_double_click(key_state, local_pos);
         }
     }
 
@@ -450,8 +460,9 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             self.entry_mut()
                 .map(|mut v| v.m_down_view_id = Some(view_id));
+            let local_pos = view_id.window_to_local_position(mouse_position);
             view.write()
-                .call_middle_button_down(key_state, mouse_position);
+                .call_middle_button_down(key_state, local_pos);
         }
     }
 
@@ -462,14 +473,15 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            let local_pos = view_id.window_to_local_position(mouse_position);
             if let Some(spawn_click) = self.entry().map(|v| v.m_down_view_id == Some(view_id)) {
                 if spawn_click {
                     view.write()
-                        .call_middle_button_click(key_state, mouse_position);
+                        .call_middle_button_click(key_state, local_pos);
                 }
             }
             view.write()
-                .call_middle_button_up(key_state, mouse_position);
+                .call_middle_button_up(key_state, local_pos);
         }
     }
 
@@ -484,8 +496,9 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            let local_pos = view_id.window_to_local_position(mouse_position);
             view.write()
-                .call_middle_button_double_click(key_state, mouse_position);
+                .call_middle_button_double_click(key_state, local_pos);
         }
     }
 
