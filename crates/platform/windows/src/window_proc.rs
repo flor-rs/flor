@@ -28,7 +28,7 @@ pub(crate) unsafe extern "system" fn window_proc(
     w_param: WPARAM,
     l_param: LPARAM,
 ) -> LRESULT {
-    info!("window proc {:?}", (hwnd, msg, w_param, l_param));
+    debug!("window proc {:?}", (hwnd, msg, w_param, l_param));
     // if let Some(proc_handler) = USER_PROC_HANDLER {
     //     if let HandlerResult::Handled(result) = proc_handler(hwnd, msg, wparam, lparam) {
     //         debug!("user proc handler {:?}",result);
