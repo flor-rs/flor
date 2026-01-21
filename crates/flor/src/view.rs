@@ -19,7 +19,6 @@ use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRender, FlorRenderError, LoadRenderResource};
 use crate::view::control_state::ControlState;
 use crate::view::frame_policy::FramePolicy;
-use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::visual_overflow::VisualOverflow;
@@ -30,7 +29,7 @@ use flor_base::platform::{DragData, DragFormat, DropEffect};
 use flor_base::platform::{InputEvent, KeyCode, KeyState, MousePosition, ScrollAxis};
 use std::any::Any;
 use std::time::{Duration, Instant};
-use taffy::{AvailableSpace, Display, Layout, NodeId, Size, Style, TaffyTree};
+use taffy::{AvailableSpace, Display, Layout, Size, Style};
 
 /// View特征定义了所有UI组件的基本行为
 pub trait View {
@@ -48,107 +47,6 @@ pub trait View {
             for child_id in child_view_ids {
                 if let Some(view) = VIEW_STORAGE.views.read().get(*child_id) {
                     view.write().bus_create()?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// 创建布局节点
-    fn bus_layout_node(&mut self, taffy: &mut TaffyTree<ViewId>) -> Result<NodeId, Error> {
-        let view_id = self.view_id();
-
-        let states = VIEW_STORAGE.states.read();
-        let Some(view_state_cell) = states.get(view_id) else {
-            panic!("View storage's states not found view_id:{view_id:?}");
-        };
-
-        // 先读
-        let view_state = view_state_cell.read();
-        let old_node_id = view_state.node_id;
-
-        let style = view_state
-            .layout_style
-            .calc_update_taffy_style(view_id.control_state());
-        drop(view_state);
-
-        let children = collect_layout_children(view_id, taffy)?;
-
-        let node_id = match (old_node_id, style) {
-            (Some(node_id), None) => {
-                if !children.is_empty() {
-                    taffy.set_children(node_id, &children)?;
-                }
-                node_id
-            }
-            (Some(node_id), Some(new_style)) => {
-                taffy.set_style(node_id, new_style)?;
-                if !children.is_empty() {
-                    taffy.set_children(node_id, &children)?;
-                }
-                node_id
-            }
-            (None, Some(style)) => {
-                if children.is_empty() {
-                    taffy.new_leaf_with_context(style, view_id)?
-                } else {
-                    taffy.new_with_children(style, &children)?
-                }
-            }
-            (None, None) => {
-                unreachable!("style is None but node_id is None")
-            }
-        };
-
-        let mut view_state = view_state_cell.write();
-        view_state.node_id = Some(node_id);
-
-        Ok(node_id)
-    }
-
-    /// 更新布局
-    fn bus_update_layout(
-        &mut self,
-        taffy: &mut TaffyTree<ViewId>,
-        parent_abs_location: (f32, f32),
-    ) -> Result<(), Error> {
-        let view_id = self.view_id();
-
-        // 计算当前控件的绝对位置
-        let current_abs_location: (f32, f32);
-
-        // 自身处理
-        if let Some(state) = VIEW_STORAGE.states.read().get(view_id) {
-            let mut state = state.write();
-            if let Some(node_id) = state.node_id {
-                state.layout = *taffy.layout(node_id)?;
-
-                // 如果是可滚动视图，更新 scroll.max
-                let scroll_width = state.layout.scroll_width();
-                let scroll_height = state.layout.scroll_height();
-                if scroll_width > 0.0 || scroll_height > 0.0 {
-                    if let Some(scroll_state) = VIEW_STORAGE.scroll.write().get_mut(view_id) {
-                        scroll_state.max = (scroll_width, scroll_height);
-                    }
-                }
-            }
-            // 计算绝对位置 = 父级绝对位置 + 自身相对位置
-            current_abs_location = (
-                parent_abs_location.0 + state.layout.location.x,
-                parent_abs_location.1 + state.layout.location.y,
-            );
-            state.abs_location = current_abs_location;
-        } else {
-            current_abs_location = parent_abs_location;
-        }
-
-        // 子节点处理
-        let views = VIEW_STORAGE.views.read();
-        if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(view_id) {
-            for view_id in child_view_ids {
-                if let Some(view) = views.get(*view_id) {
-                    view.write()
-                        .bus_update_layout(taffy, current_abs_location)?;
                 }
             }
         }
@@ -1070,28 +968,5 @@ impl<T: View> LoadRenderResource for T {
         } else {
             Err(FlorRenderError::RenderNotFound)
         }
-    }
-}
-
-pub(crate) fn collect_layout_children(
-    parent_id: ViewId,
-    taffy: &mut TaffyTree<ViewId>,
-) -> Result<Vec<NodeId>, Error> {
-    // 1. 读锁获取子节点列表
-    // 注意：这里用代码块限制锁的范围，防止带锁进行后续递归
-    let child_list: Option<Vec<ViewId>> = { VIEW_STORAGE.child_ids.read().get(parent_id).cloned() };
-
-    if let Some(childs) = child_list {
-        let mut node_ids = Vec::with_capacity(childs.len());
-        for child_view_id in childs {
-            if let Some(dyn_view) = VIEW_STORAGE.views.read().get(child_view_id) {
-                // 递归调用
-                let node_id = dyn_view.write().bus_layout_node(taffy)?;
-                node_ids.push(node_id);
-            }
-        }
-        Ok(node_ids)
-    } else {
-        Ok(Vec::new())
     }
 }
