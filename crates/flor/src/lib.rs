@@ -160,11 +160,6 @@ impl FlorGui {
                     .error_on_err("bus refresh layout error")
             }
 
-            // 布局之后，进行可视检测
-            for window_id in &all_window_ids {
-                window_id.bus_visual_test_entry();
-            }
-
             for window_id in re_draw_window_ids {
                 window_id
                     .bus_re_draw_entry()

@@ -20,7 +20,6 @@ use taffy::{Display, Overflow, Point};
 #[derive(Debug, Clone, Copy)]
 pub struct HitTestResult {
     pub view_id: ViewId,
-    pub is_overlay: bool,
 }
 
 /// 命中测试的主入口
@@ -86,14 +85,12 @@ fn hit_test_recursive(
     >,
     child_ids: &slotmap::SecondaryMap<ViewId, Vec<ViewId>>,
     states: &slotmap::SecondaryMap<ViewId, parking_lot::RwLock<crate::view::view_state::ViewState>>,
-    visual: &slotmap::SecondaryMap<ViewId, bool>,
+    visual: &slotmap::SecondaryMap<ViewId, ()>,
     accumulated_transform: &slotmap::SecondaryMap<ViewId, Transform2D>,
 ) -> Option<HitTestResult> {
     // 1. 检查可见性
-    if let Some(&is_visual) = visual.get(view_id) {
-        if !is_visual {
-            return None;
-        }
+    if visual.get(view_id).is_none() {
+        return None;
     }
 
     // 2. 获取节点状态
@@ -130,8 +127,11 @@ fn hit_test_recursive(
     // 注意：clip 区域需要在窗口坐标系中计算，因为鼠标坐标也是窗口坐标
     let current_clip = if style.overflow != Point::<Overflow>::default() {
         // 将控件的四个角变换到窗口坐标系，计算轴对齐包围盒
-        let transform = accumulated_transform.get(view_id).copied().unwrap_or(Transform2D::IDENTITY);
-        
+        let transform = accumulated_transform
+            .get(view_id)
+            .copied()
+            .unwrap_or(Transform2D::IDENTITY);
+
         let mut clip = ClipRect {
             left: f32::NEG_INFINITY,
             top: f32::NEG_INFINITY,
@@ -141,7 +141,8 @@ fn hit_test_recursive(
 
         if style.overflow.x != Overflow::Visible || style.overflow.y != Overflow::Visible {
             // 变换控件边界到窗口坐标系
-            let (min_x, min_y, w, h) = transform.transform_rect(0.0, 0.0, layout_size.width, layout_size.height);
+            let (min_x, min_y, w, h) =
+                transform.transform_rect(0.0, 0.0, layout_size.width, layout_size.height);
 
             if style.overflow.x != Overflow::Visible {
                 clip.left = min_x;
@@ -179,7 +180,6 @@ fn hit_test_recursive(
         ) {
             return Some(HitTestResult {
                 view_id,
-                is_overlay: true,
             });
         }
     }
@@ -222,7 +222,6 @@ fn hit_test_recursive(
             ) {
                 return Some(HitTestResult {
                     view_id,
-                    is_overlay: false,
                 });
             }
         }
@@ -230,7 +229,6 @@ fn hit_test_recursive(
 
     None
 }
-
 
 /// 裁剪区域
 #[derive(Clone, Copy, Debug)]

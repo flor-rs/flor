@@ -1,10 +1,15 @@
 use crate::error::Error;
 use crate::render::FlorRender;
+use crate::view::control_state::ControlState;
+use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
-use flor_base::graphics::{Color, RenderContext};
-use flor_base::types::Transform2D;
-use log::trace;
+use crate::view::View;
+use crate::windows::entry::WindowEntryVisit;
+use flor_base::graphics::RenderContext;
+use flor_base::types::{Rect, Transform2D};
+use log::debug;
+use platform::WindowId;
 use taffy::{Display, Layout, Overflow, Point};
 
 enum DrawStage {
@@ -19,22 +24,38 @@ enum DrawStage {
 struct DrawFrame {
     view_id: ViewId,
     abs_location: (f32, f32),
+    /// 当前的裁剪区域（绝对坐标），用于同层剪枝
+    /// None 表示没有裁剪限制（全部可见）
+    clip_rect: Option<Rect<f32, f32>>,
     stage: DrawStage,
 }
 
-pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error> {
+pub fn draw_entry(window_id: WindowId, render: &mut FlorRender) -> Result<(), Error> {
     let views = VIEW_STORAGE.views.read();
     let child_map = VIEW_STORAGE.child_ids.read();
     let view_transform = VIEW_STORAGE.transform.read();
+    let mut visuals = VIEW_STORAGE.visual.write();
+    let states = VIEW_STORAGE.states.read();
+    let pressed = VIEW_STORAGE.pressed.read();
+    // let visual_rect = VIEW_STORAGE.visual_rect.read();
+    let Some(window_entry) = window_id.entry() else {
+        return Ok(());
+    };
 
     let mut stack = Vec::with_capacity(64);
 
+    // 根控件没有裁剪限制
     stack.push(DrawFrame {
-        view_id: root_id,
+        view_id: window_id.view_id(),
         abs_location: (0.0, 0.0),
+        clip_rect: None,
         stage: DrawStage::Enter,
     });
 
+    let mut drawn_count = 0;
+    let mut culled_count = 0;
+
+    visuals.clear();
     while let Some(frame) = stack.pop() {
         match frame.stage {
             DrawStage::Enter => {
@@ -44,27 +65,56 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                     continue;
                 };
 
-                if !view_id.visual() {
+                // 1. State & Layout Lookup
+                let Some(view_state) = states.get(view_id).map(|s| s.read()) else {
+                    culled_count += 1;
                     continue;
-                }
-
-                let layout = view_id.layout()?;
-                let style = view_id.calc_current_style()?;
-                if style.display == Display::None {
-                    continue;
-                }
+                };
+                let layout = view_state.layout;
 
                 let abs_location = (
                     frame.abs_location.0 + layout.location.x,
                     frame.abs_location.1 + layout.location.y,
                 );
 
-                trace!("view({}).draw_entry", view_id);
+                // 2. Culling (View Lock + Intersection)
+                if let Some(ref parent_clip) = frame.clip_rect {
+                    let (vx, vy, vw, vh) = view.read().visual_rect();
+                    let visual_rect = Rect::new(vx, vy, vw, vh);
+
+                    if !visual_rect.intersects(parent_clip) {
+                        culled_count += 1;
+                        continue;
+                    }
+                }
+
+                // 3. Style Calculation
+                let mut control_state = ControlState::Normal;
+                if view_state.disable {
+                    control_state = ControlState::Disabled;
+                }
+                if window_entry.focus_manager.is_focused(view_id) {
+                    control_state = ControlState::Focus;
+                }
+                if pressed.get(view_id).is_some() {
+                    control_state = ControlState::Active;
+                }
+                if window_entry.hover_id == Some(view_id) {
+                    control_state = ControlState::Hover;
+                }
+
+                let style = view_state.layout_style.calc_taffy_style(control_state);
+
+                if style.display == Display::None {
+                    culled_count += 1;
+                    continue;
+                }
+
+                // Setup Overhead
                 let transform_depth = render.get_transform_depth()?;
                 let mut clip_depth = None;
-                let mut clip_content = None;
+                let mut new_clip_rect: Option<Rect<f32, f32>> = None;
 
-                // 额外的变换参数，放到get_transform_depth后面，就会被正常pop掉了
                 if let Some(transform) = view_transform.get(view_id) {
                     render.push_transform(transform)?;
                 }
@@ -72,61 +122,54 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                 if style.overflow != Point::<Overflow>::default() {
                     clip_depth = Some(render.get_clip_depth()?);
 
-                    const INF_START: f32 = -1_000_000_000.0;
-                    const INF_CONTENT: f32 = 1_000_000_000.0 * 2.0;
-                    const INF_CLIP_CONTENT: (f32, f32, f32, f32) =
-                        (INF_START, INF_CONTENT, INF_START, INF_CONTENT);
-
-                    let mut clip_rect = INF_CLIP_CONTENT;
+                    const INF: f32 = 1_000_000_000.0;
+                    let mut clip_x = -INF;
+                    let mut clip_y = -INF;
+                    let mut clip_w = INF * 2.0;
+                    let mut clip_h = INF * 2.0;
 
                     if style.overflow.x != Overflow::Visible {
-                        clip_rect.0 = abs_location.0;
-                        clip_rect.2 = layout.size.width;
+                        clip_x = abs_location.0;
+                        clip_w = layout.size.width;
                     }
                     if style.overflow.y != Overflow::Visible {
-                        clip_rect.1 = abs_location.1;
-                        clip_rect.3 = layout.size.height;
+                        clip_y = abs_location.1;
+                        clip_h = layout.size.height;
                     }
-                    clip_content = Some(clip_rect);
+
+                    new_clip_rect = Some(Rect::new(clip_x, clip_y, clip_w, clip_h));
                 }
 
-                // 调试：画一个红色边框确认布局
-                let debug_brush = render.create_solid_color_brush(Color::rgb(255, 0, 0), None)?;
-                // render.draw_quad(
-                //     abs_location.0,
-                //     abs_location.1,
-                //     layout.size.width,
-                //     layout.size.height,
-                //     3.0,
-                //     &debug_brush,
-                //     None,
-                // )?;
-                let mut text_format = render.create_text_format("")?;
-                render.draw_text(
-                    &format!("{}: {:?}", view.read().tag(), view_id),
-                    &mut text_format,
-                    abs_location.0,
-                    abs_location.1,
-                    layout.size.width,
-                    layout.size.height,
-                    &debug_brush,
-                    None,
-                )?;
+                // Draw
+                visuals.insert(view_id, ());
                 view.write().on_draw(render, abs_location, layout)?;
+                drawn_count += 1;
 
-                if let Some(clip_content) = clip_content {
-                    render.push_clip(clip_content)?;
+                // Post-Draw Setup (Child clipping etc)
+                if let Some(ref clip_rect) = new_clip_rect {
+                    render.push_clip(clip_rect.to_tuple())?;
                 }
+
+                let mut child_clip_rect = match (new_clip_rect, frame.clip_rect) {
+                    (Some(new_clip), Some(parent_clip)) => new_clip.intersection(&parent_clip),
+                    (Some(new_clip), None) => Some(new_clip),
+                    (None, Some(parent_clip)) => Some(parent_clip),
+                    (None, None) => None,
+                };
 
                 if let Some((scroll_x, scroll_y)) = view_id.scroll_offset() {
                     if scroll_x != 0.0 || scroll_y != 0.0 {
                         render.push_transform(&Transform2D::translation(-scroll_x, -scroll_y))?;
+                        if let Some(ref clip) = child_clip_rect {
+                            child_clip_rect = Some(clip.translate(scroll_x, scroll_y));
+                        }
                     }
                 }
 
                 stack.push(DrawFrame {
                     view_id,
                     abs_location,
+                    clip_rect: child_clip_rect,
                     stage: DrawStage::Exit {
                         transform_depth,
                         clip_depth,
@@ -139,6 +182,7 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
                         stack.push(DrawFrame {
                             view_id: child_id,
                             abs_location,
+                            clip_rect: child_clip_rect,
                             stage: DrawStage::Enter,
                         });
                     }
@@ -164,5 +208,7 @@ pub fn draw_entry(root_id: ViewId, render: &mut FlorRender) -> Result<(), Error>
             }
         }
     }
+
+    debug!("draw stats: drawn={} culled={}", drawn_count, culled_count);
     Ok(())
 }

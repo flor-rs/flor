@@ -1,7 +1,6 @@
 mod draw_entry;
 mod hit_test_entry;
 mod refresh_layout_entry;
-mod visual_test_entry;
 mod wheel_scroll_lines_changed_entry;
 
 use crate::error::Error;
@@ -13,7 +12,6 @@ use crate::windows::bus::render;
 use crate::windows::bus_dispatch_entry::draw_entry::draw_entry;
 use crate::windows::bus_dispatch_entry::hit_test_entry::hit_test_entry;
 use crate::windows::bus_dispatch_entry::refresh_layout_entry::refresh_layout_entry;
-use crate::windows::bus_dispatch_entry::visual_test_entry::visual_test_entry;
 use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_scroll_lines_changed_entry;
 use crate::windows::entry::WindowEntryVisit;
 use atomic_float::{AtomicF32, AtomicF64};
@@ -45,7 +43,7 @@ pub trait WindowBusDispatchEntry {
     // 2. 布局与渲染 (Layout & Rendering)
     fn bus_refresh_layout_entry(self) -> Result<(), Error>;
 
-    fn bus_re_draw_entry(&self) -> Result<(), Error>;
+    fn bus_re_draw_entry(self) -> Result<(), Error>;
 
     /// 系统主题变更 (深色/浅色)
     /// 参数 theme: 当前最新的主题模式
@@ -68,8 +66,6 @@ pub trait WindowBusDispatchEntry {
     // 3. 命中测试 (Hit Testing)
     /// 交互事件的前置条件，确定事件归属
     fn bus_hit_test_entry(self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId;
-
-    fn bus_visual_test_entry(&self);
 
     // 4. 鼠标事件 (Mouse Events)
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition);
@@ -230,13 +226,13 @@ impl WindowBusDispatchEntry for WindowId {
         refresh_layout_entry(self)
     }
 
-    fn bus_re_draw_entry(&self) -> Result<(), Error> {
-        let Some(render) = render(*self) else {
+    fn bus_re_draw_entry(self) -> Result<(), Error> {
+        let Some(render) = render(self) else {
             return Ok(());
         };
         let mut render = render.write();
         render.begin().error_on_err("fail begin render");
-        draw_entry(self.view_id(), render.deref_mut())?;
+        draw_entry(self, render.deref_mut())?;
         render.end().error_on_err("fail end render");
         Ok(())
     }
@@ -259,10 +255,6 @@ impl WindowBusDispatchEntry for WindowId {
 
     fn bus_hit_test_entry(self, mouse_pos: MousePosition, key_state: KeyState) -> ViewId {
         hit_test_entry(self, mouse_pos, key_state)
-    }
-
-    fn bus_visual_test_entry(&self) {
-        visual_test_entry(*self);
     }
 
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {

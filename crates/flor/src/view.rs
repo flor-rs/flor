@@ -976,6 +976,7 @@ pub trait View {
         }
     }
 
+    /// 如果手动重写且需要更新里面的数据，请请求布局重新计算
     fn visual_rect(&self) -> (f32, f32, f32, f32) {
         let view_id = self.view_id();
 
@@ -1012,28 +1013,6 @@ pub trait View {
                 (abs_x + x, abs_y + y, w, h)
             }
         }
-    }
-
-    // 应该传递父级信息，到这里与自己比较
-    fn on_visual_test_entry(&self, test_bounds: (f32, f32, f32, f32)) -> bool {
-        // 1. 获取自身的视觉包围盒 (已包含阴影扩散)
-        let (my_x, my_y, my_w, my_h) = self.visual_rect();
-        let (test_x, test_y, test_w, test_h) = test_bounds;
-
-        // 2. 基础有效性检查 (如果任意一方宽高非正，视为不可见)
-        // 注意：VisualOverflow 可能让原本 w=0 的控件变大，所以检查 my_w 而不是 layout w
-        if my_w <= 0.0 || my_h <= 0.0 || test_w <= 0.0 || test_h <= 0.0 {
-            return false;
-        }
-
-        // 3. AABB 相交测试 (只要四个方向有一个方向错开了，就是不相交)
-        // 逻辑：(我左 > 你右) 或 (我右 < 你左) 或 (我顶 > 你底) 或 (我底 < 你顶) => 不相交
-        let is_disjoint = my_x >= test_x + test_w       // 我的左边 在 你的右边 之外
-                || my_x + my_w <= test_x         // 我的右边 在 你的左边 之外
-                || my_y >= test_y + test_h       // 我的顶边 在 你的底边 之外
-            || my_y + my_h <= test_y; // 我的底边 在 你的顶边 之外
-
-        !is_disjoint
     }
 
     fn on_visual_overflow(&self) -> VisualOverflow {

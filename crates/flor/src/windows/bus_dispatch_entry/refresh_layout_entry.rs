@@ -120,7 +120,7 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
 /// accumulated_transform 代表：控件局部坐标(0,0) → 窗口坐标 的完整变换
 ///
 /// 变换链（按行向量乘法顺序）：
-/// accumulated = parent_accumulated 
+/// accumulated = parent_accumulated
 ///     * translation(layout.location.x, layout.location.y)  // 平移到当前控件位置
 ///     * local_transform                                     // 控件自身变换
 ///     * translation(-scroll_x, -scroll_y)                   // scroll 偏移
@@ -156,8 +156,7 @@ fn compute_accumulated_transforms(start_view_id: ViewId) {
 
         // 4. 计算当前控件的累积变换
         // 顺序：parent_accumulated * translation(location) * local_transform * translation(-scroll)
-        let mut current_accumulated = parent_accumulated
-            .then_translate(location.0, location.1);
+        let mut current_accumulated = parent_accumulated.then_translate(location.0, location.1);
 
         if let Some(local_tf) = local_transform {
             current_accumulated = current_accumulated * local_tf;
