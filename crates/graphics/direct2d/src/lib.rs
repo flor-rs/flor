@@ -2244,21 +2244,49 @@ impl RenderContext for D2DRender {
     // =========================================================
     // 1. 普通矩形剪裁 (使用 PushAxisAlignedClip)
     // =========================================================
+    // =========================================================
+    // 1. 普通矩形剪裁 (智能选择 Fast Path 或 Quality Path)
+    // =========================================================
     fn push_clip(&mut self, rect: (f32, f32, f32, f32)) -> Result<(), Self::Error> {
-        let d2d_rect = D2D_RECT_F {
-            left: rect.0,
-            top: rect.1,
-            right: rect.2,
-            bottom: rect.3,
-        };
-
         unsafe {
-            self.current_render
-                .PushAxisAlignedClip(&d2d_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        }
+            let mut transform = Matrix3x2::default();
+            self.current_render.GetTransform(&mut transform);
 
-        // 记账：这一层是矩形
-        self.clip_stack.push(ClipType::AxisAligned);
+            // 检查当前是否有旋转或斜切 (m12 和 m21 是否接近 0)
+            let is_axis_aligned =
+                transform.M12.abs() < f32::EPSILON && transform.M21.abs() < f32::EPSILON;
+
+            if is_axis_aligned {
+                // [Fast Path] 无旋转 -> 使用硬件快速剪裁
+                let d2d_rect = D2D_RECT_F {
+                    left: rect.0,
+                    top: rect.1,
+                    right: rect.2,
+                    bottom: rect.3,
+                };
+                self.current_render
+                    .PushAxisAlignedClip(&d2d_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                self.clip_stack.push(ClipType::AxisAligned);
+            } else {
+                // [Quality Path] 有旋转 -> 必须使用 Layer + Geometry Mask 才能切出正确的旋转后矩形
+                let d2d_rect = D2D_RECT_F {
+                    left: rect.0,
+                    top: rect.1,
+                    right: rect.2,
+                    bottom: rect.3,
+                };
+                // 创建临时的矩形几何体 (CreateRectangleGeometry 开销非常小，无需缓存)
+                let geometry = RenderFactory::get()
+                    .factory
+                    .CreateRectangleGeometry(&d2d_rect)?;
+
+                // 复用现有的 push_layer 逻辑
+                self.push_layer_with_geometry(&geometry)?;
+
+                // 必须标记为 Layer 类型，以便 Pop 时调用 PopLayer 而不是 PopAxisAlignedClip
+                self.clip_stack.push(ClipType::Layer);
+            }
+        }
 
         Ok(())
     }
