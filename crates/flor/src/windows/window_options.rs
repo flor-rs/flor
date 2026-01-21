@@ -3,7 +3,7 @@ use crate::log_error::ResultLogExt;
 use crate::render::FlorRender;
 use crate::signal::effect::updater_effect::create_updater;
 use crate::view::view_builder::builder::ViewBuilder;
-use crate::view::view_storage::VIEW_STORAGE;
+use crate::view::view_storage::{ViewStorage, VIEW_STORAGE};
 use crate::view::View;
 use crate::windows::bus;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
@@ -85,6 +85,7 @@ impl WindowOption {
         trace!("window root view: {:?}", root_dyn_view);
         VIEW_STORAGE.window_ids.write().insert(view_id, window_id);
         window_id.views(root_dyn_view);
+        ViewStorage::set_all_child_window_id(view_id, window_id);
         window_id.bus_init_focus_manager_entry()?;
 
         bus::register_render(window_id, render);

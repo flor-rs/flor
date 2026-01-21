@@ -9,9 +9,7 @@ pub trait ViewBuilder {
 impl<V: View> ViewBuilder for V {
     fn views(self, views: impl IntoIterator<Item = Box<dyn View + Send + Sync + 'static>>) -> Self {
         let view_id = self.view_id();
-        for view in views {
-            VIEW_STORAGE.add_child(view_id, view);
-        }
+        VIEW_STORAGE.add_childs(view_id, views);
         self
     }
 

@@ -90,6 +90,70 @@ impl ViewStorage {
         view_id
     }
 
+    pub fn add_childs(
+        &self,
+        parent: ViewId,
+        children: impl IntoIterator<Item=Box<dyn View + Send + Sync + 'static>>,
+    ) {
+        let children: Vec<_> = children.into_iter().collect();
+        if children.is_empty() {
+            return;
+        }
+
+        let children_with_ids: Vec<(ViewId, Box<dyn View + Send + Sync + 'static>)> = children
+            .into_iter()
+            .map(|child| (child.view_id(), child))
+            .collect();
+
+        {
+            let mut child_ids_guard = self.child_ids.write();
+            let mut parent_view_id_guard = self.parent_view_id.write();
+
+            // 批量更新 parent_view_id
+            for (child_id, _) in &children_with_ids {
+                parent_view_id_guard.insert(*child_id, parent);
+            }
+
+            // 批量更新 child_ids
+            if let Some(existing_children) = child_ids_guard.get_mut(parent) {
+                existing_children.reserve(children_with_ids.len());
+                for (child_id, _) in &children_with_ids {
+                    if parent != *child_id {
+                        existing_children.push(*child_id);
+                    }
+                }
+            } else {
+                let mut new_children = Vec::with_capacity(children_with_ids.len());
+                for (child_id, _) in &children_with_ids {
+                    if parent != *child_id {
+                        new_children.push(*child_id);
+                    }
+                }
+                child_ids_guard.insert(parent, new_children);
+            }
+        }
+
+        // 批量插入 views
+        {
+            let mut views_guard = self.views.write();
+            for (child_id, child) in children_with_ids {
+                views_guard.insert(child_id, RwLock::new(child));
+            }
+        }
+
+        // 标记父节点 dirty
+        if let Some(view_state) = self.states.read().get(parent) {
+            view_state.write().dirty_children = true;
+        }
+
+        // 通知父节点
+        if let Some(view) = self.views.read().get(parent) {
+            view.write()
+                .on_child_push()
+                .error_on_err(format!("on_child_push {{ view_id:{} }}]", parent));
+        }
+    }
+
     /// 添加子视图
     pub fn add_child(&self, parent: ViewId, child: Box<dyn View + Send + Sync>) {
         let child_view_id = child.view_id();
@@ -109,11 +173,6 @@ impl ViewStorage {
         self.views.write().insert(child_view_id, RwLock::new(child));
         if let Some(view_state) = VIEW_STORAGE.states.read().get(parent) {
             view_state.write().dirty_children = true;
-        }
-
-        let windows_ids = { VIEW_STORAGE.window_ids.read().get(parent).cloned() };
-        if let Some(window_id) = windows_ids {
-            Self::set_all_child_window_id(child_view_id, window_id);
         }
 
         // 应该是所有工作完成后再通知，以免出现生命周期问题
@@ -185,7 +244,7 @@ impl ViewStorage {
         }
     }
 
-    fn set_all_child_window_id(root_id: ViewId, window_id: WindowId) {
+    pub fn set_all_child_window_id(root_id: ViewId, window_id: WindowId) {
         let child_map = VIEW_STORAGE.child_ids.read();
 
         let mut window_ids = VIEW_STORAGE.window_ids.write();
