@@ -135,6 +135,7 @@ impl ViewId {
     #[inline]
     pub fn push_view(self, view: Box<dyn View + Send + Sync + 'static>) {
         VIEW_STORAGE.add_child(self, view);
+        VIEW_STORAGE.reinit_child_view(self);
     }
 
     // pub fn set_view<State>(&self, fn_view: FnView<State>, state: Arc<State>) {
@@ -168,7 +169,7 @@ impl ViewId {
             // Fallback to `true` (Fail-Safe):
             // If the state is missing (e.g., first frame), assume visible.
             // This prevents "dead widgets" that never update because they are assumed invisible.
-            .unwrap_or(true)
+            .is_some()
     }
 
     pub fn is_scroll_view(self) -> bool {
@@ -263,13 +264,25 @@ impl ViewId {
         if self.is_disabled() {
             return ControlState::Disabled;
         }
-        if self.is_hover() {
-            return ControlState::Hover;
+        let Some(window_id) = self.window_id() else {
+            if self.is_active() {
+                return ControlState::Active;
+            }
+            return ControlState::Normal;
+        };
+        let Some(entry) = window_id.entry() else {
+            if self.is_active() {
+                return ControlState::Active;
+            }
+            return ControlState::Normal;
+        };
+        if entry.focus_manager.is_focused(self) {
+            return ControlState::Focus;
         }
         if self.is_active() {
             return ControlState::Active;
         }
-        if self.is_hover() {
+        if entry.hover_id == Some(self) {
             return ControlState::Hover;
         }
         ControlState::Normal

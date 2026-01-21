@@ -33,6 +33,7 @@ pub struct WindowEntry {
     pub current_drag_target: Option<ViewId>,
     pub background_color: Color,
     pub rem_px: Arc<AtomicF32>,
+    pub dirty_view: AtomicBool,
 }
 
 impl WindowEntry {
@@ -60,6 +61,7 @@ impl WindowEntry {
             current_drag_target: None,
             background_color,
             rem_px,
+            dirty_view: AtomicBool::new(false),
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id
@@ -86,6 +88,16 @@ impl WindowEntry {
     }
     pub fn clear_layout_dirty(&self) {
         self.layout_dirty.store(false, Ordering::Release);
+    }
+
+    pub fn is_dirty_view(&self) -> bool {
+        self.dirty_view.load(Ordering::Acquire)
+    }
+    pub fn mark_dirty_view(&self) {
+        self.dirty_view.store(true, Ordering::Release);
+    }
+    pub fn clear_dirty_view(&self) {
+        self.dirty_view.store(false, Ordering::Release);
     }
 }
 

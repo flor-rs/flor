@@ -11,7 +11,6 @@ use flor_base::types::Transform2D;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use platform::WindowId;
-use rustc_hash::FxHashMap;
 use slotmap::{Key, SecondaryMap, SlotMap};
 use std::fmt::Debug;
 
@@ -19,6 +18,7 @@ use std::fmt::Debug;
 /// 所有视图的状态都存储在这里，不再按窗口分类
 pub static VIEW_STORAGE: Lazy<ViewStorage> = Lazy::new(|| ViewStorage::new());
 
+/// 对于不是每个view都要求有值的数据，应该优先增加map而不是放到state里。
 #[derive(Debug)]
 pub struct ViewStorage {
     /// 视图ID管理
@@ -101,19 +101,11 @@ impl ViewStorage {
             if parent != child_view_id {
                 if let Some(children) = child_ids.get_mut(parent) {
                     children.push(child_view_id);
-                    // 重新排序
-                    children.sort_by(|x, d| x.z_index().cmp(&d.z_index()));
                 } else {
                     child_ids.insert(parent, vec![child_view_id]);
                 }
             }
-            if let Some(view) = self.views.read().get(parent) {
-                view.write()
-                    .on_child_push()
-                    .error_on_err(format!("on_child_push {{ view_id:{} }}]", parent));
-            }
         }
-
         self.views.write().insert(child_view_id, RwLock::new(child));
         if let Some(view_state) = VIEW_STORAGE.states.read().get(parent) {
             view_state.write().dirty_children = true;
@@ -122,6 +114,55 @@ impl ViewStorage {
         let windows_ids = { VIEW_STORAGE.window_ids.read().get(parent).cloned() };
         if let Some(window_id) = windows_ids {
             Self::set_all_child_window_id(child_view_id, window_id);
+        }
+
+        // 应该是所有工作完成后再通知，以免出现生命周期问题
+        if let Some(view) = self.views.read().get(parent) {
+            view.write()
+                .on_child_push()
+                .error_on_err(format!("on_child_push {{ view_id:{} }}]", parent));
+        }
+    }
+
+    pub fn reinit_child_view(&self, root_id: ViewId) {
+        let Some(window_id) = root_id.window_id() else {
+            return;
+        };
+        let mut child_map = VIEW_STORAGE.child_ids.write();
+        let mut window_ids = VIEW_STORAGE.window_ids.write();
+        let states = VIEW_STORAGE.states.read();
+
+        let mut stack = Vec::with_capacity(64);
+        stack.push(root_id);
+
+        while let Some(view_id) = stack.pop() {
+            window_ids.insert(view_id, window_id);
+
+            // 检查是否需要排序
+            let needs_sort = if let Some(state) = states.get(view_id) {
+                let mut state = state.write();
+                if state.dirty_children {
+                    state.dirty_children = false;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if let Some(children) = child_map.get_mut(view_id) {
+                if needs_sort {
+                    children.sort_by(|x, d| x.z_index().cmp(&d.z_index()));
+                    // ID 降序？原代码里的 sort_by 是 z_index().cmp()，默认是从小到大。
+                    // 但是 add_child 里之前是 sort_by(|x, d| x.z_index().cmp(&d.z_index()))，也是从小到大。
+                    // 渲染顺序是从下往上，应该是 z-index 小的先画（在前面），z-index 大的后画（在后面，覆盖）。
+                    // 之前的 sort_view_ids_by_z_index 方法是 descending... 
+                    // 这里我们保持和 add_child 被注释掉的逻辑一致： x.cmp(d) => ascending.
+                }
+
+                stack.extend(children.iter().copied()); // 压入栈以便遍历子节点
+            }
         }
     }
 
