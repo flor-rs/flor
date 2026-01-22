@@ -3,13 +3,14 @@ use crate::view::control_state::ControlState;
 use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
-use crate::windows::bus::render_from_view_id;
+use crate::windows::bus::render;
 use crate::windows::entry::WindowEntryVisit;
 use flor_base::platform::WindowApi;
 use flor_base::types::Transform2D;
-use log::{trace, warn};
+use log::{debug, trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
+use std::time::Instant;
 use taffy::{AvailableSpace, NodeId, Size, Style, TaffyTree};
 
 pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
@@ -78,6 +79,16 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
     }
 
     let client_size = window_id.get_client_size()?;
+    let mut measure_call_count = 0u32;
+    let compute_layout_start = Instant::now();
+
+    let Some(render) = render(window_id) else {
+        return Ok(());
+    };
+    let mut render = render.write();
+    let render = render.deref_mut();
+    let views = VIEW_STORAGE.views.read();
+
     layout_tree.compute_layout_with_measure(
         root_node_id,
         Size {
@@ -86,26 +97,18 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
         },
         |known_dimensions, available_space, _node_id, node_context_view_id, style| {
             if let Some(view_id) = node_context_view_id {
-                if let Some(dyn_view) = VIEW_STORAGE.views.read().get(*view_id) {
-                    if let Some(render) = render_from_view_id(*view_id).as_deref() {
-                        let mut render = render.write();
-                        let render = render.deref_mut();
-                        let mut view = dyn_view.write();
-                        return view
-                            .on_measure(known_dimensions, available_space, style, render)
-                            .unwrap_or(Size::ZERO);
-                    }
+                if let Some(dyn_view) = views.get(*view_id) {
+                    let mut view = dyn_view.write();
+                    return view
+                        .on_measure(known_dimensions, available_space, style, render)
+                        .unwrap_or(Size::ZERO);
                 }
             }
             Size::ZERO
         },
     )?;
 
-    {
-        trace!("bus_update_layout begin");
-        bus_update_layout_iterative(view_id, layout_tree, (0.0, 0.0))?;
-        trace!("bus_update_layout end");
-    }
+    bus_update_layout_iterative(view_id, layout_tree, (0.0, 0.0))?;
 
     // 计算累积变换：从根控件遍历，累加 transform 到 accumulated_transform
     compute_accumulated_transforms(view_id);
