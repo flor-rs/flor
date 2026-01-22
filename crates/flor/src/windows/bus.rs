@@ -77,11 +77,11 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
         }
         Message::Resize { width, height } => {
             window_id.bus_refresh_layout_entry()?;
-            let bus = render(window_id);
-            let Some(render) = bus.as_deref() else {
-                return Ok(HandleResult::Default);
-            };
             {
+                let bus = render(window_id);
+                let Some(render) = bus.as_deref() else {
+                    return Ok(HandleResult::Default);
+                };
                 let mut render = render.write();
                 render
                     .update_window_size(width, height)
