@@ -2,15 +2,15 @@ use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::render::FlorRender;
 use crate::signal::effect::updater_effect::create_updater;
+use crate::view::resolver::Unit;
 use crate::view::view_builder::builder::ViewBuilder;
 use crate::view::view_storage::{ViewStorage, VIEW_STORAGE};
 use crate::view::View;
 use crate::windows::bus;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WindowEntry;
-use atomic_float::AtomicF32;
-use flor_base::graphics::Color;
 use flor_base::platform::{WindowApi, WindowMode};
+use flor_base::types::Color;
 use log::trace;
 use parking_lot::RwLock;
 use platform::WindowId;
@@ -58,13 +58,13 @@ impl WindowOption {
         // 创建渲染器
         let render = FlorRender::create(window_id, width, height, self.wait_v_sync)?;
 
-        let rem_px = Arc::new(AtomicF32::new(self.rem_px));
-
+        let (dpi_x, dpi_y) = window_id.get_dpi()?;
+        let unit = Arc::new(Unit::new(dpi_x, dpi_y, self.rem_px));
         let view_id = WindowEntry::new(
             window_id,
             self.continuous_rendering,
             self.background_color,
-            rem_px.clone(),
+            unit.clone(),
         );
 
         VIEW_STORAGE
@@ -85,14 +85,10 @@ impl WindowOption {
         trace!("window root view: {:?}", root_dyn_view);
         VIEW_STORAGE.window_ids.write().insert(view_id, window_id);
         window_id.views(root_dyn_view);
-        ViewStorage::set_all_child_window_id(view_id, window_id);
+        ViewStorage::init_window_child(view_id, window_id, unit)?;
         window_id.bus_init_focus_manager_entry()?;
 
         bus::register_render(window_id, render);
-
-        let (dpi_x, dpi_y) = window_id.get_dpi()?;
-
-        window_id.bus_setup_arc_data(dpi_x, dpi_y, 16.);
 
         window_id.bus_create().error_on_err("on_create has error");
         window_id

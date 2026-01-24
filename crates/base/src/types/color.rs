@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
-/// todo name set
 
 //    Code from [`druid`] is used here
 //

@@ -47,6 +47,7 @@ once_cell = { workspace = true }
 rustc-hash = { workspace = true }
 thiserror = { workspace = true }
 flor-base = { workspace = true }
+flor-macros = { workspace = true }
 #graphics-opengl = { workspace = true, optional = true }
 flor-graphics-direct2d = { workspace = true, optional = true }
 taffy = { workspace = true }

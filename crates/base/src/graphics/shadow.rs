@@ -1,4 +1,4 @@
-use crate::graphics::color::Color;
+use crate::types::Color;
 
 /// 阴影参数结构，可用于矩形和文本阴影
 #[derive(Copy, Clone, Debug, Default)]

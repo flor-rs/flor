@@ -1,8 +1,8 @@
 use crate::graphics::{
-    BrushHandle, Color, Gradient, HitTestResult, ImageDrawOptions, ImageHandle, Path,
-    PathDrawOptions, SurfaceId, TextDrawOptions, TextFormatHandle,
+    BrushHandle, Gradient, HitTestResult, ImageDrawOptions, ImageHandle, Path, PathDrawOptions,
+    SurfaceId, TextDrawOptions, TextFormatHandle,
 };
-use crate::types::Transform2D;
+use crate::types::{Color, Transform2D};
 #[cfg(feature = "svg")]
 use crate::SvgDrawOptions;
 #[cfg(feature = "svg")]
@@ -44,7 +44,7 @@ pub trait RenderContext: Any {
     fn test(&mut self) -> Result<(), Self::Error>;
     /// 更新渲染目标尺寸
     fn update_window_size(&mut self, width: u32, height: u32) -> Result<(), Self::Error>;
-    fn set_scale_factor(&mut self, dpi_x: f64, dpi_y: f64) -> Result<(), Self::Error>;
+    fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error>;
 
     // ==================== 资源管理 ====================
     fn create_surface(&mut self, width: u32, height: u32) -> Result<Self::SurfaceId, Self::Error>;

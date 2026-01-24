@@ -1,9 +1,9 @@
 use crate::view::focus_manager::FocusManager;
+use crate::view::resolver::Unit;
 use crate::view::view_id::ViewId;
-use atomic_float::AtomicF32;
 use dashmap::mapref::one::{Ref, RefMut};
 use dashmap::DashMap;
-use flor_base::graphics::Color;
+use flor_base::types::Color;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use platform::WindowId;
@@ -32,7 +32,7 @@ pub struct WindowEntry {
     pub capture_view_id: Option<ViewId>,
     pub current_drag_target: Option<ViewId>,
     pub background_color: Color,
-    pub rem_px: Arc<AtomicF32>,
+    pub unit: Arc<Unit>,
 }
 
 impl WindowEntry {
@@ -40,7 +40,7 @@ impl WindowEntry {
         window_id: WindowId,
         continuous_rendering: bool,
         background_color: Color,
-        rem_px: Arc<AtomicF32>,
+        unit: Arc<Unit>,
     ) -> ViewId {
         let view_id = ViewId::new();
 
@@ -59,7 +59,7 @@ impl WindowEntry {
             capture_view_id: None,
             current_drag_target: None,
             background_color,
-            rem_px,
+            unit,
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id
@@ -87,7 +87,6 @@ impl WindowEntry {
     pub fn clear_layout_dirty(&self) {
         self.layout_dirty.store(false, Ordering::Release);
     }
-
 }
 
 pub trait WindowEntryVisit {

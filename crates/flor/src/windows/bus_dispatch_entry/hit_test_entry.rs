@@ -98,16 +98,13 @@ fn hit_test_recursive(
     let state = state_lock.read();
 
     // 3. 检查 display: none
-    let style = view_id.calc_current_style().ok()?;
+    let style = state.layout_style.get_data_borrow(view_id.control_state());
     if style.display == Display::None {
         return None;
     }
 
     // 4. 获取控件尺寸
     let layout_size = state.layout.size;
-
-    // 释放 state 锁，避免死锁
-    drop(state);
 
     // 5. 获取累积变换，把鼠标窗口坐标转为控件局部坐标
     let local_mouse_point = if let Some(transform) = accumulated_transform.get(view_id) {

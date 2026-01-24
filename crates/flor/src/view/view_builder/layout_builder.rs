@@ -1,19 +1,21 @@
+use crate::log_error::ResultLogExt;
 use crate::signal::effect::updater_effect::create_updater_with_id;
-use crate::view::state_selector::LayoutStateSelector;
+use crate::view::resolver::LayoutResolver;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
+use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 
 pub trait LayoutBuilder {
     // 增加 'static 约束，因为闭包需要被 move 进 updater 长期持有
     fn layout<F>(self, style_fn: F) -> Self
     where
-        F: Fn(LayoutStateSelector) -> LayoutStateSelector + 'static;
+        F: Fn(LayoutResolver) -> LayoutResolver + 'static;
 }
 
 impl<T: View> LayoutBuilder for T {
     fn layout<F>(self, style_fn: F) -> Self
     where
-        F: Fn(LayoutStateSelector) -> LayoutStateSelector + 'static,
+        F: Fn(LayoutResolver) -> LayoutResolver + 'static,
     {
         let view_id = self.view_id();
 
@@ -39,7 +41,9 @@ impl<T: View> LayoutBuilder for T {
                     .write();
 
                 view_state.layout_style = new_style;
-
+                if let Some(window_id) = view_id.window_id() {
+                    window_id.bus_re_draw_entry().error_on_err("fail draw");
+                }
                 view_id.request_redraw();
             },
         );

@@ -6,7 +6,7 @@ use crate::handle::D2DTextFormatHandle;
 use crate::handle::{D2DSvgHandle, SvgShadowCache};
 use crate::into_d2d_transform::IntoD2DTransform;
 use flor_base::graphics::{
-    Color, Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
+    Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
     PathDrawOptions, Render, RenderContext, ScaleMode, TextAlignment, TextDrawOptions,
     TextFormatHandle, TextTrimming, WordWrapping,
 };
@@ -107,7 +107,7 @@ use crate::memory_font::{get_family_name_from_face, MemoryFontFileLoader};
 use crate::color::AsD2dColor;
 use crate::encode::encode_unicode;
 pub use error::*;
-use flor_base::types::Transform2D;
+use flor_base::types::{Color, Transform2D};
 
 pub static RENDER_FACTORY: OnceLock<RenderFactory> = OnceLock::new();
 
@@ -390,9 +390,9 @@ impl RenderContext for D2DRender {
         Ok(())
     }
 
-    fn set_scale_factor(&mut self, dpi_x: f64, dpi_y: f64) -> Result<(), Self::Error> {
+    fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
         unsafe {
-            self.current_render.SetDpi(dpi_x as f32, dpi_y as f32);
+            self.current_render.SetDpi(dpi_x, dpi_y);
             Ok(())
         }
     }

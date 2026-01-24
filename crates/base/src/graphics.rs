@@ -7,7 +7,6 @@
 //! - Shadow, blur, rounded corners, and gradient support
 //! - Cross-platform CPU/GPU rendering
 
-mod color;
 mod draw_options;
 mod error;
 mod gradient;
@@ -19,6 +18,6 @@ mod shadow;
 mod text;
 
 pub use {
-    color::*, draw_options::*, error::*, gradient::*, handle::*, path::*, render::*, scale_mode::*,
+    draw_options::*, error::*, gradient::*, handle::*, path::*, render::*, scale_mode::*,
     shadow::*, text::*,
 };

@@ -14,7 +14,6 @@ use crate::windows::bus_dispatch_entry::hit_test_entry::hit_test_entry;
 use crate::windows::bus_dispatch_entry::refresh_layout_entry::refresh_layout_entry;
 use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_scroll_lines_changed_entry;
 use crate::windows::entry::WindowEntryVisit;
-use atomic_float::{AtomicF32, AtomicF64};
 use flor_base::graphics::RenderContext;
 use flor_base::platform::{InputEvent, KeyCode, KeyState};
 use flor_base::platform::{MousePosition, ScrollAxis};
@@ -26,7 +25,6 @@ use log::trace;
 use platform::WindowId;
 use std::ops::DerefMut;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// 总线的事件分发入口，给窗口用的
@@ -152,8 +150,7 @@ pub trait WindowBusDispatchEntry {
     /// 封装的WindowOperations
     fn request_redraw(&self);
 
-    fn update_child_layout_dpi(&self, dpi_x: f64, dpi_y: f64);
-    fn bus_setup_arc_data(&self, dpi_x: f64, dpi_y: f64, rem_px: f32);
+    fn update_child_layout_dpi(&self, dpi_x: f32, dpi_y: f32);
 }
 
 impl WindowBusDispatchEntry for WindowId {
@@ -284,9 +281,7 @@ impl WindowBusDispatchEntry for WindowId {
                 if let Some(view_lock) = views.get(old_id) {
                     // 旧的离开（转换为控件局部坐标）
                     let local_pos = old_id.window_to_local_position(mouse_position);
-                    view_lock
-                        .write()
-                        .call_mouse_leave(key_state, local_pos);
+                    view_lock.write().call_mouse_leave(key_state, local_pos);
                 }
             }
         }
@@ -300,9 +295,7 @@ impl WindowBusDispatchEntry for WindowId {
             if let Some(view_lock) = views.get(new_hovered_id) {
                 // 新的进入（转换为控件局部坐标）
                 let local_pos = new_hovered_id.window_to_local_position(mouse_position);
-                view_lock
-                    .write()
-                    .call_mouse_enter(key_state, local_pos);
+                view_lock.write().call_mouse_enter(key_state, local_pos);
             }
         }
 
@@ -401,8 +394,7 @@ impl WindowBusDispatchEntry for WindowId {
             self.entry_mut()
                 .map(|mut v| v.r_down_view_id = Some(view_id));
             let local_pos = view_id.window_to_local_position(mouse_position);
-            view.write()
-                .call_right_button_down(key_state, local_pos);
+            view.write().call_right_button_down(key_state, local_pos);
         }
     }
 
@@ -416,8 +408,7 @@ impl WindowBusDispatchEntry for WindowId {
             let local_pos = view_id.window_to_local_position(mouse_position);
             if let Some(spawn_click) = self.entry().map(|v| v.r_down_view_id == Some(view_id)) {
                 if spawn_click {
-                    view.write()
-                        .call_right_button_click(key_state, local_pos);
+                    view.write().call_right_button_click(key_state, local_pos);
                 }
             }
             view.write().call_right_button_up(key_state, local_pos);
@@ -453,8 +444,7 @@ impl WindowBusDispatchEntry for WindowId {
             self.entry_mut()
                 .map(|mut v| v.m_down_view_id = Some(view_id));
             let local_pos = view_id.window_to_local_position(mouse_position);
-            view.write()
-                .call_middle_button_down(key_state, local_pos);
+            view.write().call_middle_button_down(key_state, local_pos);
         }
     }
 
@@ -468,12 +458,10 @@ impl WindowBusDispatchEntry for WindowId {
             let local_pos = view_id.window_to_local_position(mouse_position);
             if let Some(spawn_click) = self.entry().map(|v| v.m_down_view_id == Some(view_id)) {
                 if spawn_click {
-                    view.write()
-                        .call_middle_button_click(key_state, local_pos);
+                    view.write().call_middle_button_click(key_state, local_pos);
                 }
             }
-            view.write()
-                .call_middle_button_up(key_state, local_pos);
+            view.write().call_middle_button_up(key_state, local_pos);
         }
     }
 
@@ -687,66 +675,35 @@ impl WindowBusDispatchEntry for WindowId {
             .warn_on_err("request_redraw fail");
     }
 
-    fn update_child_layout_dpi(&self, dpi_x: f64, dpi_y: f64) {
-        let root_id = self.view_id();
-
-        // 一次性获取所有需要的锁
-        let state_map = VIEW_STORAGE.states.read();
-
-        // 检查根节点
-        if let Some(state_arc) = state_map.get(root_id) {
-            let state = state_arc.read();
-            if state.layout_style.dpi_x.load(Ordering::Relaxed) == dpi_x
-                && state.layout_style.dpi_y.load(Ordering::Relaxed) == dpi_y
-            {
-                return; // 提前返回，锁会自动释放
-            }
-        } else {
-            return; // 根节点不存在
-        }
-
-        let child_map = VIEW_STORAGE.child_ids.read();
-
-        // 需要更新，遍历所有节点
-        let mut stack = Vec::with_capacity(64);
-        stack.push(root_id);
-
-        while let Some(view_id) = stack.pop() {
-            if let Some(state_arc) = state_map.get(view_id) {
-                let mut state = state_arc.write();
-                state.layout_style.set_dpi(dpi_x, dpi_y);
-            }
-
-            if let Some(children) = child_map.get(view_id) {
-                stack.extend(children.iter().copied());
-            }
+    fn update_child_layout_dpi(&self, dpi_x: f32, dpi_y: f32) {
+        if let Some(entry) = self.entry() {
+            entry.unit.dpi_x.store(dpi_x, Ordering::Relaxed);
+            entry.unit.dpi_y.store(dpi_y, Ordering::Relaxed);
         }
     }
 
-    fn bus_setup_arc_data(&self, dpi_x: f64, dpi_y: f64, rem_px: f32) {
-        let root_id = self.view_id();
-        let dpi_x = Arc::new(AtomicF64::new(dpi_x));
-        let dpi_y = Arc::new(AtomicF64::new(dpi_y));
-        let rem_px = Arc::new(AtomicF32::new(rem_px));
-
-        let child_map = VIEW_STORAGE.child_ids.read();
-        let state_map = VIEW_STORAGE.states.read();
-
-        // 需要更新，遍历所有节点
-        let mut stack = Vec::with_capacity(64);
-        stack.push(root_id);
-
-        while let Some(view_id) = stack.pop() {
-            if let Some(state_arc) = state_map.get(view_id) {
-                let mut state = state_arc.write();
-                state.layout_style.dpi_x = dpi_x.clone();
-                state.layout_style.dpi_y = dpi_y.clone();
-                state.layout_style.rem_px = rem_px.clone();
-            }
-
-            if let Some(children) = child_map.get(view_id) {
-                stack.extend(children.iter().copied());
-            }
-        }
-    }
+    // fn bus_setup_arc_data(&self, dpi_x: f32, dpi_y: f32, rem_px: f32) {
+    //     let root_id = self.view_id();
+    //     let unit_resolver = Arc::new(UnitResolver::new(dpi_x, dpi_y, rem_px));
+    //
+    //     let child_map = VIEW_STORAGE.child_ids.read();
+    //     let state_map = VIEW_STORAGE.states.read();
+    //
+    //     // 需要更新，遍历所有节点
+    //     let mut stack = Vec::with_capacity(64);
+    //     stack.push(root_id);
+    //
+    //     while let Some(view_id) = stack.pop() {
+    //         if let Some(state_arc) = state_map.get(view_id) {
+    //             let mut state = state_arc.write();
+    //             state.layout_style.dpi_x = dpi_x.clone();
+    //             state.layout_style.dpi_y = dpi_y.clone();
+    //             state.layout_style.rem_px = rem_px.clone();
+    //         }
+    //
+    //         if let Some(children) = child_map.get(view_id) {
+    //             stack.extend(children.iter().copied());
+    //         }
+    //     }
+    // }
 }

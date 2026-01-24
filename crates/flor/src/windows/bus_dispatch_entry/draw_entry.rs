@@ -1,7 +1,6 @@
 use crate::error::Error;
 use crate::render::FlorRender;
 use crate::view::control_state::ControlState;
-use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
@@ -88,22 +87,16 @@ pub fn draw_entry(window_id: WindowId, render: &mut FlorRender) -> Result<(), Er
                     }
                 }
 
-                // 3. Style Calculation
-                let mut control_state = ControlState::Normal;
-                if view_state.disable {
-                    control_state = ControlState::Disabled;
-                }
-                if window_entry.focus_manager.is_focused(view_id) {
-                    control_state = ControlState::Focus;
-                }
-                if pressed.get(view_id).is_some() {
-                    control_state = ControlState::Active;
-                }
-                if window_entry.hover_id == Some(view_id) {
-                    control_state = ControlState::Hover;
-                }
+                // 3. Style Calculation（按优先级：Disabled > Active > Focus > Hover > Normal）
+                let control_state = match true {
+                    _ if view_state.disable => ControlState::Disabled,
+                    _ if pressed.get(view_id).is_some() => ControlState::Active,
+                    _ if window_entry.focus_manager.is_focused(view_id) => ControlState::Focus,
+                    _ if window_entry.hover_id == Some(view_id) => ControlState::Hover,
+                    _ => ControlState::Normal,
+                };
 
-                let style = view_state.layout_style.calc_taffy_style(control_state);
+                let style = view_state.layout_style.get_data_borrow(control_state);
 
                 if style.display == Display::None {
                     culled_count += 1;

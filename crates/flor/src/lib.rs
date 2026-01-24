@@ -6,6 +6,18 @@ pub extern crate once_cell;
 pub extern crate parking_lot;
 pub extern crate rustc_hash;
 
+pub mod device_kind;
+pub mod error;
+pub mod log_error;
+mod min_wait_time;
+pub mod proc;
+pub mod render;
+pub mod signal;
+pub mod view;
+pub mod windows;
+
+pub type ComputedLayout = taffy::Layout;
+
 use crate::proc::WindowsProcHandler;
 use crate::windows::bus::RENDERS;
 use log::{debug, info, trace};
@@ -16,15 +28,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-pub mod device_kind;
-pub mod error;
-pub mod log_error;
-mod min_wait_time;
-pub mod proc;
-pub mod render;
-pub mod signal;
-pub mod view;
-pub mod windows;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;

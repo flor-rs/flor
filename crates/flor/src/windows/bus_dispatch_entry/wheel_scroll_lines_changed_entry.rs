@@ -14,18 +14,21 @@ pub fn wheel_scroll_lines_changed_entry(
     mouse_position: MousePosition,
 ) {
     let view_id = window_id.bus_hit_test_entry(mouse_position, key_state);
-    debug!("[Wheel] hit_test returned: {:?}, mouse_pos: ({}, {})", view_id, mouse_position.x, mouse_position.y);
+    debug!(
+        "[Wheel] hit_test returned: {:?}, mouse_pos: ({}, {})",
+        view_id, mouse_position.x, mouse_position.y
+    );
     let mut parent_id = Some(view_id);
 
     let mut event_view_id = None;
 
     while let Some(view_id) = parent_id {
-        match view_id.calc_current_style() {
-            Ok(style) => {
-                if style.display != Display::None
-                    && (style.overflow.x == Overflow::Scroll
-                    || style.overflow.y == Overflow::Scroll)
-                {
+        match view_id.with_current_style(|style| {
+            style.display != Display::None
+                && (style.overflow.x == Overflow::Scroll || style.overflow.y == Overflow::Scroll)
+        }) {
+            Ok(is_overflow) => {
+                if is_overflow {
                     event_view_id = Some(view_id);
                     break;
                 }

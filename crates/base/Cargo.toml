@@ -11,7 +11,7 @@ repository.workspace = true
 
 [features]
 platform = ["rustc-hash", "once_cell", "log"]
-graphics = ["parking_lot", "thiserror"]
+graphics = ["parking_lot"]
 
 # graphics's features
 svg = ["graphics"]
@@ -28,7 +28,7 @@ rustc-hash = { workspace = true, optional = true }
 once_cell = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
-thiserror = { workspace = true, optional = true }
+thiserror = { workspace = true }
 parking_lot = { workspace = true, optional = true }
 
 [lints]

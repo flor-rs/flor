@@ -6,7 +6,7 @@ use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
 use crate::signal::id::EffectId;
 use crate::view::class::ClassLoader;
 use crate::view::control_state::ControlState;
-use crate::view::state_selector::{parse_state_prefix, CalcTaffyStyle, LayoutStateSelector};
+use crate::view::resolver::{parse_state_prefix, LayoutResolver};
 use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
@@ -46,7 +46,7 @@ impl ViewId {
     }
 
     #[inline]
-    pub fn new_with_layout(layout_style: LayoutStateSelector) -> ViewId {
+    pub fn new_with_layout(layout_style: LayoutResolver) -> ViewId {
         VIEW_STORAGE.new_view_with_state(ViewState {
             layout_style,
             ..ViewState::new()
@@ -57,16 +57,22 @@ impl ViewId {
         VIEW_STORAGE.parent_view_id.read().get(self).cloned()
     }
 
-    //     pub states: RwLock<SecondaryMap<ViewId, RwLock<ViewState>>>,
+    // pub states: RwLock<SecondaryMap<ViewId, RwLock<ViewState>>>,
     pub fn layout(self) -> Result<taffy::Layout, Error> {
         self.with_state(|state| state.layout)
     }
 
-    pub fn calc_current_style(self) -> Result<taffy::Style, Error> {
+    /// 获取当前状态的 Style（克隆版本）
+    pub fn get_current_style(self) -> Result<taffy::Style, Error> {
+        self.with_state(|view_state| view_state.layout_style.get_data_clone(self.control_state()))
+    }
+
+    /// 借用当前状态的 Style（闭包版本）
+    pub fn with_current_style<R>(self, f: impl FnOnce(&taffy::Style) -> R) -> Result<R, Error> {
+        let control_state = self.control_state();
         self.with_state(|view_state| {
-            view_state
-                .layout_style
-                .calc_taffy_style(self.control_state())
+            let style = view_state.layout_style.get_data_borrow(control_state);
+            f(&style)
         })
     }
 
@@ -117,9 +123,9 @@ impl ViewId {
                 view.write()
                     .on_update_class(control_state, actual_class)
                     .error_on_err(format!("on_update_class {{ view_id:{} }}", self));
-                self.request_redraw();
             }
         }
+        self.request_redraw();
     }
 
     //     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,
@@ -260,27 +266,22 @@ impl ViewId {
         ControlState::Normal
     }
 
+    /// 获取控件状态（按优先级：Disabled > Active > Focus > Hover > Normal）
     pub fn control_state(self) -> ControlState {
         if self.is_disabled() {
             return ControlState::Disabled;
         }
+        if self.is_active() {
+            return ControlState::Active;
+        }
         let Some(window_id) = self.window_id() else {
-            if self.is_active() {
-                return ControlState::Active;
-            }
             return ControlState::Normal;
         };
         let Some(entry) = window_id.entry() else {
-            if self.is_active() {
-                return ControlState::Active;
-            }
             return ControlState::Normal;
         };
         if entry.focus_manager.is_focused(self) {
             return ControlState::Focus;
-        }
-        if self.is_active() {
-            return ControlState::Active;
         }
         if entry.hover_id == Some(self) {
             return ControlState::Hover;

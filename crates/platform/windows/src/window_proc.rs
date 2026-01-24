@@ -119,8 +119,8 @@ pub(crate) unsafe extern "system" fn window_proc(
             proc().window_proc(
                 hwnd.into(),
                 Message::DpiChange {
-                    dpi_x: dpi_x as f64,
-                    dpi_y: dpi_y as f64,
+                    dpi_x,
+                    dpi_y,
                 },
             )
         }

@@ -1,7 +1,9 @@
+use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::signal;
 use crate::signal::id::EffectId;
 use crate::view::handler::ViewHandler;
+use crate::view::resolver::Unit;
 use crate::view::scroll_state::ScrollState;
 use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
@@ -13,6 +15,7 @@ use parking_lot::{Mutex, RwLock};
 use platform::WindowId;
 use slotmap::{Key, SecondaryMap, SlotMap};
 use std::fmt::Debug;
+use std::sync::Arc;
 
 /// 全局视图存储
 /// 所有视图的状态都存储在这里，不再按窗口分类
@@ -216,7 +219,7 @@ impl ViewStorage {
                     // ID 降序？原代码里的 sort_by 是 z_index().cmp()，默认是从小到大。
                     // 但是 add_child 里之前是 sort_by(|x, d| x.z_index().cmp(&d.z_index()))，也是从小到大。
                     // 渲染顺序是从下往上，应该是 z-index 小的先画（在前面），z-index 大的后画（在后面，覆盖）。
-                    // 之前的 sort_view_ids_by_z_index 方法是 descending... 
+                    // 之前的 sort_view_ids_by_z_index 方法是 descending...
                     // 这里我们保持和 add_child 被注释掉的逻辑一致： x.cmp(d) => ascending.
                 }
 
@@ -228,7 +231,8 @@ impl ViewStorage {
     pub fn sort_view_ids_by_z_index(&self, childrens: &mut Vec<ViewId>) {
         childrens.sort_by(|a, b| {
             // 1. Z-index 降序：让大的排在前面 (Index 0)
-            b.z_index().cmp(&a.z_index())
+            b.z_index()
+                .cmp(&a.z_index())
                 // 2. ID 降序：Z-index 相同时，让后创建的（ID大的）排在前面
                 // 这样符合“后来居上”的视觉覆盖规则
                 .then(b.data().as_ffi().cmp(&a.data().as_ffi()))
@@ -244,7 +248,11 @@ impl ViewStorage {
         }
     }
 
-    pub fn set_all_child_window_id(root_id: ViewId, window_id: WindowId) {
+    pub fn init_window_child(
+        root_id: ViewId,
+        window_id: WindowId,
+        unit: Arc<Unit>,
+    ) -> Result<(), Error> {
         let child_map = VIEW_STORAGE.child_ids.read();
 
         let mut window_ids = VIEW_STORAGE.window_ids.write();
@@ -254,11 +262,16 @@ impl ViewStorage {
 
         while let Some(view_id) = stack.pop() {
             window_ids.insert(view_id, window_id);
+            let unit = unit.clone();
+            view_id.with_state_mut(move |view_state| {
+                view_state.layout_style.unit_resolver.set_unit(unit);
+            })?;
 
             if let Some(children) = child_map.get(view_id) {
                 stack.extend(children.iter().copied());
             }
         }
+        Ok(())
     }
 
     pub fn dispose_view(&self, view_id: ViewId) {

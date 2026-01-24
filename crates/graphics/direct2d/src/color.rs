@@ -1,4 +1,4 @@
-use flor_base::graphics::Color;
+use flor_base::types::Color;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 
 pub trait AsD2dColor {

@@ -1,4 +1,4 @@
-use crate::graphics::Color;
+use crate::types::Color;
 
 /// 渐变类型，可用于 Gradient Brush
 #[derive(Debug, Clone)]

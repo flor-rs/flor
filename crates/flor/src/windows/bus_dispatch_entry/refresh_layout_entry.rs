@@ -1,6 +1,5 @@
 use crate::error::Error;
 use crate::view::control_state::ControlState;
-use crate::view::state_selector::CalcTaffyStyle;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render;
@@ -14,6 +13,7 @@ use std::time::Instant;
 use taffy::{AvailableSpace, NodeId, Size, Style, TaffyTree};
 
 pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
+    let start_time = Instant::now();
     trace!("enter relayout");
 
     let Some(window_entry) = window_id.entry() else {
@@ -35,7 +35,7 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
 
     let mut style_update = view_state
         .layout_style
-        .calc_update_taffy_style(view_id.control_state());
+        .get_update_data_clone(view_id.control_state());
 
     // 这里的特殊逻辑：如果 style 有更新，必须强制加上 100% 的尺寸限制
     if let Some(s) = &mut style_update {
@@ -44,7 +44,11 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
 
     drop(view_state);
 
+    let instant = Instant::now();
+
     let children = collect_layout_children(view_id, layout_tree)?;
+
+    debug!("collect_layout_children: {:?}", instant.elapsed());
 
     let root_node_id = match (old_node_id, style_update) {
         (Some(node_id), None) => {
@@ -89,6 +93,10 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
     let render = render.deref_mut();
     let views = VIEW_STORAGE.views.read();
 
+    // 获取计算 control_state 所需的读锁
+    let measure_states = VIEW_STORAGE.states.read();
+    let pressed = VIEW_STORAGE.pressed.read();
+
     layout_tree.compute_layout_with_measure(
         root_node_id,
         Size {
@@ -96,23 +104,47 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
             width: AvailableSpace::Definite(client_size.0 as f32),
         },
         |known_dimensions, available_space, _node_id, node_context_view_id, style| {
+            measure_call_count += 1;
             if let Some(view_id) = node_context_view_id {
                 if let Some(dyn_view) = views.get(*view_id) {
+                    // 计算 control_state（按优先级：Disabled > Active > Focus > Hover > Normal）
+                    let control_state = if let Some(view_state) = measure_states.get(*view_id).map(|s| s.read()) {
+                        match true {
+                            _ if view_state.disable => ControlState::Disabled,
+                            _ if pressed.get(*view_id).is_some() => ControlState::Active,
+                            _ if window_entry.focus_manager.is_focused(*view_id) => ControlState::Focus,
+                            _ if window_entry.hover_id == Some(*view_id) => ControlState::Hover,
+                            _ => ControlState::Normal,
+                        }
+                    } else {
+                        ControlState::Normal
+                    };
+
                     let mut view = dyn_view.write();
                     return view
-                        .on_measure(known_dimensions, available_space, style, render)
+                        .on_measure(known_dimensions, available_space, style, control_state, render)
                         .unwrap_or(Size::ZERO);
                 }
             }
             Size::ZERO
         },
     )?;
+    let compute_layout_elapsed = compute_layout_start.elapsed();
+    debug!(
+        "compute_layout_with_measure completed: elapsed={:?}, measure_call_count={}",
+        compute_layout_elapsed, measure_call_count
+    );
 
     bus_update_layout_iterative(view_id, layout_tree, (0.0, 0.0))?;
 
     // 计算累积变换：从根控件遍历，累加 transform 到 accumulated_transform
     compute_accumulated_transforms(view_id);
 
+    let total_elapsed = start_time.elapsed();
+    trace!(
+        "refresh_layout_entry completed: total_elapsed={:?}",
+        total_elapsed
+    );
     Ok(())
 }
 
@@ -249,24 +281,16 @@ pub fn collect_layout_children(
                     let view_state = view_state_cell.read();
                     let old_node_id = view_state.node_id;
 
-                    // 计算 control_state（参考 draw_entry.rs 的实现）
-                    let mut control_state = ControlState::Normal;
-                    if view_state.disable {
-                        control_state = ControlState::Disabled;
-                    }
-                    if window_entry.focus_manager.is_focused(view_id) {
-                        control_state = ControlState::Focus;
-                    }
-                    if pressed.get(view_id).is_some() {
-                        control_state = ControlState::Active;
-                    }
-                    if window_entry.hover_id == Some(view_id) {
-                        control_state = ControlState::Hover;
-                    }
+                    // 计算 control_state（按优先级：Disabled > Active > Focus > Hover > Normal）
+                    let control_state = match true {
+                        _ if view_state.disable => ControlState::Disabled,
+                        _ if pressed.get(view_id).is_some() => ControlState::Active,
+                        _ if window_entry.focus_manager.is_focused(view_id) => ControlState::Focus,
+                        _ if window_entry.hover_id == Some(view_id) => ControlState::Hover,
+                        _ => ControlState::Normal,
+                    };
 
-                    let style = view_state
-                        .layout_style
-                        .calc_update_taffy_style(control_state);
+                    let style = view_state.layout_style.get_update_data_clone(control_state);
                     drop(view_state);
 
                     // 获取当前节点的子节点

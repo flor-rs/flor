@@ -4,12 +4,12 @@ pub mod focus_manager;
 pub mod frame_policy;
 pub mod handler;
 pub mod scroll_state;
-pub mod state_selector;
 pub mod view_builder;
 pub mod view_id;
 pub mod view_state;
 pub mod view_storage;
 pub mod visual_overflow;
+pub mod resolver;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
@@ -23,13 +23,14 @@ use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::visual_overflow::VisualOverflow;
 use crate::windows::bus::render_from_view_id;
+use crate::ComputedLayout;
 use flor_base::graphics::RenderContext;
 #[cfg(feature = "drag-drop")]
 use flor_base::platform::{DragData, DragFormat, DropEffect};
 use flor_base::platform::{InputEvent, KeyCode, KeyState, MousePosition, ScrollAxis};
 use std::any::Any;
 use std::time::{Duration, Instant};
-use taffy::{AvailableSpace, Display, Layout, Size, Style};
+use taffy::{AvailableSpace, Display, Size, Style};
 
 /// View特征定义了所有UI组件的基本行为
 pub trait View {
@@ -55,7 +56,7 @@ pub trait View {
 
     fn bus_frame(&mut self, now: Instant) -> Result<Option<Duration>, Error> {
         let view_id = self.view_id();
-        if view_id.calc_current_style()?.display == Display::None {
+        if view_id.with_current_style(|style| style.display == Display::None)? {
             return Ok(None);
         }
         if !view_id.visual() {
@@ -213,7 +214,7 @@ pub trait View {
         &mut self,
         render: &mut FlorRender,
         abs_location: (f32, f32),
-        layout: Layout,
+        layout: ComputedLayout,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -222,7 +223,7 @@ pub trait View {
         &mut self,
         render: &mut FlorRender,
         abs_location: (f32, f32),
-        layout: Layout,
+        layout: ComputedLayout,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -234,6 +235,7 @@ pub trait View {
         known_dimensions: Size<Option<f32>>,
         available_space: Size<AvailableSpace>,
         style: &Style,
+        control_state: ControlState,
         render: &mut FlorRender,
     ) -> Result<Size<f32>, Error> {
         Ok(Size::ZERO)
