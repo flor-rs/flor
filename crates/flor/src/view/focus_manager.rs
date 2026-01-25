@@ -1,5 +1,15 @@
 use crate::view::view_id::ViewId;
+use crate::view::view_storage::VIEW_STORAGE;
 use rustc_hash::FxHashMap;
+
+/// 焦点作用域条目（用于 Modal 等场景）
+#[derive(Debug, Clone)]
+pub struct FocusScopeEntry {
+    /// Modal 的根控件
+    pub root_view_id: ViewId,
+    /// 打开 Modal 前的焦点位置
+    pub previous_focus: Option<ViewId>,
+}
 
 #[derive(Default, Debug)]
 pub struct FocusManager {
@@ -7,6 +17,10 @@ pub struct FocusManager {
     // view_id , focus_list index
     view_index_map: FxHashMap<ViewId, usize>, // ViewId -> Vec 索引
     current: Option<usize>,
+
+    /// 焦点作用域栈（用于 Modal 等场景）
+    /// 栈顶的 scope 限制 Tab 键只在该 scope 的子树内循环
+    scope_stack: Vec<FocusScopeEntry>,
 }
 
 impl FocusManager {
@@ -60,39 +74,151 @@ impl FocusManager {
     }
 
     pub fn next(&mut self) {
-        let len = self.focus_list.len();
-        if len == 0 || len == 1 {
+        let scoped_list = self.get_scoped_focus_list();
+        let len = scoped_list.len();
+        if len == 0 {
             return;
         }
 
         let old_view_id = self.index_to_view_id(self.current);
-        self.current = Some(match self.current {
+
+        // 在作用域列表中找到当前位置
+        let current_pos_in_scope = old_view_id
+            .and_then(|vid| scoped_list.iter().position(|(_, v)| *v == vid));
+
+        // 计算下一个位置
+        let next_pos = match current_pos_in_scope {
             None => 0,
-            Some(v) => (v + 1) % len, // 循环
-        });
-        let new_view_id = self.index_to_view_id(self.current);
+            Some(pos) => (pos + 1) % len,
+        };
+
+        // 获取新的 ViewId 并更新 current
+        let new_view_id = scoped_list.get(next_pos).map(|(_, vid)| *vid);
+        if let Some(vid) = new_view_id {
+            self.current = self.view_index_map.get(&vid).copied();
+        }
+
         self.switch_focus(old_view_id, new_view_id);
     }
 
     pub fn prev(&mut self) {
-        let len = self.focus_list.len();
-        if len == 0 || len == 1 {
+        let scoped_list = self.get_scoped_focus_list();
+        let len = scoped_list.len();
+        if len == 0 {
             return;
         }
 
         let old_view_id = self.index_to_view_id(self.current);
-        self.current = Some(match self.current {
+
+        // 在作用域列表中找到当前位置
+        let current_pos_in_scope = old_view_id
+            .and_then(|vid| scoped_list.iter().position(|(_, v)| *v == vid));
+
+        // 计算上一个位置
+        let prev_pos = match current_pos_in_scope {
             None => 0,
-            Some(v) => {
-                if v == 0 {
+            Some(pos) => {
+                if pos == 0 {
                     len - 1
                 } else {
-                    v - 1
+                    pos - 1
                 }
             }
-        });
-        let new_view_id = self.index_to_view_id(self.current);
+        };
+
+        // 获取新的 ViewId 并更新 current
+        let new_view_id = scoped_list.get(prev_pos).map(|(_, vid)| *vid);
+        if let Some(vid) = new_view_id {
+            self.current = self.view_index_map.get(&vid).copied();
+        }
+
         self.switch_focus(old_view_id, new_view_id);
+    }
+
+    /// 获取当前作用域内的焦点列表
+    fn get_scoped_focus_list(&self) -> Vec<(u32, ViewId)> {
+        match self.scope_stack.last() {
+            None => self.focus_list.clone(),
+            Some(scope) => self
+                .focus_list
+                .iter()
+                .filter(|(_, vid)| Self::is_descendant_of(*vid, scope.root_view_id))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// 检查 view_id 是否是 root_id 的后代（或自身）
+    fn is_descendant_of(view_id: ViewId, root_id: ViewId) -> bool {
+        if view_id == root_id {
+            return true;
+        }
+
+        let parent_map = VIEW_STORAGE.parent_view_id.read();
+        let mut current = view_id;
+
+        // 向上遍历父节点
+        while let Some(parent) = parent_map.get(current).copied() {
+            if parent == root_id {
+                return true;
+            }
+            current = parent;
+        }
+
+        false
+    }
+
+    // ========================================================================
+    // 焦点作用域 API
+    // ========================================================================
+
+    /// 推入一个焦点作用域
+    ///
+    /// 调用后，Tab 键只在 `root_view_id` 的子树内循环。
+    /// 同时记录当前焦点位置，以便 pop 时恢复。
+    ///
+    /// 适用场景：Modal Dialog、Popup、侧边栏等需要限制焦点范围的场景。
+    pub fn push_focus_scope(&mut self, root_view_id: ViewId) {
+        let previous_focus = self.current_view_id();
+
+        self.scope_stack.push(FocusScopeEntry {
+            root_view_id,
+            previous_focus,
+        });
+
+        // 如果当前焦点不在新作用域内，尝试聚焦到作用域内的第一个控件
+        if let Some(current) = self.current_view_id() {
+            if !Self::is_descendant_of(current, root_view_id) {
+                self.focus_first_in_scope();
+            }
+        } else {
+            self.focus_first_in_scope();
+        }
+    }
+
+    /// 弹出当前焦点作用域
+    ///
+    /// 恢复到之前的焦点位置。
+    pub fn pop_focus_scope(&mut self) {
+        if let Some(scope) = self.scope_stack.pop() {
+            // 恢复之前的焦点
+            if let Some(previous) = scope.previous_focus {
+                self.set_focus(previous);
+            }
+        }
+    }
+
+    /// 获取当前作用域的根控件（如果有）
+    pub fn current_scope_root(&self) -> Option<ViewId> {
+        self.scope_stack.last().map(|s| s.root_view_id)
+    }
+
+    /// 聚焦到当前作用域内的第一个控件
+    fn focus_first_in_scope(&mut self) {
+        let scoped_list = self.get_scoped_focus_list();
+        if let Some((_, first_vid)) = scoped_list.first() {
+            self.set_focus(*first_vid);
+        }
     }
     pub fn is_focused(&self, view_id: ViewId) -> bool {
         self.view_index_map.get(&view_id) == self.current.as_ref()

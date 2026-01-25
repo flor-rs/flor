@@ -313,6 +313,38 @@ impl ViewId {
         }
     }
 
+    /// 推入焦点作用域
+    ///
+    /// 调用后，Tab 键只在此控件的子树内循环。
+    /// 适用于 Modal Dialog、Popup、侧边栏等需要限制焦点范围的场景。
+    ///
+    /// # 示例
+    /// ```rust
+    /// // 打开 Dialog 时
+    /// dialog_view_id.push_focus_scope();
+    ///
+    /// // 关闭时
+    /// dialog_view_id.pop_focus_scope();
+    /// ```
+    pub fn push_focus_scope(self) {
+        if let Some(win_id) = self.window_id() {
+            if let Some(mut entry) = win_id.entry_mut() {
+                entry.focus_manager.push_focus_scope(self);
+            }
+        }
+    }
+
+    /// 弹出焦点作用域
+    ///
+    /// 恢复到之前的焦点位置。
+    pub fn pop_focus_scope(self) {
+        if let Some(win_id) = self.window_id() {
+            if let Some(mut entry) = win_id.entry_mut() {
+                entry.focus_manager.pop_focus_scope();
+            }
+        }
+    }
+
     pub fn z_index(self) -> i32 {
         VIEW_STORAGE
             .view_z_index
