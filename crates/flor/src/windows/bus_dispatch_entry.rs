@@ -255,14 +255,8 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_mouse_move_entry(&self, key_state: KeyState, mouse_position: MousePosition) {
-        if let Some(view_id) = self.entry().map(|v| v.capture_view_id).flatten() {
-            if let Some(view) = VIEW_STORAGE.views.write().get(view_id) {
-                // 转换为控件局部坐标
-                let local_pos = view_id.window_to_local_position(mouse_position);
-                view.write().call_mouse_move(key_state, local_pos);
-                return;
-            }
-        }
+        // 获取捕获的控件（如果有）
+        let capture_view_id = self.entry().and_then(|v| v.capture_view_id);
 
         // 1. 【获取新 ID】: 必定是一个有效的 ViewId (最差也是窗口自己)
         let new_hovered_id = self.bus_hit_test_entry(mouse_position, key_state);
@@ -275,6 +269,7 @@ impl WindowBusDispatchEntry for WindowId {
         // =========================================================
         // 逻辑 A: 处理【离开】(MouseLeave)
         // 条件：之前有东西，且那个东西不是现在这个
+        // 注意：即使有 capture，hover 状态仍然正常更新
         // =========================================================
         if let Some(old_id) = old_hovered_id {
             if old_id != new_hovered_id {
@@ -289,8 +284,8 @@ impl WindowBusDispatchEntry for WindowId {
         // =========================================================
         // 逻辑 B: 处理【进入】(MouseEnter)
         // 条件：旧的是 None，或者 旧的 != 新的
+        // 注意：即使有 capture，hover 状态仍然正常更新
         // =========================================================
-        // 注意：这里不需要unwrap new_hovered_id，因为它就是 ViewId
         if old_hovered_id != Some(new_hovered_id) {
             if let Some(view_lock) = views.get(new_hovered_id) {
                 // 新的进入（转换为控件局部坐标）
@@ -301,11 +296,12 @@ impl WindowBusDispatchEntry for WindowId {
 
         // =========================================================
         // 逻辑 C: 处理【移动】(MouseMove)
-        // 条件：只要在窗口内，当前命中的这个 View 就要持续收到 Move
+        // 如果有 capture，mouse_move 发给捕获的控件
+        // 否则发给当前 hover 的控件
         // =========================================================
-        if let Some(view_lock) = views.get(new_hovered_id) {
-            // 转换为控件局部坐标
-            let local_pos = new_hovered_id.window_to_local_position(mouse_position);
+        let move_target_id = capture_view_id.unwrap_or(new_hovered_id);
+        if let Some(view_lock) = views.get(move_target_id) {
+            let local_pos = move_target_id.window_to_local_position(mouse_position);
             view_lock.write().call_mouse_move(key_state, local_pos);
         }
 
@@ -314,7 +310,6 @@ impl WindowBusDispatchEntry for WindowId {
         // =========================================================
         if let Some(mut entry) = self.entry_mut() {
             trace!("update hovered id {:?}", new_hovered_id);
-            // 更新为 Some(ViewId)
             entry.hover_id = Some(new_hovered_id);
         }
         self.request_redraw();
