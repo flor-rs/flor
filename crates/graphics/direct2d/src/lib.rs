@@ -233,15 +233,23 @@ impl RenderFactory {
                 layer_pool: vec![],
                 clip_stack: vec![],
                 transform_stack: vec![],
+                suspended_clip_depth: None,
             })
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+/// 剪裁类型，保存完整数据以支持 suspend/resume
 pub enum ClipType {
-    AxisAligned, // 普通矩形
-    Layer,       // 复杂形状 (圆角、Path)
+    /// 普通矩形剪裁（硬件加速）
+    AxisAligned {
+        rect: D2D_RECT_F,
+    },
+    /// 复杂形状剪裁（使用 Layer）
+    Layer {
+        layer: ID2D1Layer,
+        params: D2D1_LAYER_PARAMETERS1,
+    },
 }
 
 pub struct D2DRender {
@@ -259,6 +267,8 @@ pub struct D2DRender {
     pub layer_pool: Vec<ID2D1Layer>,
     pub clip_stack: Vec<ClipType>,
     pub transform_stack: Vec<Matrix3x2>,
+    /// 暂停剪裁时的深度（None 表示未暂停）
+    pub suspended_clip_depth: Option<usize>,
 }
 impl Debug for D2DRender {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -2266,7 +2276,7 @@ impl RenderContext for D2DRender {
                 };
                 self.current_render
                     .PushAxisAlignedClip(&d2d_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-                self.clip_stack.push(ClipType::AxisAligned);
+                self.clip_stack.push(ClipType::AxisAligned { rect: d2d_rect });
             } else {
                 // [Quality Path] 有旋转 -> 必须使用 Layer + Geometry Mask 才能切出正确的旋转后矩形
                 let d2d_rect = D2D_RECT_F {
@@ -2280,11 +2290,11 @@ impl RenderContext for D2DRender {
                     .factory
                     .CreateRectangleGeometry(&d2d_rect)?;
 
-                // 复用现有的 push_layer 逻辑
-                self.push_layer_with_geometry(&geometry)?;
+                // 复用现有的 push_layer 逻辑，获取 layer 和 params 以便保存
+                let (layer, params) = self.push_layer_with_geometry(&geometry)?;
 
-                // 必须标记为 Layer 类型，以便 Pop 时调用 PopLayer 而不是 PopAxisAlignedClip
-                self.clip_stack.push(ClipType::Layer);
+                // 保存完整数据以支持 suspend/resume
+                self.clip_stack.push(ClipType::Layer { layer, params });
             }
         }
 
@@ -2315,12 +2325,12 @@ impl RenderContext for D2DRender {
                 .factory
                 .CreateRoundedRectangleGeometry(&rounded_rect)?;
 
-            // B. 压入 Layer
-            self.push_layer_with_geometry(&geometry)?;
-        }
+            // B. 压入 Layer，获取 layer 和 params 以便保存
+            let (layer, params) = self.push_layer_with_geometry(&geometry)?;
 
-        // 记账：这一层是 Layer
-        self.clip_stack.push(ClipType::Layer);
+            // 保存完整数据以支持 suspend/resume
+            self.clip_stack.push(ClipType::Layer { layer, params });
+        }
 
         Ok(())
     }
@@ -2337,12 +2347,12 @@ impl RenderContext for D2DRender {
             // 这里假设你有一个辅助方法 convert_path_to_d2d_geometry
             let geometry = self.build_geometry(path)?;
 
-            // B. 压入 Layer
-            self.push_layer_with_geometry(&geometry)?;
-        }
+            // B. 压入 Layer，获取 layer 和 params 以便保存
+            let (layer, params) = self.push_layer_with_geometry(&geometry)?;
 
-        // 记账：这一层是 Layer
-        self.clip_stack.push(ClipType::Layer);
+            // 保存完整数据以支持 suspend/resume
+            self.clip_stack.push(ClipType::Layer { layer, params });
+        }
 
         Ok(())
     }
@@ -2359,11 +2369,15 @@ impl RenderContext for D2DRender {
             if let Some(clip_type) = self.clip_stack.pop() {
                 unsafe {
                     match clip_type {
-                        ClipType::AxisAligned => {
+                        ClipType::AxisAligned { .. } => {
                             self.current_render.PopAxisAlignedClip();
                         }
-                        ClipType::Layer => {
+                        ClipType::Layer { layer, .. } => {
                             self.current_render.PopLayer();
+                            // 回收 layer 到 pool（限制最大 32 个）
+                            if self.layer_pool.len() < 32 {
+                                self.layer_pool.push(layer);
+                            }
                         }
                     }
                 }
@@ -2377,7 +2391,85 @@ impl RenderContext for D2DRender {
     }
 
     // =========================================================
-    // 4. 弹出剪裁 (根据类型自动分发)
+    // 4. 暂停/恢复剪裁 (用于 Popup/Overlay 等需要逃逸父级剪裁的场景)
+    // =========================================================
+
+    fn suspend_clip(&mut self) -> Result<(), Self::Error> {
+        // 如果已经暂停，不做任何事
+        if self.suspended_clip_depth.is_some() {
+            return Ok(());
+        }
+
+        // 记录当前剪裁栈深度
+        self.suspended_clip_depth = Some(self.clip_stack.len());
+
+        // 从后往前弹出所有剪裁（但不从 clip_stack 移除，也不回收 layer）
+        unsafe {
+            for clip_type in self.clip_stack.iter().rev() {
+                match clip_type {
+                    ClipType::AxisAligned { .. } => {
+                        self.current_render.PopAxisAlignedClip();
+                    }
+                    ClipType::Layer { .. } => {
+                        self.current_render.PopLayer();
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn resume_clip(&mut self) -> Result<(), Self::Error> {
+        // 如果没有暂停，不做任何事
+        let Some(suspended_depth) = self.suspended_clip_depth.take() else {
+            return Ok(());
+        };
+
+        unsafe {
+            // 1. 先 pop 掉暂停期间新增的所有剪裁（D2D 层面）
+            //    这些是在 suspend 之后、resume 之前 push 的
+            for clip_type in self.clip_stack[suspended_depth..].iter().rev() {
+                match clip_type {
+                    ClipType::AxisAligned { .. } => {
+                        self.current_render.PopAxisAlignedClip();
+                    }
+                    ClipType::Layer { .. } => {
+                        self.current_render.PopLayer();
+                    }
+                }
+            }
+
+            // 2. 回收暂停期间新增的 layer 到 pool，并截断 clip_stack
+            while self.clip_stack.len() > suspended_depth {
+                if let Some(clip_type) = self.clip_stack.pop() {
+                    if let ClipType::Layer { layer, .. } = clip_type {
+                        if self.layer_pool.len() < 32 {
+                            self.layer_pool.push(layer);
+                        }
+                    }
+                }
+            }
+
+            // 3. 重新 push 暂停前的剪裁（恢复现场）
+            for clip_type in self.clip_stack.iter() {
+                match clip_type {
+                    ClipType::AxisAligned { rect } => {
+                        self.current_render
+                            .PushAxisAlignedClip(rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                    }
+                    ClipType::Layer { layer, params } => {
+                        self.current_render.PushLayer(params, layer);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // =========================================================
+    // 5. 变换
     // =========================================================
 
     fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error> {
@@ -2637,15 +2729,22 @@ impl D2DRender {
         Ok(())
     }
 
+    /// 内部辅助：创建并压入 Layer
+    ///
+    /// 返回 (layer, params) 以便保存到 clip_stack 中支持 suspend/resume
     unsafe fn push_layer_with_geometry<G: Interface>(
-        &self,
+        &mut self,
         geometry: &G,
-    ) -> Result<(), D2DBackendError>
+    ) -> Result<(ID2D1Layer, D2D1_LAYER_PARAMETERS1), D2DBackendError>
     where
         G: Into<ID2D1Geometry> + Clone,
     {
-        // 1. 创建 Layer 资源 (D2D 中 Layer 是很重的资源，理想情况下应该缓存复用，但这里先每次创建)
-        let layer: ID2D1Layer = self.current_render.CreateLayer(None)?;
+        // 1. 优先从 pool 取，否则创建新的 Layer
+        let layer = self
+            .layer_pool
+            .pop()
+            .map(Ok)
+            .unwrap_or_else(|| self.current_render.CreateLayer(None))?;
 
         // 2. 配置 Layer 参数
         let params = D2D1_LAYER_PARAMETERS1 {
@@ -2654,19 +2753,19 @@ impl D2DRender {
                 top: -f32::INFINITY,
                 right: f32::INFINITY,
                 bottom: f32::INFINITY,
-            }, // 无限大
-            geometricMask: ManuallyDrop::new(Some(geometry.cast::<ID2D1Geometry>()?)), // 强转为 ID2D1Geometry
+            },
+            geometricMask: ManuallyDrop::new(Some(geometry.cast::<ID2D1Geometry>()?)),
             maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-            maskTransform: Matrix3x2::identity(), // 矩阵
+            maskTransform: Matrix3x2::identity(),
             opacity: 1.0,
-            opacityBrush: ManuallyDrop::new(None), // 不适用透明画刷
+            opacityBrush: ManuallyDrop::new(None),
             layerOptions: D2D1_LAYER_OPTIONS1_NONE,
         };
 
         // 3. 压栈
         self.current_render.PushLayer(&params, &layer);
 
-        Ok(())
+        Ok((layer, params))
     }
 
     /// 内部辅助：将 Path 转换为 Direct2D Geometry

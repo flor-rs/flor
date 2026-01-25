@@ -236,6 +236,19 @@ pub trait RenderContext: Any {
     fn pop_clip(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error>;
     fn get_clip_depth(&mut self) -> Result<u32, Self::Error>;
 
+    /// 暂停剪裁
+    ///
+    /// 临时禁用所有已 push 的剪裁区域，但保留剪裁栈数据。
+    /// 适用于需要绘制不受父级剪裁限制的 Popup/Overlay 元素。
+    ///
+    /// 调用 `resume_clip()` 恢复剪裁状态。
+    fn suspend_clip(&mut self) -> Result<(), Self::Error>;
+
+    /// 恢复剪裁
+    ///
+    /// 恢复之前被 `suspend_clip()` 暂停的所有剪裁区域。
+    fn resume_clip(&mut self) -> Result<(), Self::Error>;
+
     fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error>;
     fn pop_transform(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error>;
     fn get_transform_depth(&mut self) -> Result<u32, Self::Error>;

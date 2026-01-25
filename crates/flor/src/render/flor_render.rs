@@ -655,6 +655,26 @@ impl RenderContext for FlorRender {
         }
     }
 
+    fn suspend_clip(&mut self) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.suspend_clip()?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.suspend_clip()?,
+        };
+        Ok(())
+    }
+
+    fn resume_clip(&mut self) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRender::GPU(g) => g.resume_clip()?,
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRender::CPU(c) => c.resume_clip()?,
+        };
+        Ok(())
+    }
+
     fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
