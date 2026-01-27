@@ -6,7 +6,7 @@ members = [
     "crates/graphics/opengl",
     "crates/graphics/direct2d",
     "crates/platform/windows",
-    "crates/base", "crates/taffy_test",
+    "crates/base",
 ]
 
 [workspace.package]
