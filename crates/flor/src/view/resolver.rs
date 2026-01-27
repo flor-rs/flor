@@ -1,7 +1,6 @@
 mod layout;
 mod shared;
 mod unit;
-mod decoration;
 
 pub use {layout::*, shared::*, unit::*};
 
