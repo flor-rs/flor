@@ -10,7 +10,22 @@ use log::{debug, trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
 use std::time::Instant;
-use taffy::{AvailableSpace, NodeId, Size, Style, TaffyTree};
+use taffy::{AvailableSpace, NodeId, Size, Style, TaffyTree, TraversePartialTree};
+
+/// 检查 taffy 节点的 children 是否与新的 children 相同
+#[inline]
+fn children_changed(taffy: &TaffyTree<ViewId>, node_id: NodeId, new_children: &[NodeId]) -> bool {
+    let old_children = taffy.child_ids(node_id);
+    if taffy.child_count(node_id) != new_children.len() {
+        return true;
+    }
+    for (old, new) in old_children.zip(new_children.iter()) {
+        if old != *new {
+            return true;
+        }
+    }
+    false
+}
 
 pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
     let start_time = Instant::now();
@@ -52,14 +67,14 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
 
     let root_node_id = match (old_node_id, style_update) {
         (Some(node_id), None) => {
-            if !children.is_empty() {
+            if !children.is_empty() && children_changed(layout_tree, node_id, &children) {
                 layout_tree.set_children(node_id, &children)?;
             }
             node_id
         }
         (Some(node_id), Some(new_style)) => {
             layout_tree.set_style(node_id, new_style)?;
-            if !children.is_empty() {
+            if !children.is_empty() && children_changed(layout_tree, node_id, &children) {
                 layout_tree.set_children(node_id, &children)?;
             }
             node_id
@@ -390,14 +405,14 @@ fn process_parent_node(
 ) -> Result<NodeId, Error> {
     let node_id = match (old_node_id, style) {
         (Some(node_id), None) => {
-            if !children.is_empty() {
+            if !children.is_empty() && children_changed(taffy, node_id, children) {
                 taffy.set_children(node_id, children)?;
             }
             node_id
         }
         (Some(node_id), Some(new_style)) => {
             taffy.set_style(node_id, new_style)?;
-            if !children.is_empty() {
+            if !children.is_empty() && children_changed(taffy, node_id, children) {
                 taffy.set_children(node_id, children)?;
             }
             node_id
