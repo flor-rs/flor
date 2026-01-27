@@ -5,7 +5,7 @@ use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render;
 use crate::windows::entry::WindowEntryVisit;
 use flor_base::platform::WindowApi;
-use flor_base::types::Transform2D;
+use flor_base::types::{Rect, Transform2D};
 use log::{debug, trace, warn};
 use platform::WindowId;
 use std::ops::DerefMut;
@@ -139,6 +139,9 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
 
     // 计算累积变换：从根控件遍历，累加 transform 到 accumulated_transform
     compute_accumulated_transforms(view_id);
+
+    // 计算并缓存所有视图的 visual_rect，用于绘制时的快速剔除
+    compute_visual_rects(view_id);
 
     let total_elapsed = start_time.elapsed();
     trace!(
@@ -470,4 +473,31 @@ pub fn bus_update_layout_iterative(
     }
 
     Ok(())
+}
+
+/// 计算并缓存所有视图的 visual_rect
+///
+/// 在布局完成后调用，缓存每个 view 的 visual_rect()
+/// 避免绘制时频繁获取锁和调用虚方法
+pub fn compute_visual_rects(start_view_id: ViewId) {
+    let child_ids = VIEW_STORAGE.child_ids.read();
+    let views = VIEW_STORAGE.views.read();
+    let mut visual_rect_cache = VIEW_STORAGE.visual_rect.write();
+
+    let mut stack = vec![start_view_id];
+
+    while let Some(view_id) = stack.pop() {
+        // 调用 view 的 visual_rect() 方法（允许子类重写）
+        if let Some(view) = views.get(view_id) {
+            let (x, y, w, h) = view.read().visual_rect();
+            visual_rect_cache.insert(view_id, Rect::new(x, y, w, h));
+        }
+
+        // 处理子节点
+        if let Some(children) = child_ids.get(view_id) {
+            for &child_id in children {
+                stack.push(child_id);
+            }
+        }
+    }
 }

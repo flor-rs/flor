@@ -9,7 +9,7 @@ use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
 use crate::view::View;
 use crate::windows::entry::WINDOW_ENTRY_MAP;
-use flor_base::types::Transform2D;
+use flor_base::types::{Rect, Transform2D};
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use platform::WindowId;
@@ -48,6 +48,8 @@ pub struct ViewStorage {
     pub transform: RwLock<SecondaryMap<ViewId, Transform2D>>,
     // 当前控件累积的 变换 ，这个用来处理命中测试，在布局时计算
     pub accumulated_transform: RwLock<SecondaryMap<ViewId, Transform2D>>,
+    // 缓存的视觉矩形（布局后计算）
+    pub visual_rect: RwLock<SecondaryMap<ViewId, Rect<f32, f32>>>,
 }
 
 impl ViewStorage {
@@ -69,6 +71,7 @@ impl ViewStorage {
             pending_effect_id: Default::default(),
             transform: Default::default(),
             accumulated_transform: Default::default(),
+            visual_rect: Default::default(),
         }
     }
 
@@ -311,6 +314,7 @@ impl ViewStorage {
         self.states.write().remove(view_id);
         self.views.write().remove(view_id);
         self.window_ids.write().remove(view_id);
+        self.visual_rect.write().remove(view_id);
 
         // 6. 最后移除 ID
         self.view_ids.lock().remove(view_id);

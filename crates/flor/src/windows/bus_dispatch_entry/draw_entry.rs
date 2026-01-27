@@ -36,7 +36,7 @@ pub fn draw_entry(window_id: WindowId, render: &mut FlorRender) -> Result<(), Er
     let mut visuals = VIEW_STORAGE.visual.write();
     let states = VIEW_STORAGE.states.read();
     let pressed = VIEW_STORAGE.pressed.read();
-    // let visual_rect = VIEW_STORAGE.visual_rect.read();
+    let visual_rect_cache = VIEW_STORAGE.visual_rect.read();
     let Some(window_entry) = window_id.entry() else {
         return Ok(());
     };
@@ -76,14 +76,13 @@ pub fn draw_entry(window_id: WindowId, render: &mut FlorRender) -> Result<(), Er
                     frame.abs_location.1 + layout.location.y,
                 );
 
-                // 2. Culling (View Lock + Intersection)
+                // 2. Culling (使用缓存的 visual_rect)
                 if let Some(ref parent_clip) = frame.clip_rect {
-                    let (vx, vy, vw, vh) = view.read().visual_rect();
-                    let visual_rect = Rect::new(vx, vy, vw, vh);
-
-                    if !visual_rect.intersects(parent_clip) {
-                        culled_count += 1;
-                        continue;
+                    if let Some(visual_rect) = visual_rect_cache.get(view_id) {
+                        if !visual_rect.intersects(parent_clip) {
+                            culled_count += 1;
+                            continue;
+                        }
                     }
                 }
 
