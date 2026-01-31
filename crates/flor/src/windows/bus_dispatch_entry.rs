@@ -362,6 +362,7 @@ impl WindowBusDispatchEntry for WindowId {
             }
             VIEW_STORAGE.pressed.write().remove(view_id);
             view.write().call_button_up(key_state, local_pos);
+            self.request_redraw();
         }
     }
 
@@ -372,8 +373,13 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            // DBLCLK 在 Windows 上替代了 LBUTTONDOWN，所以也需要设置 pressed 状态
+            self.entry_mut()
+                .map(|mut v| v.l_down_view_id = Some(view_id));
+            VIEW_STORAGE.pressed.write().insert(view_id, ());
             let local_pos = view_id.window_to_local_position(mouse_position);
             view.write().call_double_click(key_state, local_pos);
+            self.request_redraw();
         }
     }
 
@@ -390,6 +396,7 @@ impl WindowBusDispatchEntry for WindowId {
                 .map(|mut v| v.r_down_view_id = Some(view_id));
             let local_pos = view_id.window_to_local_position(mouse_position);
             view.write().call_right_button_down(key_state, local_pos);
+            self.request_redraw();
         }
     }
 
@@ -407,6 +414,7 @@ impl WindowBusDispatchEntry for WindowId {
                 }
             }
             view.write().call_right_button_up(key_state, local_pos);
+            self.request_redraw();
         }
     }
 
@@ -421,9 +429,13 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            // DBLCLK 在 Windows 上替代了 RBUTTONDOWN，所以也需要设置 r_down_view_id
+            self.entry_mut()
+                .map(|mut v| v.r_down_view_id = Some(view_id));
             let local_pos = view_id.window_to_local_position(mouse_position);
             view.write()
                 .call_right_button_double_click(key_state, local_pos);
+            self.request_redraw();
         }
     }
 
@@ -440,6 +452,7 @@ impl WindowBusDispatchEntry for WindowId {
                 .map(|mut v| v.m_down_view_id = Some(view_id));
             let local_pos = view_id.window_to_local_position(mouse_position);
             view.write().call_middle_button_down(key_state, local_pos);
+            self.request_redraw();
         }
     }
 
@@ -457,6 +470,7 @@ impl WindowBusDispatchEntry for WindowId {
                 }
             }
             view.write().call_middle_button_up(key_state, local_pos);
+            self.request_redraw();
         }
     }
 
@@ -471,9 +485,13 @@ impl WindowBusDispatchEntry for WindowId {
             .flatten()
             .unwrap_or(self.bus_hit_test_entry(mouse_position, key_state));
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            // DBLCLK 在 Windows 上替代了 MBUTTONDOWN，所以也需要设置 m_down_view_id
+            self.entry_mut()
+                .map(|mut v| v.m_down_view_id = Some(view_id));
             let local_pos = view_id.window_to_local_position(mouse_position);
             view.write()
                 .call_middle_button_double_click(key_state, local_pos);
+            self.request_redraw();
         }
     }
 
