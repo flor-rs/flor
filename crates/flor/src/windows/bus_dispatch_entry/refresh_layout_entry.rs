@@ -52,11 +52,6 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
         .layout_style
         .get_update_data_clone(view_id.control_state());
 
-    // 这里的特殊逻辑：如果 style 有更新，必须强制加上 100% 的尺寸限制
-    if let Some(s) = &mut style_update {
-        s.size = Size::from_percent(1.0, 1.0);
-    }
-
     drop(view_state);
 
     let instant = Instant::now();
@@ -81,7 +76,7 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
         }
         (None, style_opt) => {
             let style = style_opt.unwrap_or_else(|| Style {
-                size: Size::from_percent(1.0, 1.0),
+                size: Size::auto(),
                 ..Default::default()
             });
             if children.is_empty() {
