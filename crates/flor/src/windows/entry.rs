@@ -40,6 +40,7 @@ impl WindowEntry {
     pub fn new(
         window_id: WindowId,
         continuous_rendering: bool,
+        show_fps: bool,
         background_color: Color,
         unit: Arc<ArcSwap<Unit>>,
     ) -> ViewId {
@@ -52,7 +53,7 @@ impl WindowEntry {
             focus_manager: Default::default(),
             continuous_rendering,
             fps: AtomicI32::new(-1),
-            show_fps: false,
+            show_fps,
             layout_dirty: AtomicBool::new(false),
             l_down_view_id: None,
             r_down_view_id: None,

@@ -23,6 +23,7 @@ pub struct WindowOption {
     pub height: u32,
     pub rem_px: f32,
     pub wait_v_sync: bool,
+    pub show_fps: bool,
     pub continuous_rendering: bool,
     pub background_color: Color,
     pub view_fn: Option<Box<dyn Fn(WindowId) -> Box<dyn View + Send + Sync>>>,
@@ -38,6 +39,7 @@ impl Default for WindowOption {
             wait_v_sync: true,
             continuous_rendering: false,
             background_color: Color::rgb(255, 255, 255),
+            show_fps: false,
             view_fn: None,
         }
     }
@@ -64,6 +66,7 @@ impl WindowOption {
         let view_id = WindowEntry::new(
             window_id,
             self.continuous_rendering,
+            self.show_fps,
             self.background_color,
             unit.clone(),
         );

@@ -4,6 +4,7 @@ use crate::view::view_id::ViewId;
 use crate::view::View;
 use crate::windows::entry::{WindowEntryVisit, WINDOW_ENTRY_MAP};
 use flor_base::graphics::RenderContext;
+use flor_base::platform::WindowApi;
 use flor_base::types::Color;
 use log::trace;
 use platform::WindowId;
@@ -22,53 +23,53 @@ impl View for WindowId {
     fn on_draw(
         &mut self,
         render: &mut FlorRender,
-        abs_location: (f32, f32),
-        layout: Layout,
+        _abs_location: (f32, f32),
+        _layout: Layout,
     ) -> Result<(), Error> {
         trace!("window draw");
 
-        if let Some(entry) = self.entry() {
-            render.clear(entry.background_color)?;
+        let Some(entry) = self.entry() else {
+            return Ok(());
+        };
+        render.clear(entry.background_color)?;
+        if !entry.show_fps {
+            return Ok(());
         }
 
-        // --- FPS 绘制逻辑 ---
-        let (abs_x, abs_y) = abs_location;
+        // l,t: i32  w,h: u32
+        let (w, _) = self.get_client_size()?;
+
+        // --- FPS ---
         let mut text_format = render.create_text_format("")?;
 
-        let fps = match self.entry().map(|e| e.fps.load(Ordering::Acquire)) {
-            None => "-".to_string(),
-            Some(fps) => {
-                if fps < 0 {
-                    "-".to_string()
-                } else {
-                    fps.to_string()
-                }
+        let fps = {
+            let fps = entry.fps.load(Ordering::Acquire);
+            if fps < 0 {
+                "-".to_string()
+            } else {
+                fps.to_string()
             }
         };
 
-        // 1. 定义 FPS 文本区域的大小和边距
-        let fps_box_width = 100.0;
-        let fps_box_height = 30.0;
-        let margin_right = 10.0;
-        let margin_top = 20.0;
+        // 固定参数
+        let fps_box_width: f32 = 100.0;
+        let margin_right: f32 = 10.0;
+        let margin_top: f32 = 20.0;
 
-        // 2. 计算相对坐标 (相对于当前控件左上角)
-        // 右上角 x = 控件宽度 - 文本框宽度 - 右边距
-        let fps_relative_x = layout.size.width - fps_box_width - margin_right;
-        let fps_relative_y = margin_top;
+        // 3. 计算 X：窗口宽度 - 盒子宽度 - 右边距
+        // 如果 FPS 依然看不见，试着减小 w 的值看它是否从右侧滑入
+        let fps_x = w as f32 - fps_box_width - margin_right;
+        let fps_y = margin_top;
 
-        // 3. 创建 FPS 笔刷
         let fps_brush = render.create_solid_color_brush(Color::from_hex_str("FF4500")?, None)?;
 
-        // 4. 绘制 FPS
-        // 【修正点 2】：应用绝对坐标 (abs_x + relative_x)
         render.draw_text(
             &format!("FPS: {}", fps),
             &mut text_format,
-            abs_x + fps_relative_x, // 绝对 X
-            abs_y + fps_relative_y, // 绝对 Y
+            fps_x,
+            fps_y,
             fps_box_width,
-            fps_box_height,
+            30.0, // height
             &fps_brush,
             None,
         )?;
