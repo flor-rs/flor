@@ -76,8 +76,13 @@ impl Runtime {
     }
 
     pub(crate) fn execute_update_queue(&self) {
-        while let Some(id) = self.update_queue.lock().pop() {
-            self.run_effects_for_signal(id);
+        loop {
+            let mut id = self.update_queue.lock().pop();
+            if let Some(id) = id {
+                self.run_effects_for_signal(id);
+            } else {
+                break;
+            }
         }
     }
 }
