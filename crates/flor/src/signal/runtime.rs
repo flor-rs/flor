@@ -17,23 +17,33 @@ thread_local! {
 
 #[derive(Default)]
 pub struct Runtime {
-    // id,effects
+    // id, Set<EffectId>
     subscribe: DashMap<Id, FxHashSet<Id>>,
     pub(crate) values: DashMap<Id, Value>,
+    // EffectId，SignalEffect
     pub(crate) effects: DashMap<Id, Box<dyn SignalEffect + Send + Sync>>,
+    pub(crate) effect_subscriptions: DashMap<Id, u32>,
     #[cfg(any(debug_assertions, feature = "signal-tracing"))]
     pub(crate) labels: DashMap<Id, String>,
     pub(crate) update_queue: Mutex<Vec<Id>>,
 }
 
 impl Runtime {
-    pub fn subscribe(&self, signal_id: Id, scope_id: Id) {
-        if let Some(mut val) = RUNTIME.subscribe.get_mut(&signal_id) {
-            val.insert(scope_id);
+    pub fn subscribe(&self, signal_id: Id, effect_id: Id) {
+        let insert = if let Some(mut val) = self.subscribe.get_mut(&signal_id) {
+            val.insert(effect_id)
         } else {
             let mut hash_set = FxHashSet::default();
-            hash_set.insert(scope_id);
-            RUNTIME.subscribe.insert(signal_id, hash_set);
+            hash_set.insert(effect_id);
+            self.subscribe.insert(signal_id, hash_set);
+            true
+        };
+        if insert {
+            if let Some(mut val) = self.effect_subscriptions.get_mut(&effect_id) {
+                *val += 1;
+            } else {
+                self.effect_subscriptions.insert(effect_id, 1);
+            }
         }
     }
 
@@ -69,15 +79,26 @@ impl Runtime {
 
     pub fn destroy_signal(&self, signal_id: Id) {
         self.values.remove(&signal_id);
-        self.effects.remove(&signal_id);
-        self.subscribe.remove(&signal_id);
+        if let Some((_, effect_ids)) = self.subscribe.remove(&signal_id) {
+            for effect_id in effect_ids {
+                if let Some(mut subscriptions) = self.effect_subscriptions.get_mut(&effect_id) {
+                    *subscriptions = subscriptions.saturating_sub(1);
+                    if *subscriptions == 0 {
+                        drop(subscriptions);
+                        self.effect_subscriptions.remove(&effect_id);
+                        self.effects.remove(&effect_id);
+                        self.values.remove(&effect_id);
+                    }
+                }
+            }
+        }
         #[cfg(any(debug_assertions, feature = "signal-tracing"))]
         self.labels.remove(&signal_id);
     }
 
     pub(crate) fn execute_update_queue(&self) {
         loop {
-            let mut id = self.update_queue.lock().pop();
+            let id = self.update_queue.lock().pop();
             if let Some(id) = id {
                 self.run_effects_for_signal(id);
             } else {
