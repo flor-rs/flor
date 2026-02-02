@@ -3,7 +3,6 @@ use crate::log_error::ResultLogExt;
 use crate::signal;
 use crate::signal::id::EffectId;
 use crate::view::handler::ViewHandler;
-use crate::view::resolver::Unit;
 use crate::view::scroll_state::ScrollState;
 use crate::view::view_id::ViewId;
 use crate::view::view_state::ViewState;
@@ -15,7 +14,6 @@ use parking_lot::{Mutex, RwLock};
 use platform::WindowId;
 use slotmap::{Key, SecondaryMap, SlotMap};
 use std::fmt::Debug;
-use std::sync::Arc;
 
 /// 全局视图存储
 /// 所有视图的状态都存储在这里，不再按窗口分类
@@ -79,17 +77,7 @@ impl ViewStorage {
         let view_id = self.view_ids.lock().insert(());
         self.states
             .write()
-            .insert(view_id, RwLock::new(ViewState::new()));
-        self.handlers
-            .write()
-            .insert(view_id, RwLock::new(ViewHandler::default()));
-        view_id
-    }
-
-    /// 创建新视图
-    pub fn new_view_with_state(&self, view_state: ViewState) -> ViewId {
-        let view_id = self.view_ids.lock().insert(());
-        self.states.write().insert(view_id, RwLock::new(view_state));
+            .insert(view_id, RwLock::new(ViewState::new(view_id)));
         self.handlers
             .write()
             .insert(view_id, RwLock::new(ViewHandler::default()));
@@ -251,24 +239,14 @@ impl ViewStorage {
         }
     }
 
-    pub fn init_window_child(
-        root_id: ViewId,
-        window_id: WindowId,
-        unit: Arc<Unit>,
-    ) -> Result<(), Error> {
+    pub fn init_window_child(root_id: ViewId, window_id: WindowId) -> Result<(), Error> {
         let child_map = VIEW_STORAGE.child_ids.read();
-
         let mut window_ids = VIEW_STORAGE.window_ids.write();
-
         let mut stack = Vec::with_capacity(64);
-        stack.push(root_id);
 
+        stack.push(root_id);
         while let Some(view_id) = stack.pop() {
             window_ids.insert(view_id, window_id);
-            let unit = unit.clone();
-            view_id.with_state_mut(move |view_state| {
-                view_state.layout_style.unit_resolver.set_unit(unit);
-            })?;
 
             if let Some(children) = child_map.get(view_id) {
                 stack.extend(children.iter().copied());

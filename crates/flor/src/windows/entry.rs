@@ -1,6 +1,7 @@
 use crate::view::focus_manager::FocusManager;
 use crate::view::resolver::Unit;
 use crate::view::view_id::ViewId;
+use arc_swap::ArcSwap;
 use dashmap::mapref::one::{Ref, RefMut};
 use dashmap::DashMap;
 use flor_base::types::Color;
@@ -32,7 +33,7 @@ pub struct WindowEntry {
     pub capture_view_id: Option<ViewId>,
     pub current_drag_target: Option<ViewId>,
     pub background_color: Color,
-    pub unit: Arc<Unit>,
+    pub unit: Arc<ArcSwap<Unit>>,
 }
 
 impl WindowEntry {
@@ -40,7 +41,7 @@ impl WindowEntry {
         window_id: WindowId,
         continuous_rendering: bool,
         background_color: Color,
-        unit: Arc<Unit>,
+        unit: Arc<ArcSwap<Unit>>,
     ) -> ViewId {
         let view_id = ViewId::new();
 

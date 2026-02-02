@@ -6,6 +6,7 @@ use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
 use crate::signal::id::EffectId;
 use crate::view::class::ClassLoader;
 use crate::view::control_state::ControlState;
+use crate::view::handler::ViewHandler;
 use crate::view::resolver::{parse_state_prefix, LayoutResolver};
 use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
@@ -19,6 +20,7 @@ use flor_base::platform::{DragFormat, DropEffect, KeyState};
 use flor_base::platform::{MousePosition, WindowOperations};
 use flor_base::types::Transform2D;
 use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use platform::WindowId;
 use rustc_hash::FxHashMap;
 use slotmap::new_key_type;
@@ -46,11 +48,25 @@ impl ViewId {
     }
 
     #[inline]
-    pub fn new_with_layout(layout_style: LayoutResolver) -> ViewId {
-        VIEW_STORAGE.new_view_with_state(ViewState {
-            layout_style,
-            ..ViewState::new()
-        })
+    pub fn new_with_layout(layout_style_fn: impl FnOnce(ViewId) -> LayoutResolver) -> ViewId {
+        let view_id = VIEW_STORAGE.view_ids.lock().insert(());
+        let layout_style = layout_style_fn(view_id);
+        VIEW_STORAGE.states.write().insert(
+            view_id,
+            RwLock::new(ViewState {
+                layout: Default::default(),
+                abs_location: (0.0, 0.0),
+                node_id: None,
+                layout_style,
+                dirty_children: false,
+                disable: false,
+            }),
+        );
+        VIEW_STORAGE
+            .handlers
+            .write()
+            .insert(view_id, RwLock::new(ViewHandler::default()));
+        view_id
     }
 
     pub fn parent_view_id(self) -> Option<ViewId> {
@@ -117,13 +133,16 @@ impl ViewId {
 
         // 通知 View 更新各个 class
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
+            let mut view = view.write();
             for class in classes {
                 // 解析状态前缀: "hover:class_name" -> (Hover, "class_name")
                 let (control_state, actual_class) = parse_state_prefix(class);
-                view.write()
-                    .on_update_class(control_state, actual_class)
+                view.on_update_class(control_state, actual_class)
                     .error_on_err(format!("on_update_class {{ view_id:{} }}", self));
             }
+        }
+        if let Some(window_id) = self.window_id() {
+            window_id.entry().map(|e| e.mark_layout_dirty());
         }
         self.request_redraw();
     }

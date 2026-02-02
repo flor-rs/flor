@@ -1,4 +1,5 @@
 use crate::view::resolver::LayoutResolver;
+use crate::view::view_id::ViewId;
 use std::fmt::{Debug, Formatter};
 use taffy::{Layout, NodeId};
 
@@ -23,12 +24,12 @@ impl Debug for ViewState {
 }
 
 impl ViewState {
-    pub fn new() -> ViewState {
+    pub fn new(view_id: ViewId) -> ViewState {
         ViewState {
             layout: Layout::default(),
             abs_location: (0.0, 0.0),
             node_id: None,
-            layout_style: LayoutResolver::new(),
+            layout_style: LayoutResolver::new(view_id),
             dirty_children: false,
             disable: false,
         }

@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::log_error::ResultLogExt;
 use crate::render::FlorRender;
 use crate::view::control_state::ControlState;
 use crate::view::view_id::ViewId;
@@ -134,7 +135,7 @@ pub fn draw_entry(window_id: WindowId, render: &mut FlorRender) -> Result<(), Er
 
                 // Draw
                 visuals.insert(view_id, ());
-                view.write().on_draw(render, abs_location, layout)?;
+                view.write().on_draw(render, abs_location, layout).error_on_err(format!("view id: {}", view_id));
                 drawn_count += 1;
 
                 // Post-Draw Setup (Child clipping etc)

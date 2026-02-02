@@ -2,9 +2,12 @@
 // UnitResolver - 单位解析器
 // ============================================================================
 
+use crate::view::view_id::ViewId;
+use crate::view::view_storage::VIEW_STORAGE;
+use crate::windows::entry::WindowEntryVisit;
+use arc_swap::ArcSwap;
 use atomic_float::AtomicF32;
-use std::ops::Deref;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// 单位解析器
@@ -18,7 +21,7 @@ use std::sync::Arc;
 /// let px_value = resolver.rem_to_px(1.5); // 1.5rem -> 24px (如果 rem_px = 16)
 /// let pt_value = resolver.pt_to_px(12.0); // 12pt -> 16px (如果 dpi = 96)
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Unit {
     /// 1rem 对应的像素值 (默认 16.0)
     pub rem_px: AtomicF32,
@@ -26,6 +29,16 @@ pub struct Unit {
     pub dpi_x: AtomicF32,
     /// 垂直方向 DPI (默认 96.0)
     pub dpi_y: AtomicF32,
+}
+
+impl Default for Unit {
+    fn default() -> Self {
+        Self {
+            rem_px: AtomicF32::new(16.),
+            dpi_x: AtomicF32::new(96.),
+            dpi_y: AtomicF32::new(96.),
+        }
+    }
 }
 
 impl Unit {
@@ -38,13 +51,37 @@ impl Unit {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct UnitResolver(Arc<Unit>);
+#[derive(Debug, Default, Clone)]
+pub struct UnitResolver {
+    view_id: ViewId,
+    is_sync: Arc<AtomicBool>,
+    unit: Arc<ArcSwap<Unit>>,
+}
 
 impl UnitResolver {
     /// 从 StateSelector 创建 UnitResolver
-    pub fn new(unit: Arc<Unit>) -> Self {
-        Self(unit)
+    pub fn new(view_id: ViewId) -> Self {
+        Self {
+            view_id,
+            is_sync: Arc::new(AtomicBool::new(false)),
+            unit: Arc::new(ArcSwap::from_pointee(Unit::default())),
+        }
+    }
+
+    pub fn sync_unit(&self) {
+        // 使用 Acquire 语义确保后续读取能看到最新的内存状态
+        if self.is_sync.load(Ordering::Acquire) {
+            return;
+        }
+
+        if let Some(window_id) = VIEW_STORAGE.window_ids.read().get(self.view_id) {
+            if let Some(global_unit_swap) = window_id.entry().map(|e| e.unit.load_full()) {
+                self.unit.store(global_unit_swap);
+
+                // 使用 Release 语义确保之前的 store 操作对其他线程可见
+                self.is_sync.store(true, Ordering::Release);
+            }
+        }
     }
 
     // ========================================================================
@@ -54,7 +91,7 @@ impl UnitResolver {
     /// rem 转 px
     #[inline]
     pub fn rem_to_px(&self, rem: f32) -> f32 {
-        rem * self.rem_px.load(Ordering::Relaxed)
+        rem * self.unit.load().rem_px.load(Ordering::Relaxed)
     }
 
     /// pt 转 px (使用垂直 DPI)
@@ -62,13 +99,13 @@ impl UnitResolver {
     /// 公式: 1pt = dpi_y / 72 px
     #[inline]
     pub fn pt_to_px(&self, pt: f32) -> f32 {
-        pt * self.dpi_y.load(Ordering::Relaxed) / 72.0
+        pt * self.unit.load().dpi_y.load(Ordering::Relaxed) / 72.0
     }
 
     /// pt 转 px (使用水平 DPI)
     #[inline]
     pub fn pt_to_px_x(&self, pt: f32) -> f32 {
-        pt * self.dpi_x.load(Ordering::Relaxed) / 72.0
+        pt * self.unit.load().dpi_x.load(Ordering::Relaxed) / 72.0
     }
 
     // ========================================================================
@@ -117,17 +154,5 @@ impl UnitResolver {
             _ => return None,
         };
         Some(self.rem_to_px(rem))
-    }
-
-    pub fn set_unit(&mut self, unit: Arc<Unit>) {
-        self.0 = unit;
-    }
-}
-
-impl Deref for UnitResolver {
-    type Target = Unit;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }

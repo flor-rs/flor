@@ -5,6 +5,7 @@ mod unit;
 pub use {layout::*, shared::*, unit::*};
 
 use crate::view::control_state::ControlState;
+use crate::view::view_id::ViewId;
 use parking_lot::{MappedRwLockReadGuard, RawRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt::Debug;
@@ -36,15 +37,16 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            unit_resolver: Default::default(),
-            current_key: Default::default(),
-            state_variants: Default::default(),
-            cache_data: RwLock::new(Default::default()),
-            has_update: Self::default_has_update(),
+            unit_resolver: self.unit_resolver.clone(),
+            current_key: self.current_key,
+            state_variants: self.state_variants.clone(),
+            cache_data: RwLock::new(Default::default()), // 缓存不需要克隆，会重新计算
+            has_update: RwLock::new(Self::default_has_update()),
             compute_func: self.compute_func.clone(),
         }
     }
 }
+
 
 impl<K, V, D, F> Resolver<K, V, D, F>
 where
@@ -53,24 +55,29 @@ where
     D: Clone,
     F: for<'a> Fn(&UnitResolver, ControlState, &FxHashMap<ControlState, FxHashMap<K, V>>) -> D,
 {
-    fn default_has_update() -> RwLock<FxHashSet<ControlState>> {
-        let mut has_update = FxHashSet::default();
-        has_update.insert(ControlState::Normal);
-        has_update.insert(ControlState::Focus);
-        has_update.insert(ControlState::Active);
-        has_update.insert(ControlState::Disabled);
-        has_update.insert(ControlState::Hover);
-        RwLock::new(has_update)
+    const DEFAULT_HAS_UPDATE: [ControlState; 5] = [
+        ControlState::Normal,
+        ControlState::Focus,
+        ControlState::Active,
+        ControlState::Disabled,
+        ControlState::Hover,
+    ];
+
+    #[inline]
+    pub fn default_has_update() -> FxHashSet<ControlState> {
+        let mut has_update_set = FxHashSet::default();
+        has_update_set.extend(Self::DEFAULT_HAS_UPDATE);
+        has_update_set
     }
 
     #[inline]
-    pub fn new_with_compute_func(compute_func: F) -> Self {
+    pub fn new_with_compute_func(view_id: ViewId, compute_func: F) -> Self {
         Self {
-            unit_resolver: Default::default(),
+            unit_resolver: UnitResolver::new(view_id),
             current_key: Default::default(),
             state_variants: Default::default(),
             cache_data: RwLock::new(Default::default()),
-            has_update: Self::default_has_update(),
+            has_update: RwLock::new(Self::default_has_update()),
             compute_func: Arc::new(compute_func),
         }
     }
@@ -109,12 +116,14 @@ where
             state_variants.clear();
         }
         self.cache_data.write().remove(&self.current_key);
+        self.has_update.write().insert(self.current_key);
         self
     }
     #[inline]
     pub fn clear_all(mut self) -> Self {
         self.state_variants.clear();
         self.cache_data.write().clear();
+        *self.has_update.write() = Self::default_has_update();
         self
     }
 
@@ -131,7 +140,11 @@ where
             .entry(state_key)
             .or_default()
             .insert(k, v);
-        self.cache_data.write().remove(&self.current_key);
+        if state_key == ControlState::Normal {
+            self.cache_data.write().clear();
+        } else {
+            self.cache_data.write().remove(&state_key);
+        }
     }
 
     /// 0 拷贝 + 返回带锁引用 + 不可到达语义
@@ -166,6 +179,7 @@ where
     ) -> parking_lot::lock_api::RwLockReadGuard<'_, RawRwLock, FxHashMap<ControlState, D>> {
         let mut guard = self.cache_data.write();
         if !guard.contains_key(&state) {
+            self.unit_resolver.sync_unit();
             let data =
                 (self.compute_func)(&self.unit_resolver, self.current_key, &self.state_variants);
             guard.insert(state, data);

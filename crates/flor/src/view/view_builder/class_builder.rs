@@ -1,7 +1,5 @@
-use crate::log_error::ResultLogExt;
 use crate::signal::effect::updater_effect::create_updater_with_id;
 use crate::view::View;
-use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 
 // 使用 define_prop! 宏生成 ClassProp trait
 crate::define_prop!(clone ClassProp, String, extra: &'static str => |s: &str| s.to_string());
@@ -32,13 +30,9 @@ where
             },
             move |class_str| {
                 view_id.update_class(class_str);
-                if let Some(window_id) = view_id.window_id() {
-                    window_id.bus_re_draw_entry().error_on_err("fail draw");
-                }
             },
         );
         view_id.pending_effect_id(effect_id);
-        view_id.update_class(class_str);
         self
     }
 }

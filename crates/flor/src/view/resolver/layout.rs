@@ -3,6 +3,7 @@ mod class;
 
 use crate::view::control_state::ControlState;
 use crate::view::resolver::UnitResolver;
+use crate::view::view_id::ViewId;
 use flor_macros::Resolver;
 use rustc_hash::FxHashMap;
 #[cfg(feature = "layout-grid")]
@@ -147,8 +148,8 @@ pub enum Layout {
 
 impl LayoutResolver {
     #[inline]
-    pub fn new() -> Self {
-        Self::new_with_compute_func(computed_layout)
+    pub fn new(view_id: ViewId) -> Self {
+        Self::new_with_compute_func(view_id, computed_layout)
     }
 }
 
