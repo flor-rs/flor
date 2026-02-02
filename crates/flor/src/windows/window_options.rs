@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::log_error::ResultLogExt;
 use crate::render::FlorRender;
 use crate::signal::effect::updater_effect::create_updater;
 use crate::view::resolver::Unit;
@@ -52,7 +51,7 @@ impl WindowOption {
         V: IntoIterator<Item=Box<dyn View + Send + Sync + 'static>>,
     {
         // 创建原生窗口
-        let mut window_id = WindowId::create_window(&self.title, self.width, self.height)?;
+        let window_id = WindowId::create_window(&self.title, self.width, self.height)?;
         window_id.set_size((self.width, self.height))?;
 
         let (width, height) = window_id.get_client_size()?;
@@ -60,6 +59,7 @@ impl WindowOption {
 
         // 创建渲染器
         let render = FlorRender::create(window_id, width, height, self.wait_v_sync)?;
+        bus::register_render(window_id, render);
 
         let (dpi_x, dpi_y) = window_id.get_dpi()?;
         let unit = Arc::new(ArcSwap::from_pointee(Unit::new(dpi_x, dpi_y, self.rem_px)));
@@ -89,15 +89,12 @@ impl WindowOption {
         trace!("window root view: {:?}", root_dyn_view);
         VIEW_STORAGE.window_ids.write().insert(view_id, window_id);
         window_id.views(root_dyn_view);
+
         ViewStorage::init_window_child(view_id, window_id)?;
+
         window_id.bus_init_focus_manager_entry()?;
-
-        bus::register_render(window_id, render);
-
-        window_id.bus_create().error_on_err("on_create has error");
-        window_id
-            .bus_refresh_layout_entry()
-            .expect("Failed re_layout_entry");
+        window_id.bus_create_entry()?;
+        window_id.bus_refresh_layout_entry()?;
         window_id.update_window()?;
         Ok(window_id)
     }

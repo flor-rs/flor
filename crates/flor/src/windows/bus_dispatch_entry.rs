@@ -1,3 +1,4 @@
+mod create_entry;
 mod draw_entry;
 mod hit_test_entry;
 mod refresh_layout_entry;
@@ -9,6 +10,7 @@ use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
 use crate::windows::bus::render;
+use crate::windows::bus_dispatch_entry::create_entry::create_entry;
 use crate::windows::bus_dispatch_entry::draw_entry::draw_entry;
 use crate::windows::bus_dispatch_entry::hit_test_entry::hit_test_entry;
 use crate::windows::bus_dispatch_entry::refresh_layout_entry::refresh_layout_entry;
@@ -30,10 +32,10 @@ use std::time::{Duration, Instant};
 /// 总线的事件分发入口，给窗口用的
 pub trait WindowBusDispatchEntry {
     // 1. 生命周期与核心循环 (Lifecycle & Core Loop)
-    fn bus_create_entry(&self) -> Result<(), Error>;
+    fn bus_create_entry(self) -> Result<(), Error>;
 
     /// 初始化焦点管理器
-    fn bus_init_focus_manager_entry(&mut self) -> Result<(), Error>;
+    fn bus_init_focus_manager_entry(self) -> Result<(), Error>;
 
     /// 帧逻辑通常在输入处理之后、渲染之前执行
     fn bus_frame_entry(&self) -> Result<Option<Duration>, Error>;
@@ -154,15 +156,11 @@ pub trait WindowBusDispatchEntry {
 }
 
 impl WindowBusDispatchEntry for WindowId {
-    fn bus_create_entry(&self) -> Result<(), Error> {
-        let view_id = self.view_id();
-        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
-            view.write().bus_create()?;
-        }
-        Ok(())
+    fn bus_create_entry(self) -> Result<(), Error> {
+        create_entry(self)
     }
 
-    fn bus_init_focus_manager_entry(&mut self) -> Result<(), Error> {
+    fn bus_init_focus_manager_entry(self) -> Result<(), Error> {
         let root_id = self.view_id();
         let mut focus_list = Vec::new();
 

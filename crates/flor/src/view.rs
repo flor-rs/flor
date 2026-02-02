@@ -41,19 +41,6 @@ pub trait View {
         "View"
     }
 
-    fn bus_create(&mut self) -> Result<(), Error> {
-        self.call_create()?;
-
-        if let Some(child_view_ids) = VIEW_STORAGE.child_ids.read().get(self.view_id()) {
-            for child_id in child_view_ids {
-                if let Some(view) = VIEW_STORAGE.views.read().get(*child_id) {
-                    view.write().bus_create()?;
-                }
-            }
-        }
-        Ok(())
-    }
-
     fn bus_frame(&mut self, now: Instant) -> Result<Option<Duration>, Error> {
         let view_id = self.view_id();
         if view_id.with_current_style(|style| style.display == Display::None)? {
