@@ -2,7 +2,8 @@ use crate::view::control_state::ControlState;
 
 
 use crate::view::resolver::layout::{Layout, LayoutKey, LayoutResolver};
-use crate::view::resolver::shared::{extract_bracket_value, parse_dimension, parse_length_percentage, parse_length_percentage_auto};
+use crate::view::resolver::shared::extract_bracket_value;
+
 use crate::view::resolver::UnitResolver;
 #[cfg(feature = "layout-grid")]
 use taffy::style_helpers::TaffyGridLine;
@@ -84,56 +85,38 @@ impl LayoutAccumulator {
 
         // === Padding (Specific) ===
         if let Some(suffix) = class.strip_prefix("pl-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage(v, cfg))
-                .or_else(|| parse_length_percentage(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lp(suffix) {
                 self.pl = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("pr-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage(v, cfg))
-                .or_else(|| parse_length_percentage(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lp(suffix) {
                 self.pr = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("pt-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage(v, cfg))
-                .or_else(|| parse_length_percentage(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lp(suffix) {
                 self.pt = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("pb-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage(v, cfg))
-                .or_else(|| parse_length_percentage(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lp(suffix) {
                 self.pb = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("px-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage(v, cfg))
-                .or_else(|| parse_length_percentage(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lp(suffix) {
                 self.pl = Some(v);
                 self.pr = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("py-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage(v, cfg))
-                .or_else(|| parse_length_percentage(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lp(suffix) {
                 self.pt = Some(v);
                 self.pb = Some(v);
                 return;
@@ -141,10 +124,7 @@ impl LayoutAccumulator {
         }
         // === Padding (Generic) ===
         if let Some(suffix) = class.strip_prefix("p-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage(v, cfg))
-                .or_else(|| parse_length_percentage(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lp(suffix) {
                 self.pl = Some(v);
                 self.pr = Some(v);
                 self.pt = Some(v);
@@ -155,56 +135,38 @@ impl LayoutAccumulator {
 
         // === Margin (Specific) ===
         if let Some(suffix) = class.strip_prefix("ml-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.ml = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("mr-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.mr = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("mt-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.mt = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("mb-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.mb = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("mx-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.ml = Some(v);
                 self.mr = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("my-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.mt = Some(v);
                 self.mb = Some(v);
                 return;
@@ -212,10 +174,7 @@ impl LayoutAccumulator {
         }
         // === Margin (Generic) ===
         if let Some(suffix) = class.strip_prefix("m-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.ml = Some(v);
                 self.mr = Some(v);
                 self.mt = Some(v);
@@ -226,56 +185,38 @@ impl LayoutAccumulator {
 
         // === Inset (Specific) ===
         if let Some(suffix) = class.strip_prefix("left-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.il = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("right-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.ir = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("top-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.it = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("bottom-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.ib = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("inset-x-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.il = Some(v);
                 self.ir = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("inset-y-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.it = Some(v);
                 self.ib = Some(v);
                 return;
@@ -283,10 +224,7 @@ impl LayoutAccumulator {
         }
         // === Inset (Generic) ===
         if let Some(suffix) = class.strip_prefix("inset-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_length_percentage_auto(v, cfg))
-                .or_else(|| parse_length_percentage_auto(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_lpa(suffix) {
                 self.il = Some(v);
                 self.ir = Some(v);
                 self.it = Some(v);
@@ -297,64 +235,43 @@ impl LayoutAccumulator {
 
         // === Sizing ===
         if let Some(suffix) = class.strip_prefix("w-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_dimension(v, cfg))
-                .or_else(|| parse_dimension(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_dim(suffix) {
                 self.w = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("h-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_dimension(v, cfg))
-                .or_else(|| parse_dimension(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_dim(suffix) {
                 self.h = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("min-w-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_dimension(v, cfg))
-                .or_else(|| parse_dimension(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_dim(suffix) {
                 self.min_w = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("min-h-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_dimension(v, cfg))
-                .or_else(|| parse_dimension(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_dim(suffix) {
                 self.min_h = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("max-w-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_dimension(v, cfg))
-                .or_else(|| parse_dimension(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_dim(suffix) {
                 self.max_w = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("max-h-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_dimension(v, cfg))
-                .or_else(|| parse_dimension(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_dim(suffix) {
                 self.max_h = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("size-") {
-            if let Some(v) = extract_bracket_value(suffix)
-                .and_then(|v| parse_dimension(v, cfg))
-                .or_else(|| parse_dimension(suffix, cfg))
-            {
+            if let Some(v) = cfg.resolve_dim(suffix) {
                 self.w = Some(v);
                 self.h = Some(v);
                 return;
@@ -365,28 +282,19 @@ impl LayoutAccumulator {
         #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
         {
             if let Some(suffix) = class.strip_prefix("gap-x-") {
-                if let Some(v) = extract_bracket_value(suffix)
-                    .and_then(|v| parse_length_percentage(v, cfg))
-                    .or_else(|| parse_length_percentage(suffix, cfg))
-                {
+                if let Some(v) = cfg.resolve_lp(suffix) {
                     self.gap_w = Some(v);
                     return;
                 }
             }
             if let Some(suffix) = class.strip_prefix("gap-y-") {
-                if let Some(v) = extract_bracket_value(suffix)
-                    .and_then(|v| parse_length_percentage(v, cfg))
-                    .or_else(|| parse_length_percentage(suffix, cfg))
-                {
+                if let Some(v) = cfg.resolve_lp(suffix) {
                     self.gap_h = Some(v);
                     return;
                 }
             }
             if let Some(suffix) = class.strip_prefix("gap-") {
-                if let Some(v) = extract_bracket_value(suffix)
-                    .and_then(|v| parse_length_percentage(v, cfg))
-                    .or_else(|| parse_length_percentage(suffix, cfg))
-                {
+                if let Some(v) = cfg.resolve_lp(suffix) {
                     self.gap_w = Some(v);
                     self.gap_h = Some(v);
                     return;
@@ -736,10 +644,7 @@ impl LayoutAccumulator {
                             .push((LayoutKey::FlexShrink, Layout::FlexShrink(1.0)));
                     }
                     if let Some(suffix) = class.strip_prefix("basis-") {
-                        if let Some(v) = extract_bracket_value(suffix)
-                            .and_then(|v| parse_dimension(v, cfg))
-                            .or_else(|| parse_dimension(suffix, cfg))
-                        {
+                        if let Some(v) = cfg.resolve_dim(suffix) {
                             self.updates
                                 .push((LayoutKey::FlexBasis, Layout::FlexBasis(v)));
                         }

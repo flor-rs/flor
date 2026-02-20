@@ -62,7 +62,14 @@ impl WindowOption {
         bus::register_render(window_id, render);
 
         let (dpi_x, dpi_y) = window_id.get_dpi()?;
-        let unit = Arc::new(ArcSwap::from_pointee(Unit::new(dpi_x, dpi_y, self.rem_px)));
+        let (w, h) = window_id.get_client_size()?;
+        let unit = Arc::new(ArcSwap::from_pointee(Unit::new(
+            dpi_x,
+            dpi_y,
+            self.rem_px,
+            w as f32,
+            h as f32,
+        )));
         let view_id = WindowEntry::new(
             window_id,
             self.continuous_rendering,
