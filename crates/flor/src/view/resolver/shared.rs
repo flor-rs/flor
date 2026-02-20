@@ -1,5 +1,6 @@
 use crate::view::control_state::ControlState;
 use crate::view::resolver::UnitResolver;
+use flor_base::graphics::FontWeight;
 use flor_base::types::Color;
 use taffy::{Dimension, LengthPercentage, LengthPercentageAuto};
 
@@ -18,7 +19,6 @@ pub fn parse_state_prefix(class: &str) -> (ControlState, &str) {
     }
 }
 
-
 // Helper functions for parsing
 pub fn extract_bracket_value(s: &str) -> Option<&str> {
     if s.starts_with('[') && s.ends_with(']') {
@@ -28,7 +28,10 @@ pub fn extract_bracket_value(s: &str) -> Option<&str> {
     }
 }
 
-pub fn parse_length_percentage_auto(value: &str, cfg: &UnitResolver) -> Option<LengthPercentageAuto> {
+pub fn parse_length_percentage_auto(
+    value: &str,
+    cfg: &UnitResolver,
+) -> Option<LengthPercentageAuto> {
     if value == "auto" {
         return Some(LengthPercentageAuto::Auto);
     }
@@ -450,6 +453,71 @@ pub fn parse_tw_color(color_name: &str, shade: &str) -> Option<Color> {
         ("rose", 800) => Some(Color::ROSE_800),
         ("rose", 900) => Some(Color::ROSE_900),
         ("rose", 950) => Some(Color::ROSE_950),
+        _ => None,
+    }
+}
+
+/// 解析 rounded-* 类名，返回圆角值
+///
+/// 支持:
+/// - `rounded-none` -> 0.0
+/// - `rounded-sm` -> 2.0
+/// - `rounded` -> 4.0
+/// - `rounded-md` -> 6.0
+/// - `rounded-lg` -> 8.0
+/// - `rounded-xl` -> 12.0
+/// - `rounded-2xl` -> 16.0
+/// - `rounded-3xl` -> 24.0
+/// - `rounded-full` -> 9999.0
+/// - `rounded-[8px]` -> 8.0
+pub fn parse_rounded(class: &str) -> Option<f32> {
+    let rest = class.strip_prefix("rounded")?;
+
+    match rest {
+        "-none" => Some(0.0),
+        "-sm" => Some(2.0),
+        "" => Some(4.0),
+        "-md" => Some(6.0),
+        "-lg" => Some(8.0),
+        "-xl" => Some(12.0),
+        "-2xl" => Some(16.0),
+        "-3xl" => Some(24.0),
+        "-full" => Some(9999.0),
+        _ => {
+            // rounded-[8px] 或 rounded-[8]
+            let inner = rest.strip_prefix("-")?;
+            if let Some(val) = extract_bracket_value(inner) {
+                val.trim_end_matches("px").parse::<f32>().ok()
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// 解析 font-* 类名中的字重，返回 FontWeight
+///
+/// 支持:
+/// - `font-thin` -> Thin (100)
+/// - `font-extralight` -> ExtraLight (200)
+/// - `font-light` -> Light (300)
+/// - `font-normal` -> Normal (400)
+/// - `font-medium` -> Medium (500)
+/// - `font-semibold` -> SemiBold (600)
+/// - `font-bold` -> Bold (700)
+/// - `font-extrabold` -> ExtraBold (800)
+/// - `font-black` -> Black (900)
+pub fn parse_font_weight(name: &str) -> Option<FontWeight> {
+    match name {
+        "thin" => Some(FontWeight::Thin),
+        "extralight" => Some(FontWeight::ExtraLight),
+        "light" => Some(FontWeight::Light),
+        "normal" => Some(FontWeight::Normal),
+        "medium" => Some(FontWeight::Medium),
+        "semibold" => Some(FontWeight::SemiBold),
+        "bold" => Some(FontWeight::Bold),
+        "extrabold" => Some(FontWeight::ExtraBold),
+        "black" => Some(FontWeight::Black),
         _ => None,
     }
 }
