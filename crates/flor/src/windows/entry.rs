@@ -4,6 +4,7 @@ use crate::view::view_id::ViewId;
 use arc_swap::ArcSwap;
 use dashmap::mapref::one::{Ref, RefMut};
 use dashmap::DashMap;
+use flor_base::platform::{KeyState, MousePosition};
 use flor_base::types::Color;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
@@ -41,6 +42,10 @@ pub struct WindowEntry {
     pub tooltip_shown_for: Option<ViewId>,
     /// tooltip 显示延迟
     pub tooltip_delay: Duration,
+    /// 缓存的最后一次鼠标窗口坐标（供 tooltip 帧回调使用）
+    pub last_mouse_position: MousePosition,
+    /// 缓存的最后一次键盘状态（供 tooltip 帧回调使用）
+    pub last_key_state: KeyState,
 }
 
 impl WindowEntry {
@@ -73,6 +78,8 @@ impl WindowEntry {
             tooltip_hover_start: None,
             tooltip_shown_for: None,
             tooltip_delay,
+            last_mouse_position: MousePosition { x: 0, y: 0 },
+            last_key_state: KeyState::default(),
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id

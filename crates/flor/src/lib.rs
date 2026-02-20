@@ -155,6 +155,10 @@ impl FlorGui {
                 };
 
                 min_wait_time.update_to_min_wait_time(child_wait_time);
+
+                // tooltip: 检查悬停计时器，合并等待时间
+                let tooltip_wait = window_id.bus_tooltip_check_entry();
+                min_wait_time.update_to_min_wait_time(tooltip_wait);
             }
 
             for window_id in re_layout_window_ids {

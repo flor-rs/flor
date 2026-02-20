@@ -40,6 +40,10 @@ pub trait WindowBusDispatchEntry {
     /// 帧逻辑通常在输入处理之后、渲染之前执行
     fn bus_frame_entry(&self) -> Result<Option<Duration>, Error>;
 
+    /// 检查 tooltip 悬停计时器，超时则派发 show 事件
+    /// 返回值：如果正在等待 tooltip 超时，返回剩余等待时间
+    fn bus_tooltip_check_entry(&self) -> Option<Duration>;
+
     // 2. 布局与渲染 (Layout & Rendering)
     fn bus_refresh_layout_entry(self) -> Result<(), Error>;
 
@@ -228,6 +232,45 @@ impl WindowBusDispatchEntry for WindowId {
         Ok(None)
     }
 
+    fn bus_tooltip_check_entry(&self) -> Option<Duration> {
+        let (should_show, remaining) = {
+            let entry = self.entry()?;
+
+            // 已经显示过了，不需要再检查
+            if entry.tooltip_shown_for.is_some() {
+                return None;
+            }
+
+            // 没有在计时
+            let start = entry.tooltip_hover_start?;
+            let elapsed = Instant::now().duration_since(start);
+
+            if elapsed >= entry.tooltip_delay {
+                (true, None)
+            } else {
+                (false, Some(entry.tooltip_delay - elapsed))
+            }
+        };
+
+        if should_show {
+            // 获取当前 hover 的控件并触发 tooltip_show
+            let (hover_id, mouse_pos, key_state) = {
+                let entry = self.entry()?;
+                (entry.hover_id?, entry.last_mouse_position, entry.last_key_state)
+            };
+            if let Some(view_lock) = VIEW_STORAGE.views.read().get(hover_id) {
+                let local_pos = hover_id.window_to_local_position(mouse_pos);
+                view_lock.write().call_tooltip_show(key_state, local_pos);
+            }
+            if let Some(mut entry) = self.entry_mut() {
+                entry.tooltip_shown_for = Some(hover_id);
+            }
+            None
+        } else {
+            remaining
+        }
+    }
+
     fn bus_refresh_layout_entry(self) -> Result<(), Error> {
         refresh_layout_entry(self)
     }
@@ -327,38 +370,13 @@ impl WindowBusDispatchEntry for WindowId {
         }
 
         // =========================================================
-        // 逻辑 D: Tooltip 延迟检查
-        // hover 未变化时，检查是否超过延迟时间
-        // =========================================================
-        if old_hovered_id == Some(new_hovered_id) {
-            let should_show = self.entry().map(|entry| {
-                if entry.tooltip_shown_for.is_some() {
-                    return false; // 已经触发过
-                }
-                if let Some(start) = entry.tooltip_hover_start {
-                    Instant::now().duration_since(start) >= entry.tooltip_delay
-                } else {
-                    false
-                }
-            }).unwrap_or(false);
-
-            if should_show {
-                if let Some(view_lock) = views.get(new_hovered_id) {
-                    let local_pos = new_hovered_id.window_to_local_position(mouse_position);
-                    view_lock.write().call_tooltip_show(key_state, local_pos);
-                }
-                if let Some(mut entry) = self.entry_mut() {
-                    entry.tooltip_shown_for = Some(new_hovered_id);
-                }
-            }
-        }
-
-        // =========================================================
         // 3. 更新状态
         // =========================================================
         if let Some(mut entry) = self.entry_mut() {
             trace!("update hovered id {:?}", new_hovered_id);
             entry.hover_id = Some(new_hovered_id);
+            entry.last_mouse_position = mouse_position;
+            entry.last_key_state = key_state;
         }
         self.request_redraw();
     }
