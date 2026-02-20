@@ -45,6 +45,10 @@ pub struct ViewHandler {
     pub on_create_handler: Option<OnCreateHandler>,
     pub on_destroy_handler: Option<OnDestroyHandler>,
 
+    // tooltip_handler
+    pub on_tooltip_show_handler: Option<OnTooltipShowHandler>,
+    pub on_tooltip_hide_handler: Option<OnTooltipHideHandler>,
+
     // window_handler
     pub on_resize_handler: Option<OnResizeHandler>,
     pub on_close_requested_handler: Option<OnCloseRequestedHandler>,
@@ -100,6 +104,9 @@ impl std::fmt::Debug for ViewHandler {
         field!(on_blur_handler);
         field!(on_create_handler);
         field!(on_destroy_handler);
+
+        field!(on_tooltip_show_handler);
+        field!(on_tooltip_hide_handler);
 
         field!(on_resize_handler);
         field!(on_close_requested_handler);

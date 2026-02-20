@@ -929,6 +929,82 @@ pub trait View {
     fn on_update_class(&mut self, control_state: ControlState, class: &str) -> Result<(), Error> {
         Ok(())
     }
+
+    // ========================================================================
+    // Tooltip 事件
+    // ========================================================================
+
+    /// 工具提示应当显示时调用。
+    ///
+    /// 框架在鼠标悬停超过配置的延迟时间后，自动派发此事件。
+    /// 控件可重写此方法实现默认的 tooltip 逻辑。
+    ///
+    /// **覆盖模式**：如果用户通过 handler 绑定了外置逻辑，则只执行用户的，
+    /// 此方法不会被调用。
+    ///
+    /// * `key_state` - 当前键盘修饰键状态
+    /// * `mouse_position` - 控件局部坐标
+    #[allow(unused_variables)]
+    fn on_tooltip_show(
+        &mut self,
+        key_state: KeyState,
+        mouse_position: MousePosition,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// 工具提示应当隐藏时调用。
+    ///
+    /// 当鼠标离开控件、移到另一个控件、鼠标按下、或鼠标离开窗口时，
+    /// 框架自动派发此事件。
+    ///
+    /// **覆盖模式**：如果用户通过 handler 绑定了外置逻辑，则只执行用户的，
+    /// 此方法不会被调用。
+    fn on_tooltip_hide(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// 派发 tooltip show 事件（覆盖模式）
+    ///
+    /// 如果用户绑定了 handler → 只执行 handler
+    /// 否则 → 只执行控件的 on_tooltip_show
+    fn call_tooltip_show(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_tooltip_show_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id(), key_state, mouse_position);
+        } else {
+            self.on_tooltip_show(key_state, mouse_position)
+                .error_on_err(format!(
+                    "on_tooltip_show {{ view_id:{} }}",
+                    self.view_id()
+                ));
+        }
+    }
+
+    /// 派发 tooltip hide 事件（覆盖模式）
+    ///
+    /// 如果用户绑定了 handler → 只执行 handler
+    /// 否则 → 只执行控件的 on_tooltip_hide
+    fn call_tooltip_hide(&mut self) {
+        let handler = VIEW_STORAGE
+            .handlers
+            .read()
+            .get(self.view_id())
+            .and_then(|h| h.read().on_tooltip_hide_handler.clone());
+        if let Some(h) = handler {
+            h.0(self.view_id());
+        } else {
+            self.on_tooltip_hide()
+                .error_on_err(format!(
+                    "on_tooltip_hide {{ view_id:{} }}",
+                    self.view_id()
+                ));
+        }
+    }
 }
 
 impl<T: View> LoadRenderResource for T {

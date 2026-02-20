@@ -282,6 +282,13 @@ impl WindowBusDispatchEntry for WindowId {
         // =========================================================
         if let Some(old_id) = old_hovered_id {
             if old_id != new_hovered_id {
+                // tooltip: 对旧控件隐藏 tooltip
+                if self.entry().map(|v| v.tooltip_shown_for == Some(old_id)).unwrap_or(false) {
+                    if let Some(view_lock) = views.get(old_id) {
+                        view_lock.write().call_tooltip_hide();
+                    }
+                }
+
                 if let Some(view_lock) = views.get(old_id) {
                     // 旧的离开（转换为控件局部坐标）
                     let local_pos = old_id.window_to_local_position(mouse_position);
@@ -301,6 +308,11 @@ impl WindowBusDispatchEntry for WindowId {
                 let local_pos = new_hovered_id.window_to_local_position(mouse_position);
                 view_lock.write().call_mouse_enter(key_state, local_pos);
             }
+            // tooltip: 重置计时器
+            if let Some(mut entry) = self.entry_mut() {
+                entry.tooltip_hover_start = Some(Instant::now());
+                entry.tooltip_shown_for = None;
+            }
         }
 
         // =========================================================
@@ -315,6 +327,33 @@ impl WindowBusDispatchEntry for WindowId {
         }
 
         // =========================================================
+        // 逻辑 D: Tooltip 延迟检查
+        // hover 未变化时，检查是否超过延迟时间
+        // =========================================================
+        if old_hovered_id == Some(new_hovered_id) {
+            let should_show = self.entry().map(|entry| {
+                if entry.tooltip_shown_for.is_some() {
+                    return false; // 已经触发过
+                }
+                if let Some(start) = entry.tooltip_hover_start {
+                    Instant::now().duration_since(start) >= entry.tooltip_delay
+                } else {
+                    false
+                }
+            }).unwrap_or(false);
+
+            if should_show {
+                if let Some(view_lock) = views.get(new_hovered_id) {
+                    let local_pos = new_hovered_id.window_to_local_position(mouse_position);
+                    view_lock.write().call_tooltip_show(key_state, local_pos);
+                }
+                if let Some(mut entry) = self.entry_mut() {
+                    entry.tooltip_shown_for = Some(new_hovered_id);
+                }
+            }
+        }
+
+        // =========================================================
         // 3. 更新状态
         // =========================================================
         if let Some(mut entry) = self.entry_mut() {
@@ -325,9 +364,18 @@ impl WindowBusDispatchEntry for WindowId {
     }
 
     fn bus_mouse_leave_entry(&self) {
+        // tooltip: 鼠标离开窗口，隐藏 tooltip
+        let tooltip_target = self.entry().and_then(|v| v.tooltip_shown_for);
+        if let Some(view_id) = tooltip_target {
+            if let Some(view_lock) = VIEW_STORAGE.views.read().get(view_id) {
+                view_lock.write().call_tooltip_hide();
+            }
+        }
+
         self.entry_mut().map(|mut v| {
+            v.tooltip_hover_start = None;
+            v.tooltip_shown_for = None;
             if v.hover_id != None {
-                dbg!("call");
                 v.hover_id = None;
                 self.request_redraw();
             }
@@ -337,6 +385,18 @@ impl WindowBusDispatchEntry for WindowId {
     // ==================== 左键 (Left Button) ====================
 
     fn bus_button_down_entry(&mut self, key_state: KeyState, mouse_position: MousePosition) {
+        // tooltip: 鼠标按下时隐藏 tooltip
+        let tooltip_target = self.entry().and_then(|v| v.tooltip_shown_for);
+        if let Some(view_id) = tooltip_target {
+            if let Some(view_lock) = VIEW_STORAGE.views.read().get(view_id) {
+                view_lock.write().call_tooltip_hide();
+            }
+            self.entry_mut().map(|mut v| {
+                v.tooltip_hover_start = None;
+                v.tooltip_shown_for = None;
+            });
+        }
+
         let view_id = self
             .entry()
             .map(|v| v.capture_view_id)

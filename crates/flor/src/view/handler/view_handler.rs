@@ -20,3 +20,7 @@ pub type OnFocusHandler = FocusHandler;
 pub type OnBlurHandler = FocusHandler;
 pub type OnCreateHandler = Handler;
 pub type OnDestroyHandler = Handler;
+
+// tooltip_handler
+pub type OnTooltipShowHandler = super::MouseHandler;
+pub type OnTooltipHideHandler = Handler;

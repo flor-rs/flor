@@ -15,6 +15,7 @@ use log::trace;
 use parking_lot::RwLock;
 use platform::WindowId;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub struct WindowOption {
     pub title: String,
@@ -25,6 +26,7 @@ pub struct WindowOption {
     pub show_fps: bool,
     pub continuous_rendering: bool,
     pub background_color: Color,
+    pub tooltip_delay: Duration,
     pub view_fn: Option<Box<dyn Fn(WindowId) -> Box<dyn View + Send + Sync>>>,
 }
 
@@ -39,6 +41,7 @@ impl Default for WindowOption {
             continuous_rendering: false,
             background_color: Color::rgb(255, 255, 255),
             show_fps: false,
+            tooltip_delay: Duration::from_millis(500),
             view_fn: None,
         }
     }
@@ -76,6 +79,7 @@ impl WindowOption {
             self.show_fps,
             self.background_color,
             unit.clone(),
+            self.tooltip_delay,
         );
 
         VIEW_STORAGE

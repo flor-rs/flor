@@ -10,6 +10,7 @@ use parking_lot::RwLock;
 use platform::WindowId;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use taffy::TaffyTree;
 
 /// 为window_id 和分配 view_id 建立映射
@@ -34,6 +35,12 @@ pub struct WindowEntry {
     pub current_drag_target: Option<ViewId>,
     pub background_color: Color,
     pub unit: Arc<ArcSwap<Unit>>,
+    /// tooltip 计时起点：鼠标进入当前 hover 控件时的时间戳
+    pub tooltip_hover_start: Option<Instant>,
+    /// 已经触发了 tooltip_show 的控件（避免重复触发）
+    pub tooltip_shown_for: Option<ViewId>,
+    /// tooltip 显示延迟
+    pub tooltip_delay: Duration,
 }
 
 impl WindowEntry {
@@ -43,6 +50,7 @@ impl WindowEntry {
         show_fps: bool,
         background_color: Color,
         unit: Arc<ArcSwap<Unit>>,
+        tooltip_delay: Duration,
     ) -> ViewId {
         let view_id = ViewId::new();
 
@@ -62,6 +70,9 @@ impl WindowEntry {
             current_drag_target: None,
             background_color,
             unit,
+            tooltip_hover_start: None,
+            tooltip_shown_for: None,
+            tooltip_delay,
         };
         WINDOW_ENTRY_MAP.insert(window_id, window_entry);
         view_id
