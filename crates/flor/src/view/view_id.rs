@@ -324,10 +324,12 @@ impl ViewId {
         VIEW_STORAGE.focus_index.write().insert(self, focus_index);
     }
 
-    pub fn set_focus(self) {
+    pub fn set_focus(self, virtual_index: Option<u16>) {
         if let Some(win_id) = self.window_id() {
             if let Some(mut entry) = win_id.entry_mut() {
-                entry.focus_manager.set_focus(self);
+                entry
+                    .focus_manager
+                    .set_focus(self, virtual_index.unwrap_or(1));
             }
         }
     }
@@ -395,15 +397,15 @@ impl ViewId {
         }
     }
 
-    pub fn call_focus_gained(self) {
+    pub fn call_focus(self, virtual_index: u16) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write().call_focus_gained();
+            view.write().call_focus(virtual_index);
         }
     }
 
-    pub fn call_focus_lost(self) {
+    pub fn call_blur(self, virtual_index: u16) {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
-            view.write().call_focus_lost();
+            view.write().call_blur(virtual_index);
         }
     }
 

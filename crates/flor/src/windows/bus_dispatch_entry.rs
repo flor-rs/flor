@@ -169,6 +169,7 @@ impl WindowBusDispatchEntry for WindowId {
         // focus_index & focus_scope: 写锁，用于"取走"数据 (remove)
         // 只要锁的获取顺序一致，或者同时获取，就不会死锁
         let child_ids_guard = VIEW_STORAGE.child_ids.read();
+        let views_guard = VIEW_STORAGE.views.read();
         let mut focus_index_guard = VIEW_STORAGE.focus_index.write();
         let mut focus_scope_guard = VIEW_STORAGE.focus_scope.write();
 
@@ -189,7 +190,17 @@ impl WindowBusDispatchEntry for WindowId {
             // 最终索引 = 当前累加基数 + 局部索引
             if let Some(local_index) = focus_index_guard.remove(current_id) {
                 let final_index = current_total_offset + local_index;
-                focus_list.push((final_index, current_id));
+
+                // 查询控件的虚拟焦点数量，展开为多个条目
+                let count = views_guard
+                    .get(current_id)
+                    .map(|v| v.read().on_focus_count())
+                    .unwrap_or(1)
+                    .max(1);
+
+                for vi in 0..count {
+                    focus_list.push((final_index, current_id, vi));
+                }
             }
 
             // C. 将子节点压栈
@@ -354,8 +365,11 @@ impl WindowBusDispatchEntry for WindowId {
             // 合成事件，点击
             if let Some(spawn_click) = self.entry().map(|v| v.l_down_view_id == Some(view_id)) {
                 if spawn_click {
-                    view.write().call_click(key_state, local_pos);
-                    view_id.set_focus();
+                    let mut view = view.write();
+                    view.call_click(key_state, local_pos);
+                    let virtual_focus = view.on_virtual_focus_at(key_state, local_pos);
+                    drop(view);
+                    view_id.set_focus(Some(virtual_focus));
                 }
             }
             VIEW_STORAGE.pressed.write().remove(view_id);
