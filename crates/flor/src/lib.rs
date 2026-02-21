@@ -1,7 +1,6 @@
 #[cfg(feature = "direct2d")]
 pub extern crate flor_graphics_direct2d as graphics;
-#[cfg(windows)]
-pub extern crate flor_platform_windows as platform;
+pub extern crate flor_platform as platform;
 pub extern crate once_cell;
 pub extern crate parking_lot;
 pub extern crate rustc_hash;
@@ -18,29 +17,27 @@ pub mod windows;
 
 pub type ComputedLayout = taffy::Layout;
 
-use crate::proc::WindowsProcHandler;
-use crate::windows::bus::RENDERS;
-use log::{debug, info, trace};
-use once_cell::sync::Lazy;
-use platform::set_proc_handler;
-use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(feature = "clipboard")]
-use std::sync::OnceLock;
-use std::time::{Duration, Instant};
-
-
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::min_wait_time::MinWaitTime;
+use crate::proc::WindowsProcHandler;
 use crate::signal::effect::updater_effect::create_updater;
+use crate::windows::bus::RENDERS;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WINDOW_ENTRY_MAP;
 #[cfg(feature = "clipboard")]
 pub use arboard;
 pub use flor_base::types;
+use log::{debug, info, trace};
+use once_cell::sync::Lazy;
+use platform::set_proc_handler;
 #[cfg(feature = "tray")]
 use platform::{base::TrayEvent, base::TrayManagerEntry, base::TrayOptions, Tray, TrayId};
 pub use slotmap;
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "clipboard")]
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 pub use taffy;
 
 static ALLOW_NO_WINDOWS_LOOP: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
@@ -49,6 +46,9 @@ static EXIT: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 pub static CONFIG: Lazy<bool> = Lazy::new(|| false);
 #[cfg(feature = "clipboard")]
 static CLIPBOARD: OnceLock<arboard::Clipboard> = OnceLock::new();
+
+#[cfg(feature = "cross-thread-window-creation")]
+static WINDOW_SPAWNER: WindowCreationQueue = WindowCreationQueue::new();
 
 pub struct FlorGui;
 
@@ -98,6 +98,13 @@ impl FlorGui {
     }
 
     pub fn event_loop(&self) -> Result<(), Error> {
+        // 记录事件循环线程
+        platform::record_event_loop_thread();
+
+        // 即使没有窗口，也要处理可能已排队的跨线程创建请求
+        #[cfg(feature = "cross-thread-window-creation")]
+        WINDOW_SPAWNER.try_spawn();
+
         if RENDERS.is_empty() {
             return Ok(());
         }
@@ -110,6 +117,10 @@ impl FlorGui {
 
         loop {
             platform::handler_message();
+
+            // 处理跨线程窗口创建请求
+            #[cfg(feature = "cross-thread-window-creation")]
+            WINDOW_SPAWNER.try_spawn();
 
             let allow = ALLOW_NO_WINDOWS_LOOP.load(Ordering::Acquire);
             trace!("allow_no_windows_loop: {}", allow);

@@ -24,3 +24,5 @@ pub enum Error {
     #[error("clipboard error: `{0}`")]
     ClipboardError(#[from] arboard::Error),
 }
+
+unsafe impl Send for Error {}

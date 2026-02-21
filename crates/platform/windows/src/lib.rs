@@ -1,9 +1,13 @@
 use log::info;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
+use windows::Win32::Foundation::{LPARAM, WPARAM};
+use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostQuitMessage, TranslateMessage,
-    MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
+    DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostQuitMessage,
+    PostThreadMessageW, TranslateMessage, MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
+    WM_USER,
 };
 
 mod conversions;
@@ -39,6 +43,43 @@ pub mod events {
 }
 
 pub use {proc_handler::*, window_id::WindowId, windows::core::Error};
+
+/// 事件循环所在线程的 Win32 线程 ID
+#[cfg(feature = "cross-thread-window-creation")]
+static EVENT_LOOP_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+
+/// 在事件循环启动时调用，记录当前线程为事件循环线程。
+///
+/// 必须在 `event_loop()` 入口处调用一次。
+#[cfg(feature = "cross-thread-window-creation")]
+pub fn record_event_loop_thread() {
+    let thread_id = unsafe { GetCurrentThreadId() };
+    EVENT_LOOP_THREAD_ID.store(thread_id, Ordering::Release);
+}
+
+#[cfg(feature = "cross-thread-window-creation")]
+pub fn is_event_loop_thread() -> bool {
+    let thread_id = unsafe { GetCurrentThreadId() };
+    let event_loop_thread_id = EVENT_LOOP_THREAD_ID.load(Ordering::Acquire);
+    if event_loop_thread_id == 0 {
+        return true;
+    }
+    event_loop_thread_id == thread_id
+}
+
+/// 从任意线程唤醒事件循环。
+///
+/// 向事件循环线程的消息队列投递一条空消息，
+/// 使 `MsgWaitForMultipleObjectsEx` 立即返回。
+#[cfg(feature = "cross-thread-window-creation")]
+pub fn wake_event_loop() {
+    let tid = EVENT_LOOP_THREAD_ID.load(Ordering::Acquire);
+    if tid != 0 {
+        unsafe {
+            let _ = PostThreadMessageW(tid, WM_USER, WPARAM(0), LPARAM(0));
+        }
+    }
+}
 
 #[inline]
 pub fn handler_wait(timeout: Option<Duration>) {

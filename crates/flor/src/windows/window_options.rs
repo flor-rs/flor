@@ -48,13 +48,33 @@ impl Default for WindowOption {
 }
 
 impl WindowOption {
+    /// 创建并显示窗口。
+    ///
+    /// 支持从任意线程调用：
+    /// - 主线程：直接创建
+    /// - 子线程：自动投递到主线程执行，当前线程阻塞等待结果
     pub fn open<F, V>(self, view_fn: F) -> Result<WindowId, Error>
     where
-        F: Fn(WindowId) -> V + 'static,
+        F: Fn(WindowId) -> V + Send + 'static,
         V: IntoIterator<Item=Box<dyn View + Send + Sync + 'static>>,
     {
-        // 创建原生窗口
+        #[cfg(feature = "cross-thread-window-creation")]
+        let window_id = if !platform::is_event_loop_thread() {
+            use std::sync::mpsc;
+            let (tx, rx) = mpsc::sync_channel(1);
+            crate::WINDOW_SPAWNER.pending_window(self.title, self.width, self.height, tx);
+            platform::wake_event_loop();
+
+            rx.recv().map_err(|_| {
+                Error::InitError("The event loop has ended, but the window creation request has not been processed.".into())
+            })?
+        } else {
+            WindowId::create_window(&self.title, self.width, self.height)
+        }?;
+
+        #[cfg(not(feature = "cross-thread-window-creation"))]
         let window_id = WindowId::create_window(&self.title, self.width, self.height)?;
+
         window_id.set_size((self.width, self.height))?;
 
         let (width, height) = window_id.get_client_size()?;
