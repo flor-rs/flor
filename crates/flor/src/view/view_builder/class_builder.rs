@@ -33,6 +33,7 @@ where
             },
         );
         view_id.pending_effect_id(effect_id);
+        view_id.update_class(class_str);
         self
     }
 }
