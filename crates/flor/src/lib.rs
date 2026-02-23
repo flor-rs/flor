@@ -48,6 +48,8 @@ pub static CONFIG: Lazy<bool> = Lazy::new(|| false);
 static CLIPBOARD: OnceLock<arboard::Clipboard> = OnceLock::new();
 
 #[cfg(feature = "cross-thread-window-creation")]
+use crate::windows::window_creation_queue::WindowCreationQueue;
+#[cfg(feature = "cross-thread-window-creation")]
 static WINDOW_SPAWNER: WindowCreationQueue = WindowCreationQueue::new();
 
 pub struct FlorGui;
