@@ -88,13 +88,13 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
     let flor_crate = flor_crate();
 
     // 解析枚举级别的 #[resolver(...)] 属性
-    let mut explicit_control: Option<syn::Ident> = None;
-    let mut skip_builder = false;
     let mut generate_update_view = true; // 默认生成 update_view
     let mut generate_computed = true; // 默认生成 computed 结构体
     let mut generate_computed_fn = true; // 默认生成 computed_xxx 函数
     let mut generate_default = true; // 默认生成 Default 实现
     let mut data_type: Option<syn::Type> = None; // data = Type
+    let mut control_type: Option<syn::Type> = None; // control = ControlName
+    let mut field_name_attr: Option<syn::Ident> = None; // field = field_name
 
     for attr in input.attrs.iter() {
         if !attr.path().is_ident("resolver") {
@@ -102,17 +102,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
         }
 
         let _ = attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("control") {
-                // #[resolver(control = ControlName)]
-                let _: syn::Token![=] = meta.input.parse()?;
-                let ident: syn::Ident = meta.input.parse()?;
-                explicit_control = Some(ident);
-            } else if meta.path.is_ident("builder") {
-                // #[resolver(builder = false)]
-                let _: syn::Token![=] = meta.input.parse()?;
-                let value: syn::LitBool = meta.input.parse()?;
-                skip_builder = !value.value;
-            } else if meta.path.is_ident("update_view") {
+            if meta.path.is_ident("update_view") {
                 // #[resolver(update_view = false)]
                 let _: syn::Token![=] = meta.input.parse()?;
                 let value: syn::LitBool = meta.input.parse()?;
@@ -137,16 +127,41 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
                 let _: syn::Token![=] = meta.input.parse()?;
                 let value: syn::LitBool = meta.input.parse()?;
                 generate_default = value.value;
+            } else if meta.path.is_ident("control") {
+                // #[resolver(control = TextInput)]
+                let _: syn::Token![=] = meta.input.parse()?;
+                let ty: syn::Type = meta.input.parse()?;
+                control_type = Some(ty);
+            } else if meta.path.is_ident("field") {
+                // #[resolver(field = style)]
+                let _: syn::Token![=] = meta.input.parse()?;
+                let ident: syn::Ident = meta.input.parse()?;
+                field_name_attr = Some(ident);
             }
             Ok(())
         });
+    }
+
+    // Validate: control and field must both be present or both be absent
+    match (&control_type, &field_name_attr) {
+        (Some(_), None) => {
+            panic!("Resolver macro error: 'control' attribute is specified but 'field' is missing. \
+                    Both 'control' and 'field' must be specified together to generate StyleBuilder implementation. \
+                    Example: #[resolver(control = TextInput, field = style)]");
+        }
+        (None, Some(_)) => {
+            panic!("Resolver macro error: 'field' attribute is specified but 'control' is missing. \
+                    Both 'control' and 'field' must be specified together to generate StyleBuilder implementation. \
+                    Example: #[resolver(control = TextInput, field = style)]");
+        }
+        _ => {}
     }
 
     // 只支持 enum
     let variants = if let Data::Enum(DataEnum { variants, .. }) = input.data {
         variants
     } else {
-        panic!("Style can only be derived for enums");
+        panic!("Resolver can only be derived for enums");
     };
 
     // 生成类型名称
@@ -497,6 +512,25 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    // StyleBuilder implementation (when both control and field are specified)
+    let style_builder_code = if let (Some(control_ty), Some(field_ident)) =
+        (&control_type, &field_name_attr)
+    {
+        quote! {
+            // ==========================================
+            // StyleBuilder implementation for control
+            // ==========================================
+            impl #flor_crate::view::view_builder::style_builder::StyleBuilder<#alias_name> for #control_ty {
+                fn style(mut self, style_fn: impl Fn(#alias_name) -> #alias_name) -> Self {
+                    self.#field_ident = style_fn(self.#field_ident.clone().normal());
+                    self
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     let expanded = quote! {
         // ==========================================
         // Key 枚举
@@ -534,6 +568,8 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
         #update_view_impl
 
         #type_alias_code
+
+        #style_builder_code
     };
 
     TokenStream::from(expanded)
