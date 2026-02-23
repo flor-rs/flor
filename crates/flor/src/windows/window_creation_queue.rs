@@ -1,4 +1,6 @@
-use flor_base::platform::WindowApi;
+use crate::error::Error;
+use crate::view::View;
+use crate::windows::window_options::WindowOption;
 use parking_lot::Mutex;
 use platform::WindowId;
 use std::collections::VecDeque;
@@ -17,16 +19,14 @@ impl WindowCreationQueue {
 
     pub fn pending_window(
         &self,
-        title: String,
-        width: u32,
-        height: u32,
-        sender: SyncSender<Result<WindowId, platform::Error>>,
+        window_option: WindowOption,
+        view_fn: Box<dyn Fn(WindowId) -> Vec<Box<dyn View + Send + Sync + 'static>> + Send>,
+        result_sender: SyncSender<Result<WindowId, Error>>,
     ) {
         self.queue.lock().push_back(PendingWindowRequest {
-            title,
-            width,
-            height,
-            result_sender: sender,
+            window_option,
+            view_fn,
+            result_sender,
         });
     }
 
@@ -40,7 +40,7 @@ impl WindowCreationQueue {
         };
 
         for req in tasks {
-            let window_id = WindowId::create_window(&req.title, req.width, req.height);
+            let window_id = req.window_option.open_with_box(req.view_fn);
             if req.result_sender.send(window_id).is_err() {
                 // The Receiver must exist
                 unreachable!()
@@ -50,8 +50,7 @@ impl WindowCreationQueue {
 }
 
 pub(crate) struct PendingWindowRequest {
-    title: String,
-    width: u32,
-    height: u32,
-    result_sender: SyncSender<Result<WindowId, platform::Error>>,
+    window_option: WindowOption,
+    view_fn: Box<dyn Fn(WindowId) -> Vec<Box<dyn View + Send + Sync + 'static>> + Send>,
+    result_sender: SyncSender<Result<WindowId, Error>>,
 }

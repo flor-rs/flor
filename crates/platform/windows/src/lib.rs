@@ -1,13 +1,17 @@
 use log::info;
+#[cfg(feature = "cross-thread-window-creation")]
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
+#[cfg(feature = "cross-thread-window-creation")]
+use windows::Win32::{
+    Foundation::{LPARAM, WPARAM},
+    System::Threading::GetCurrentThreadId,
+    UI::WindowsAndMessaging::{PostThreadMessageW, WM_USER},
+};
 
-use windows::Win32::Foundation::{LPARAM, WPARAM};
-use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostQuitMessage,
-    PostThreadMessageW, TranslateMessage, MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
-    WM_USER,
+    DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostQuitMessage, TranslateMessage,
+    MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
 };
 
 mod conversions;

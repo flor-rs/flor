@@ -27,7 +27,6 @@ pub struct WindowOption {
     pub continuous_rendering: bool,
     pub background_color: Color,
     pub tooltip_delay: Duration,
-    pub view_fn: Option<Box<dyn Fn(WindowId) -> Box<dyn View + Send + Sync>>>,
 }
 
 impl Default for WindowOption {
@@ -42,7 +41,6 @@ impl Default for WindowOption {
             background_color: Color::rgb(255, 255, 255),
             show_fps: false,
             tooltip_delay: Duration::from_millis(500),
-            view_fn: None,
         }
     }
 }
@@ -55,24 +53,35 @@ impl WindowOption {
     /// - 子线程：自动投递到主线程执行，当前线程阻塞等待结果
     pub fn open<F, V>(self, view_fn: F) -> Result<WindowId, Error>
     where
-        F: Fn(WindowId) -> V + Send + 'static,
-        V: IntoIterator<Item=Box<dyn View + Send + Sync + 'static>>,
+        F: Fn(WindowId) -> V + Send + Sync + 'static,
+        V: IntoIterator<Item = Box<dyn View + Send + Sync + 'static>>,
     {
+        let view_fn = Box::new(move |window_id| view_fn(window_id).into_iter().collect::<Vec<_>>());
+
         #[cfg(feature = "cross-thread-window-creation")]
-        let window_id = if !platform::is_event_loop_thread() {
+        {
+            // 如果已在主线程，直接短路返回，不进入投递流程
+            if platform::is_event_loop_thread() {
+                return self.open_with_box(view_fn);
+            }
             use std::sync::mpsc;
             let (tx, rx) = mpsc::sync_channel(1);
-            crate::WINDOW_SPAWNER.pending_window(self.title, self.width, self.height, tx);
+            crate::WINDOW_SPAWNER.pending_window(self, view_fn, tx);
             platform::wake_event_loop();
 
-            rx.recv().map_err(|_| {
+            return rx.recv().map_err(|_| {
                 Error::InitError("The event loop has ended, but the window creation request has not been processed.".into())
-            })?
-        } else {
-            WindowId::create_window(&self.title, self.width, self.height)
-        }?;
+            })?;
+        }
 
         #[cfg(not(feature = "cross-thread-window-creation"))]
+        self.open_with_box(view_fn)
+    }
+
+    pub fn open_with_box(
+        self,
+        view_fn: Box<dyn Fn(WindowId) -> Vec<Box<dyn View + Send + Sync + 'static>>>,
+    ) -> Result<WindowId, Error> {
         let window_id = WindowId::create_window(&self.title, self.width, self.height)?;
 
         window_id.set_size((self.width, self.height))?;
@@ -106,8 +115,6 @@ impl WindowOption {
             .views
             .write()
             .insert(view_id, RwLock::new(Box::new(window_id)));
-
-        let view_fn = Box::new(move |window_id| view_fn(window_id).into_iter().collect::<Vec<_>>());
 
         let root_dyn_view = create_updater(
             move || view_fn(window_id),

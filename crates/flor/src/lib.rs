@@ -98,6 +98,7 @@ impl FlorGui {
     }
 
     pub fn event_loop(&self) -> Result<(), Error> {
+        #[cfg(feature = "cross-thread-window-creation")]
         // 记录事件循环线程
         platform::record_event_loop_thread();
 
