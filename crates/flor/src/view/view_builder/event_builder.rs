@@ -15,7 +15,6 @@ use crate::view::handler::{
     DropHandler, OnDragEnterHandler, OnDragLeaveHandler, OnDragOverHandler,
 };
 
-
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
 
@@ -25,11 +24,17 @@ pub trait EventBuilder {
     fn on_click(self, handler: impl Into<OnClickHandler>) -> Self;
     fn on_button_down(self, handler: impl Into<OnButtonDownHandler>) -> Self;
     fn on_button_up(self, handler: impl Into<OnButtonUpHandler>) -> Self;
-    fn on_right_button_double_click(self, handler: impl Into<OnRightButtonDoubleClickHandler>) -> Self;
+    fn on_right_button_double_click(
+        self,
+        handler: impl Into<OnRightButtonDoubleClickHandler>,
+    ) -> Self;
     fn on_right_button_click(self, handler: impl Into<OnRightButtonClickHandler>) -> Self;
     fn on_right_button_down(self, handler: impl Into<OnRightButtonDownHandler>) -> Self;
     fn on_right_button_up(self, handler: impl Into<OnRightButtonUpHandler>) -> Self;
-    fn on_middle_button_double_click(self, handler: impl Into<OnMiddleButtonDoubleClickHandler>) -> Self;
+    fn on_middle_button_double_click(
+        self,
+        handler: impl Into<OnMiddleButtonDoubleClickHandler>,
+    ) -> Self;
     fn on_middle_button_down(self, handler: impl Into<OnMiddleButtonDownHandler>) -> Self;
     fn on_middle_button_up(self, handler: impl Into<OnMiddleButtonUpHandler>) -> Self;
     fn on_context_menu(self, handler: impl Into<OnContextMenuHandler>) -> Self;

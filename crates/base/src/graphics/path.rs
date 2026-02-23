@@ -137,19 +137,35 @@ impl Path {
             match cmd {
                 PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) => {
                     // 内联的比较逻辑，编译器会优化
-                    if *x < min_x { min_x = *x; }
-                    if *x > max_x { max_x = *x; }
-                    if *y < min_y { min_y = *y; }
-                    if *y > max_y { max_y = *y; }
+                    if *x < min_x {
+                        min_x = *x;
+                    }
+                    if *x > max_x {
+                        max_x = *x;
+                    }
+                    if *y < min_y {
+                        min_y = *y;
+                    }
+                    if *y > max_y {
+                        max_y = *y;
+                    }
                 }
                 PathCommand::Bezier(points) => {
                     // 关键：直接遍历所有控制点和终点
                     // 这是一个“松包围盒”（Loose Bounds），但对于剔除来说是安全且正确的
                     for (x, y) in points {
-                        if *x < min_x { min_x = *x; }
-                        if *x > max_x { max_x = *x; }
-                        if *y < min_y { min_y = *y; }
-                        if *y > max_y { max_y = *y; }
+                        if *x < min_x {
+                            min_x = *x;
+                        }
+                        if *x > max_x {
+                            max_x = *x;
+                        }
+                        if *y < min_y {
+                            min_y = *y;
+                        }
+                        if *y > max_y {
+                            max_y = *y;
+                        }
                     }
                 }
                 PathCommand::Close => {}

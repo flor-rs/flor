@@ -135,7 +135,9 @@ pub fn draw_entry(window_id: WindowId, render: &mut FlorRender) -> Result<(), Er
 
                 // Draw
                 visuals.insert(view_id, ());
-                view.write().on_draw(render, abs_location, layout).error_on_err(format!("view id: {}", view_id));
+                view.write()
+                    .on_draw(render, abs_location, layout)
+                    .error_on_err(format!("view id: {}", view_id));
                 drawn_count += 1;
 
                 // Post-Draw Setup (Child clipping etc)

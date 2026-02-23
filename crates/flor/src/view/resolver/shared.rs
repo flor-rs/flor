@@ -26,7 +26,6 @@ pub fn extract_bracket_value(s: &str) -> Option<&str> {
     }
 }
 
-
 /// 解析颜色值
 ///
 /// 支持:

@@ -74,8 +74,11 @@ impl FocusManager {
         let old_entry = self.current_entry();
 
         // 在作用域列表中找到当前位置
-        let current_pos_in_scope = old_entry
-            .and_then(|(vid, vi)| scoped_list.iter().position(|(_, v, i)| *v == vid && *i == vi));
+        let current_pos_in_scope = old_entry.and_then(|(vid, vi)| {
+            scoped_list
+                .iter()
+                .position(|(_, v, i)| *v == vid && *i == vi)
+        });
 
         // 计算下一个位置
         let next_pos = match current_pos_in_scope {
@@ -104,8 +107,11 @@ impl FocusManager {
         let old_entry = self.current_entry();
 
         // 在作用域列表中找到当前位置
-        let current_pos_in_scope = old_entry
-            .and_then(|(vid, vi)| scoped_list.iter().position(|(_, v, i)| *v == vid && *i == vi));
+        let current_pos_in_scope = old_entry.and_then(|(vid, vi)| {
+            scoped_list
+                .iter()
+                .position(|(_, v, i)| *v == vid && *i == vi)
+        });
 
         // 计算上一个位置
         let prev_pos = match current_pos_in_scope {

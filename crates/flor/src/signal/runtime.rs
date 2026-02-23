@@ -58,7 +58,7 @@ impl Runtime {
     }
 
     #[inline]
-    pub(crate) fn insert_update_queue(&self, signal_ids: impl IntoIterator<Item=Id>) {
+    pub(crate) fn insert_update_queue(&self, signal_ids: impl IntoIterator<Item = Id>) {
         self.update_queue.lock().extend(signal_ids);
     }
 

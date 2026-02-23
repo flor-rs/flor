@@ -169,13 +169,13 @@ const fn get_4bit_hex_channels(hex_str: &str) -> Result<[u8; 8], ColorParseError
 }
 
 impl Color {
-    pub const BLACK:  Color = Color::rgb(0, 0, 0);
-    pub const WHITE:  Color = Color::rgb(255, 255, 255);
+    pub const BLACK: Color = Color::rgb(0, 0, 0);
+    pub const WHITE: Color = Color::rgb(255, 255, 255);
 
     // ========================================================================
     // Slate (冷灰色 - 偏蓝)
     // ========================================================================
-    pub const SLATE_50:  Color = Color::rgb(248, 250, 252);
+    pub const SLATE_50: Color = Color::rgb(248, 250, 252);
     pub const SLATE_100: Color = Color::rgb(241, 245, 249);
     pub const SLATE_200: Color = Color::rgb(226, 232, 240);
     pub const SLATE_300: Color = Color::rgb(203, 213, 225);
@@ -190,7 +190,7 @@ impl Color {
     // ========================================================================
     // Gray (中性灰 - 也就是 Cool Gray)
     // ========================================================================
-    pub const GRAY_50:  Color = Color::rgb(249, 250, 251);
+    pub const GRAY_50: Color = Color::rgb(249, 250, 251);
     pub const GRAY_100: Color = Color::rgb(243, 244, 246);
     pub const GRAY_200: Color = Color::rgb(229, 231, 235);
     pub const GRAY_300: Color = Color::rgb(209, 213, 219);
@@ -205,7 +205,7 @@ impl Color {
     // ========================================================================
     // Zinc (锌灰 - 工业感)
     // ========================================================================
-    pub const ZINC_50:  Color = Color::rgb(250, 250, 250);
+    pub const ZINC_50: Color = Color::rgb(250, 250, 250);
     pub const ZINC_100: Color = Color::rgb(244, 244, 245);
     pub const ZINC_200: Color = Color::rgb(228, 228, 231);
     pub const ZINC_300: Color = Color::rgb(212, 212, 216);
@@ -220,7 +220,7 @@ impl Color {
     // ========================================================================
     // Neutral (真中性色)
     // ========================================================================
-    pub const NEUTRAL_50:  Color = Color::rgb(250, 250, 250);
+    pub const NEUTRAL_50: Color = Color::rgb(250, 250, 250);
     pub const NEUTRAL_100: Color = Color::rgb(245, 245, 245);
     pub const NEUTRAL_200: Color = Color::rgb(229, 229, 229);
     pub const NEUTRAL_300: Color = Color::rgb(212, 212, 212);
@@ -235,7 +235,7 @@ impl Color {
     // ========================================================================
     // Red (红色)
     // ========================================================================
-    pub const RED_50:  Color = Color::rgb(254, 242, 242);
+    pub const RED_50: Color = Color::rgb(254, 242, 242);
     pub const RED_100: Color = Color::rgb(254, 226, 226);
     pub const RED_200: Color = Color::rgb(254, 202, 202);
     pub const RED_300: Color = Color::rgb(252, 165, 165);
@@ -250,7 +250,7 @@ impl Color {
     // ========================================================================
     // Orange (橙色)
     // ========================================================================
-    pub const ORANGE_50:  Color = Color::rgb(255, 247, 237);
+    pub const ORANGE_50: Color = Color::rgb(255, 247, 237);
     pub const ORANGE_100: Color = Color::rgb(255, 237, 213);
     pub const ORANGE_200: Color = Color::rgb(254, 215, 170);
     pub const ORANGE_300: Color = Color::rgb(253, 186, 116);
@@ -265,7 +265,7 @@ impl Color {
     // ========================================================================
     // Amber (琥珀色 - 暖黄)
     // ========================================================================
-    pub const AMBER_50:  Color = Color::rgb(255, 251, 235);
+    pub const AMBER_50: Color = Color::rgb(255, 251, 235);
     pub const AMBER_100: Color = Color::rgb(254, 243, 199);
     pub const AMBER_200: Color = Color::rgb(253, 230, 138);
     pub const AMBER_300: Color = Color::rgb(252, 211, 77);
@@ -280,7 +280,7 @@ impl Color {
     // ========================================================================
     // Yellow (黄色)
     // ========================================================================
-    pub const YELLOW_50:  Color = Color::rgb(254, 252, 232);
+    pub const YELLOW_50: Color = Color::rgb(254, 252, 232);
     pub const YELLOW_100: Color = Color::rgb(254, 249, 195);
     pub const YELLOW_200: Color = Color::rgb(254, 240, 138);
     pub const YELLOW_300: Color = Color::rgb(253, 224, 71);
@@ -295,7 +295,7 @@ impl Color {
     // ========================================================================
     // Lime (酸橙绿)
     // ========================================================================
-    pub const LIME_50:  Color = Color::rgb(247, 254, 231);
+    pub const LIME_50: Color = Color::rgb(247, 254, 231);
     pub const LIME_100: Color = Color::rgb(236, 252, 203);
     pub const LIME_200: Color = Color::rgb(217, 249, 157);
     pub const LIME_300: Color = Color::rgb(190, 242, 100);
@@ -310,7 +310,7 @@ impl Color {
     // ========================================================================
     // Green (绿色)
     // ========================================================================
-    pub const GREEN_50:  Color = Color::rgb(240, 253, 244);
+    pub const GREEN_50: Color = Color::rgb(240, 253, 244);
     pub const GREEN_100: Color = Color::rgb(220, 252, 231);
     pub const GREEN_200: Color = Color::rgb(187, 247, 208);
     pub const GREEN_300: Color = Color::rgb(134, 239, 172);
@@ -325,7 +325,7 @@ impl Color {
     // ========================================================================
     // Emerald (祖母绿)
     // ========================================================================
-    pub const EMERALD_50:  Color = Color::rgb(236, 253, 245);
+    pub const EMERALD_50: Color = Color::rgb(236, 253, 245);
     pub const EMERALD_100: Color = Color::rgb(209, 250, 229);
     pub const EMERALD_200: Color = Color::rgb(167, 243, 208);
     pub const EMERALD_300: Color = Color::rgb(110, 231, 183);
@@ -340,7 +340,7 @@ impl Color {
     // ========================================================================
     // Teal (蓝绿色)
     // ========================================================================
-    pub const TEAL_50:  Color = Color::rgb(240, 253, 250);
+    pub const TEAL_50: Color = Color::rgb(240, 253, 250);
     pub const TEAL_100: Color = Color::rgb(204, 251, 241);
     pub const TEAL_200: Color = Color::rgb(153, 246, 228);
     pub const TEAL_300: Color = Color::rgb(94, 234, 212);
@@ -355,7 +355,7 @@ impl Color {
     // ========================================================================
     // Cyan (青色)
     // ========================================================================
-    pub const CYAN_50:  Color = Color::rgb(236, 254, 255);
+    pub const CYAN_50: Color = Color::rgb(236, 254, 255);
     pub const CYAN_100: Color = Color::rgb(207, 250, 254);
     pub const CYAN_200: Color = Color::rgb(165, 243, 252);
     pub const CYAN_300: Color = Color::rgb(103, 232, 249);
@@ -370,7 +370,7 @@ impl Color {
     // ========================================================================
     // Sky (天蓝)
     // ========================================================================
-    pub const SKY_50:  Color = Color::rgb(240, 249, 255);
+    pub const SKY_50: Color = Color::rgb(240, 249, 255);
     pub const SKY_100: Color = Color::rgb(224, 242, 254);
     pub const SKY_200: Color = Color::rgb(186, 230, 253);
     pub const SKY_300: Color = Color::rgb(125, 211, 252);
@@ -385,7 +385,7 @@ impl Color {
     // ========================================================================
     // Blue (蓝色)
     // ========================================================================
-    pub const BLUE_50:  Color = Color::rgb(239, 246, 255);
+    pub const BLUE_50: Color = Color::rgb(239, 246, 255);
     pub const BLUE_100: Color = Color::rgb(219, 234, 254);
     pub const BLUE_200: Color = Color::rgb(191, 219, 254);
     pub const BLUE_300: Color = Color::rgb(147, 197, 253);
@@ -400,7 +400,7 @@ impl Color {
     // ========================================================================
     // Indigo (靛青)
     // ========================================================================
-    pub const INDIGO_50:  Color = Color::rgb(238, 242, 255);
+    pub const INDIGO_50: Color = Color::rgb(238, 242, 255);
     pub const INDIGO_100: Color = Color::rgb(224, 231, 255);
     pub const INDIGO_200: Color = Color::rgb(199, 210, 254);
     pub const INDIGO_300: Color = Color::rgb(165, 180, 252);
@@ -415,7 +415,7 @@ impl Color {
     // ========================================================================
     // Violet (紫罗兰)
     // ========================================================================
-    pub const VIOLET_50:  Color = Color::rgb(245, 243, 255);
+    pub const VIOLET_50: Color = Color::rgb(245, 243, 255);
     pub const VIOLET_100: Color = Color::rgb(237, 233, 254);
     pub const VIOLET_200: Color = Color::rgb(221, 214, 254);
     pub const VIOLET_300: Color = Color::rgb(196, 181, 253);
@@ -430,7 +430,7 @@ impl Color {
     // ========================================================================
     // Purple (紫色)
     // ========================================================================
-    pub const PURPLE_50:  Color = Color::rgb(250, 245, 255);
+    pub const PURPLE_50: Color = Color::rgb(250, 245, 255);
     pub const PURPLE_100: Color = Color::rgb(243, 232, 255);
     pub const PURPLE_200: Color = Color::rgb(233, 213, 255);
     pub const PURPLE_300: Color = Color::rgb(216, 180, 254);
@@ -445,7 +445,7 @@ impl Color {
     // ========================================================================
     // Fuchsia (紫红色/洋红)
     // ========================================================================
-    pub const FUCHSIA_50:  Color = Color::rgb(253, 244, 255);
+    pub const FUCHSIA_50: Color = Color::rgb(253, 244, 255);
     pub const FUCHSIA_100: Color = Color::rgb(250, 232, 255);
     pub const FUCHSIA_200: Color = Color::rgb(245, 208, 254);
     pub const FUCHSIA_300: Color = Color::rgb(240, 171, 252);
@@ -460,7 +460,7 @@ impl Color {
     // ========================================================================
     // Pink (粉色)
     // ========================================================================
-    pub const PINK_50:  Color = Color::rgb(253, 242, 248);
+    pub const PINK_50: Color = Color::rgb(253, 242, 248);
     pub const PINK_100: Color = Color::rgb(252, 231, 243);
     pub const PINK_200: Color = Color::rgb(251, 204, 231);
     pub const PINK_300: Color = Color::rgb(249, 168, 212);
@@ -475,7 +475,7 @@ impl Color {
     // ========================================================================
     // Rose (玫瑰红)
     // ========================================================================
-    pub const ROSE_50:  Color = Color::rgb(255, 241, 242);
+    pub const ROSE_50: Color = Color::rgb(255, 241, 242);
     pub const ROSE_100: Color = Color::rgb(255, 228, 230);
     pub const ROSE_200: Color = Color::rgb(254, 205, 211);
     pub const ROSE_300: Color = Color::rgb(253, 164, 175);

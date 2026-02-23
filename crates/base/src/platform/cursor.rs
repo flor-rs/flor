@@ -22,7 +22,6 @@ pub trait CursorHandle: Debug + Clone + Send + Sync + 'static {
     fn handle(&self) -> Self::Handle;
 }
 
-
 /// 跨平台光标图标的枚举。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorIcon {

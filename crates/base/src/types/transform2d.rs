@@ -34,26 +34,36 @@ impl PartialEq for Transform2D {
     fn eq(&self, other: &Self) -> bool {
         // 使用宽松的浮点数比较，防止精度误差导致动画抖动
         let eps = 1e-5;
-        (self.m11 - other.m11).abs() < eps &&
-            (self.m12 - other.m12).abs() < eps &&
-            (self.m21 - other.m21).abs() < eps &&
-            (self.m22 - other.m22).abs() < eps &&
-            (self.dx - other.dx).abs() < eps &&
-            (self.dy - other.dy).abs() < eps
+        (self.m11 - other.m11).abs() < eps
+            && (self.m12 - other.m12).abs() < eps
+            && (self.m21 - other.m21).abs() < eps
+            && (self.m22 - other.m22).abs() < eps
+            && (self.dx - other.dx).abs() < eps
+            && (self.dy - other.dy).abs() < eps
     }
 }
 
 impl Transform2D {
     /// 单位矩阵
     pub const IDENTITY: Transform2D = Transform2D {
-        m11: 1.0, m12: 0.0,
-        m21: 0.0, m22: 1.0,
-        dx: 0.0, dy: 0.0,
+        m11: 1.0,
+        m12: 0.0,
+        m21: 0.0,
+        m22: 1.0,
+        dx: 0.0,
+        dy: 0.0,
     };
 
     /// 自定义构建 (对应 CSS matrix)
     pub fn new(m11: f32, m12: f32, m21: f32, m22: f32, dx: f32, dy: f32) -> Self {
-        Transform2D { m11, m12, m21, m22, dx, dy }
+        Transform2D {
+            m11,
+            m12,
+            m21,
+            m22,
+            dx,
+            dy,
+        }
     }
 
     // =========================================================
@@ -62,12 +72,20 @@ impl Transform2D {
 
     /// 平移
     pub fn translation(x: f32, y: f32) -> Self {
-        Transform2D { dx: x, dy: y, ..Self::IDENTITY }
+        Transform2D {
+            dx: x,
+            dy: y,
+            ..Self::IDENTITY
+        }
     }
 
     /// 缩放
     pub fn scale(sx: f32, sy: f32) -> Self {
-        Transform2D { m11: sx, m22: sy, ..Self::IDENTITY }
+        Transform2D {
+            m11: sx,
+            m22: sy,
+            ..Self::IDENTITY
+        }
     }
 
     /// 旋转 (弧度)
@@ -75,8 +93,10 @@ impl Transform2D {
     pub fn rotation(radians: f32) -> Self {
         let (sin, cos) = radians.sin_cos();
         Transform2D {
-            m11: cos,  m12: sin,
-            m21: -sin, m22: cos,
+            m11: cos,
+            m12: sin,
+            m21: -sin,
+            m22: cos,
             ..Self::IDENTITY
         }
     }
@@ -166,8 +186,8 @@ impl Transform2D {
             m12: self.m11 * other.m12 + self.m12 * other.m22,
             m21: self.m21 * other.m11 + self.m22 * other.m21,
             m22: self.m21 * other.m12 + self.m22 * other.m22,
-            dx:  self.dx  * other.m11 + self.dy  * other.m21 + other.dx,
-            dy:  self.dx  * other.m12 + self.dy  * other.m22 + other.dy,
+            dx: self.dx * other.m11 + self.dy * other.m21 + other.dx,
+            dy: self.dx * other.m12 + self.dy * other.m22 + other.dy,
         }
     }
 
@@ -221,10 +241,7 @@ impl Transform2D {
 
     /// 变换向量 (忽略平移，只受缩放/旋转影响)
     pub fn transform_vector(&self, x: f32, y: f32) -> (f32, f32) {
-        (
-            x * self.m11 + y * self.m21,
-            x * self.m12 + y * self.m22,
-        )
+        (x * self.m11 + y * self.m21, x * self.m12 + y * self.m22)
     }
 
     /// 变换矩形 (AABB)
@@ -232,10 +249,10 @@ impl Transform2D {
     /// 对于 UI 脏矩形计算非常重要
     pub fn transform_rect(&self, x: f32, y: f32, w: f32, h: f32) -> (f32, f32, f32, f32) {
         // 计算矩形四个角的变换后坐标
-        let (x1, y1) = self.transform_point(x, y);          // Top-Left
-        let (x2, y2) = self.transform_point(x + w, y);      // Top-Right
-        let (x3, y3) = self.transform_point(x, y + h);      // Bottom-Left
-        let (x4, y4) = self.transform_point(x + w, y + h);  // Bottom-Right
+        let (x1, y1) = self.transform_point(x, y); // Top-Left
+        let (x2, y2) = self.transform_point(x + w, y); // Top-Right
+        let (x3, y3) = self.transform_point(x, y + h); // Bottom-Left
+        let (x4, y4) = self.transform_point(x + w, y + h); // Bottom-Right
 
         // 找出最小和最大值
         let min_x = x1.min(x2).min(x3).min(x4);

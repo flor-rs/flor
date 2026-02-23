@@ -17,8 +17,7 @@ use platform::base::HandleResult;
 use platform::base::Message;
 use platform::WindowId;
 
-pub static RENDERS: Lazy<DashMap<WindowId, RwLock<FlorRender>>> =
-    Lazy::new(|| Default::default());
+pub static RENDERS: Lazy<DashMap<WindowId, RwLock<FlorRender>>> = Lazy::new(|| Default::default());
 
 /// 注册窗口到总线
 #[inline]
@@ -47,9 +46,7 @@ pub fn render<'a>(window_id: WindowId) -> Option<Ref<'a, WindowId, RwLock<FlorRe
     RENDERS.get(&window_id)
 }
 
-pub fn render_from_view_id<'a>(
-    view_id: ViewId,
-) -> Option<Ref<'a, WindowId, RwLock<FlorRender>>> {
+pub fn render_from_view_id<'a>(view_id: ViewId) -> Option<Ref<'a, WindowId, RwLock<FlorRender>>> {
     let ret = VIEW_STORAGE
         .window_ids
         .read()
@@ -270,7 +267,12 @@ pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, 
             *effect = window_id.bus_drop_entry(key_state, mouse_position, &data);
             HandleResult::Handled
         }
-        Message::MouseWheel { axis, delta, key_state, mouse_position } => {
+        Message::MouseWheel {
+            axis,
+            delta,
+            key_state,
+            mouse_position,
+        } => {
             window_id.bus_wheel_scroll_lines_changed_entry(axis, delta, key_state, mouse_position);
             HandleResult::Handled
         }

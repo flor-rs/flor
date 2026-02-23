@@ -63,10 +63,7 @@ where
     }
 }
 
-pub fn create_updater<R>(
-    compute: impl Fn() -> R + 'static,
-    on_change: impl Fn(R) + 'static,
-) -> R
+pub fn create_updater<R>(compute: impl Fn() -> R + 'static, on_change: impl Fn(R) + 'static) -> R
 where
     R: 'static,
 {

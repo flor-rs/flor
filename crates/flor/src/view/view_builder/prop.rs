@@ -41,7 +41,7 @@ macro_rules! define_prop {
             }
         }
     };
-    
+
     // Clone 类型版本 (String, Color 等)
     (clone $trait_name:ident, $type:ty) => {
         pub trait $trait_name: 'static {
@@ -63,7 +63,7 @@ macro_rules! define_prop {
             }
         }
     };
-    
+
     // Copy 类型带额外 impl 的版本
     (copy $trait_name:ident, $type:ty, extra: $($extra_type:ty => $convert:expr),* $(,)?) => {
         pub trait $trait_name: 'static {
@@ -93,7 +93,7 @@ macro_rules! define_prop {
             }
         }
     };
-    
+
     // Clone 类型带额外 impl
     (clone $trait_name:ident, $type:ty, extra: $($extra_type:ty => $convert:expr),* $(,)?) => {
         pub trait $trait_name: 'static {

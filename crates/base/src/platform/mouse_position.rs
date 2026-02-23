@@ -6,10 +6,6 @@ pub struct MousePosition {
 
 impl Default for MousePosition {
     fn default() -> Self {
-        Self {
-            x: 0,
-            y: 0,
-        }
+        Self { x: 0, y: 0 }
     }
 }
-

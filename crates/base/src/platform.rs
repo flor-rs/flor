@@ -8,11 +8,10 @@ mod key_state;
 #[cfg(feature = "monitor")]
 mod monitor;
 mod mouse_position;
-mod window_operations;
-mod window_state;
 #[cfg(feature = "tray")]
 mod tray;
-
+mod window_operations;
+mod window_state;
 
 pub use {
     cursor::*, events::*, handle_result::*, key_code::*, key_state::*, mouse_position::*,

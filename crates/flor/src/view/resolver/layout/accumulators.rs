@@ -1,6 +1,5 @@
 use crate::view::control_state::ControlState;
 
-
 use crate::view::resolver::layout::{Layout, LayoutKey, LayoutResolver};
 use crate::view::resolver::shared::extract_bracket_value;
 

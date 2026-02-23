@@ -1,5 +1,8 @@
 use flor_base::platform::KeyState;
-use windows::Win32::System::SystemServices::{MK_CONTROL, MK_LBUTTON, MK_MBUTTON, MK_RBUTTON, MK_SHIFT, MK_XBUTTON1, MK_XBUTTON2, MODIFIERKEYS_FLAGS};
+use windows::Win32::System::SystemServices::{
+    MK_CONTROL, MK_LBUTTON, MK_MBUTTON, MK_RBUTTON, MK_SHIFT, MK_XBUTTON1, MK_XBUTTON2,
+    MODIFIERKEYS_FLAGS,
+};
 
 pub trait IntoKeyState {
     fn into_key_state(self) -> KeyState;

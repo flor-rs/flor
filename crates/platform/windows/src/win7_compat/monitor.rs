@@ -9,7 +9,12 @@ pub unsafe fn try_dynamic_get_dpi_for_monitor(h_monitor: HMONITOR) -> Option<(u3
         let func_ptr = GetProcAddress(h_module, s!("GetDpiForMonitor"));
         if let Some(func) = func_ptr {
             // 定义函数签名
-            type GetDpiFunc = unsafe extern "system" fn(HMONITOR, MONITOR_DPI_TYPE, *mut u32, *mut u32) -> windows::core::HRESULT;
+            type GetDpiFunc = unsafe extern "system" fn(
+                HMONITOR,
+                MONITOR_DPI_TYPE,
+                *mut u32,
+                *mut u32,
+            ) -> windows::core::HRESULT;
             let func: GetDpiFunc = std::mem::transmute(func);
 
             let mut x = 0;

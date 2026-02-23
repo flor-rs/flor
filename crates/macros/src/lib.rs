@@ -90,11 +90,11 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
     // 解析枚举级别的 #[resolver(...)] 属性
     let mut explicit_control: Option<syn::Ident> = None;
     let mut skip_builder = false;
-    let mut generate_update_view = true;   // 默认生成 update_view
-    let mut generate_computed = true;      // 默认生成 computed 结构体
-    let mut generate_computed_fn = true;   // 默认生成 computed_xxx 函数
-    let mut generate_default = true;       // 默认生成 Default 实现
-    let mut data_type: Option<syn::Type> = None;  // data = Type
+    let mut generate_update_view = true; // 默认生成 update_view
+    let mut generate_computed = true; // 默认生成 computed 结构体
+    let mut generate_computed_fn = true; // 默认生成 computed_xxx 函数
+    let mut generate_default = true; // 默认生成 Default 实现
+    let mut data_type: Option<syn::Type> = None; // data = Type
 
     for attr in input.attrs.iter() {
         if !attr.path().is_ident("resolver") {
@@ -211,8 +211,8 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
                 let ty = &f.unnamed.first().unwrap().ty;
 
                 // Update 枚举
-                update_variants.push(quote! { 
-                    #variant_ident(#flor_crate::view::control_state::ControlState, #ty) 
+                update_variants.push(quote! {
+                    #variant_ident(#flor_crate::view::control_state::ControlState, #ty)
                 });
 
                 // Computed 字段
@@ -245,13 +245,19 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
                 }
             }
             Fields::Unnamed(f) => {
-                let args: Vec<_> = (0..f.unnamed.len()).map(|i| format_ident!("arg{}", i)).collect();
+                let args: Vec<_> = (0..f.unnamed.len())
+                    .map(|i| format_ident!("arg{}", i))
+                    .collect();
                 let args_ty: Vec<_> = f.unnamed.iter().map(|x| &x.ty).collect();
-                let trait_args: Vec<_> = args.iter().zip(args_ty.iter()).map(|(a, t)| quote! { #a: #t }).collect();
+                let trait_args: Vec<_> = args
+                    .iter()
+                    .zip(args_ty.iter())
+                    .map(|(a, t)| quote! { #a: #t })
+                    .collect();
 
                 // Update 枚举
-                update_variants.push(quote! { 
-                    #variant_ident(#flor_crate::view::control_state::ControlState, #(#args_ty),*) 
+                update_variants.push(quote! {
+                    #variant_ident(#flor_crate::view::control_state::ControlState, #(#args_ty),*)
                 });
 
                 // Computed 字段 (Tuple)
@@ -286,12 +292,20 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             Fields::Named(f) => {
                 let args: Vec<_> = f.named.iter().map(|x| x.ident.as_ref().unwrap()).collect();
                 let args_ty: Vec<_> = f.named.iter().map(|x| &x.ty).collect();
-                let trait_args: Vec<_> = args.iter().zip(args_ty.iter()).map(|(a, t)| quote! { #a: #t }).collect();
-                let update_fields: Vec<_> = args.iter().zip(args_ty.iter()).map(|(a, t)| quote! { #a: #t }).collect();
+                let trait_args: Vec<_> = args
+                    .iter()
+                    .zip(args_ty.iter())
+                    .map(|(a, t)| quote! { #a: #t })
+                    .collect();
+                let update_fields: Vec<_> = args
+                    .iter()
+                    .zip(args_ty.iter())
+                    .map(|(a, t)| quote! { #a: #t })
+                    .collect();
 
                 // Update 枚举
-                update_variants.push(quote! { 
-                    #variant_ident { state: #flor_crate::view::control_state::ControlState, #(#update_fields),* } 
+                update_variants.push(quote! {
+                    #variant_ident { state: #flor_crate::view::control_state::ControlState, #(#update_fields),* }
                 });
 
                 // Computed 字段

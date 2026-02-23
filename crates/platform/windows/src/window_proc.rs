@@ -116,13 +116,7 @@ pub(crate) unsafe extern "system" fn window_proc(
             let dpi_x = (w_param.0 & 0xFFFF) as f32;
             let dpi_y = ((w_param.0 >> 16) & 0xFFFF) as f32;
 
-            proc().window_proc(
-                hwnd.into(),
-                Message::DpiChange {
-                    dpi_x,
-                    dpi_y,
-                },
-            )
+            proc().window_proc(hwnd.into(), Message::DpiChange { dpi_x, dpi_y })
         }
         WM_SETCURSOR => proc().window_proc(hwnd.into(), Message::Cursor),
         WM_LBUTTONDBLCLK => proc().window_proc(

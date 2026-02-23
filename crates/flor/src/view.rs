@@ -978,10 +978,7 @@ pub trait View {
             h.0(self.view_id(), key_state, mouse_position);
         } else {
             self.on_tooltip_show(key_state, mouse_position)
-                .error_on_err(format!(
-                    "on_tooltip_show {{ view_id:{} }}",
-                    self.view_id()
-                ));
+                .error_on_err(format!("on_tooltip_show {{ view_id:{} }}", self.view_id()));
         }
     }
 
@@ -999,10 +996,7 @@ pub trait View {
             h.0(self.view_id());
         } else {
             self.on_tooltip_hide()
-                .error_on_err(format!(
-                    "on_tooltip_hide {{ view_id:{} }}",
-                    self.view_id()
-                ));
+                .error_on_err(format!("on_tooltip_hide {{ view_id:{} }}", self.view_id()));
         }
     }
 }

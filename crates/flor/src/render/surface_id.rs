@@ -1,7 +1,7 @@
 use flor_base::graphics::SurfaceId;
 use graphics::handle::D2DSurfaceId;
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum FlorSurfaceId {
     #[cfg(feature = "direct2d")]
     D2DSurfaceId(D2DSurfaceId),

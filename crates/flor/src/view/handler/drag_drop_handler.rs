@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct DragEnterOverHandler(
-    pub Arc<
+    pub  Arc<
         dyn Fn(ViewId, KeyState, MousePosition, &[DragFormat], &mut DropEffect)
-        + Send
-        + Sync
-        + 'static,
+            + Send
+            + Sync
+            + 'static,
     >,
 );
 
@@ -30,7 +30,7 @@ pub type OnDragLeaveHandler = Handler;
 
 #[derive(Clone)]
 pub struct DropHandler(
-    pub Arc<
+    pub  Arc<
         dyn Fn(ViewId, KeyState, MousePosition, &DragData, &mut DropEffect) + Send + Sync + 'static,
     >,
 );

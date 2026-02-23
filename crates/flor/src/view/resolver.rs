@@ -47,7 +47,6 @@ where
     }
 }
 
-
 impl<K, V, D, F> Resolver<K, V, D, F>
 where
     K: Eq + Hash + Clone,

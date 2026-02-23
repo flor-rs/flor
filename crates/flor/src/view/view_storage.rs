@@ -87,7 +87,7 @@ impl ViewStorage {
     pub fn add_childs(
         &self,
         parent: ViewId,
-        children: impl IntoIterator<Item=Box<dyn View + Send + Sync + 'static>>,
+        children: impl IntoIterator<Item = Box<dyn View + Send + Sync + 'static>>,
     ) {
         let children: Vec<_> = children.into_iter().collect();
         if children.is_empty() {

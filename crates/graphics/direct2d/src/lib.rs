@@ -242,9 +242,7 @@ impl RenderFactory {
 /// 剪裁类型，保存完整数据以支持 suspend/resume
 pub enum ClipType {
     /// 普通矩形剪裁（硬件加速）
-    AxisAligned {
-        rect: D2D_RECT_F,
-    },
+    AxisAligned { rect: D2D_RECT_F },
     /// 复杂形状剪裁（使用 Layer）
     Layer {
         layer: ID2D1Layer,
@@ -2276,7 +2274,8 @@ impl RenderContext for D2DRender {
                 };
                 self.current_render
                     .PushAxisAlignedClip(&d2d_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-                self.clip_stack.push(ClipType::AxisAligned { rect: d2d_rect });
+                self.clip_stack
+                    .push(ClipType::AxisAligned { rect: d2d_rect });
             } else {
                 // [Quality Path] 有旋转 -> 必须使用 Layer + Geometry Mask 才能切出正确的旋转后矩形
                 let d2d_rect = D2D_RECT_F {

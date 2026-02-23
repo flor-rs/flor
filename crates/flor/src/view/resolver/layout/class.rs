@@ -30,4 +30,3 @@ impl ClassLoader for LayoutResolver {
         disabled.apply(self, ControlState::Disabled);
     }
 }
-

@@ -175,9 +175,7 @@ fn hit_test_recursive(
             },
             key_state,
         ) {
-            return Some(HitTestResult {
-                view_id,
-            });
+            return Some(HitTestResult { view_id });
         }
     }
 
@@ -217,9 +215,7 @@ fn hit_test_recursive(
                 },
                 key_state,
             ) {
-                return Some(HitTestResult {
-                    view_id,
-                });
+                return Some(HitTestResult { view_id });
             }
         }
     }

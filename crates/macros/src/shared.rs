@@ -8,8 +8,6 @@ pub(crate) fn flor_crate() -> Ident {
             FoundCrate::Itself => Ident::new("crate", Span::call_site()),
             FoundCrate::Name(name) => Ident::new(&name, Span::call_site()),
         },
-        Err(_) => {
-            Ident::new("flor", Span::call_site())
-        }
+        Err(_) => Ident::new("flor", Span::call_site()),
     }
 }

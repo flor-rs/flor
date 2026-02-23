@@ -704,7 +704,6 @@ impl RenderContext for FlorRender {
         }
     }
 
-
     fn capture_snapshot(
         &mut self,
         rect: Option<(f32, f32, u32, u32)>,

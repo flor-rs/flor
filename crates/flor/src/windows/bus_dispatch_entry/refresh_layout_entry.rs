@@ -118,21 +118,30 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
             if let Some(view_id) = node_context_view_id {
                 if let Some(dyn_view) = views.get(*view_id) {
                     // 计算 control_state（按优先级：Disabled > Active > Focus > Hover > Normal）
-                    let control_state = if let Some(view_state) = measure_states.get(*view_id).map(|s| s.read()) {
-                        match true {
-                            _ if view_state.disable => ControlState::Disabled,
-                            _ if pressed.get(*view_id).is_some() => ControlState::Active,
-                            _ if window_entry.focus_manager.is_focused(*view_id) => ControlState::Focus,
-                            _ if window_entry.hover_id == Some(*view_id) => ControlState::Hover,
-                            _ => ControlState::Normal,
-                        }
-                    } else {
-                        ControlState::Normal
-                    };
+                    let control_state =
+                        if let Some(view_state) = measure_states.get(*view_id).map(|s| s.read()) {
+                            match true {
+                                _ if view_state.disable => ControlState::Disabled,
+                                _ if pressed.get(*view_id).is_some() => ControlState::Active,
+                                _ if window_entry.focus_manager.is_focused(*view_id) => {
+                                    ControlState::Focus
+                                }
+                                _ if window_entry.hover_id == Some(*view_id) => ControlState::Hover,
+                                _ => ControlState::Normal,
+                            }
+                        } else {
+                            ControlState::Normal
+                        };
 
                     let mut view = dyn_view.write();
                     return view
-                        .on_measure(known_dimensions, available_space, style, control_state, render)
+                        .on_measure(
+                            known_dimensions,
+                            available_space,
+                            style,
+                            control_state,
+                            render,
+                        )
                         .unwrap_or(Size::ZERO);
                 }
             }

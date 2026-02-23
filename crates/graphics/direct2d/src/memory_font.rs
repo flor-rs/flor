@@ -2,13 +2,12 @@ mod memory_font_file_loader;
 mod memory_font_file_stream;
 
 use crate::handle::BOOL;
+pub use memory_font_file_loader::*;
 use std::ffi::c_void;
 use std::slice;
-use windows::core::Result;
 use windows::Win32::Foundation::E_FAIL;
 use windows::Win32::Graphics::DirectWrite::IDWriteFontFace;
 use windows_core::Error;
-pub use memory_font_file_loader::*;
 
 /// 从 IDWriteFontFace 中手动解析 Family Name
 /// OpenType 规范: https://learn.microsoft.com/en-us/typography/opentype/spec/name
@@ -44,14 +43,19 @@ pub unsafe fn get_family_name_from_face(face: &IDWriteFontFace) -> Result<String
             unsafe { self.face.ReleaseFontTable(self.context) };
         }
     }
-    let _guard = TableGuard { face, context: table_context };
+    let _guard = TableGuard {
+        face,
+        context: table_context,
+    };
 
     // 开始解析二进制数据
     let data = slice::from_raw_parts(table_data_ptr as *const u8, table_size as usize);
 
     // 简单的 Helper 读取 Big Endian u16
     let read_u16 = |offset: usize| -> Option<u16> {
-        if offset + 2 > data.len() { return None; }
+        if offset + 2 > data.len() {
+            return None;
+        }
         Some(u16::from_be_bytes([data[offset], data[offset + 1]]))
     };
 
