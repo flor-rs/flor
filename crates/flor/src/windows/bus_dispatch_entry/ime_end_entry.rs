@@ -1,0 +1,18 @@
+use crate::log_error::ResultLogExt;
+use crate::view::view_storage::VIEW_STORAGE;
+use crate::windows::entry::WindowEntryVisit;
+use platform::WindowId;
+
+pub fn ime_end_entry(window_id: WindowId) {
+    if let Some(view_id) = window_id
+        .entry()
+        .map(|v| v.focus_manager.current_view_id())
+        .flatten()
+    {
+        if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
+            view.write()
+                .on_ime_end()
+                .error_on_err(format!("on_ime_end {{ view_id:{} }}", view_id));
+        }
+    }
+}

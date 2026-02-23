@@ -1,0 +1,33 @@
+use crate::log_error::ResultLogExt;
+use crate::view::view_storage::VIEW_STORAGE;
+use crate::view::View;
+use crate::windows::entry::WindowEntryVisit;
+use flor_base::platform::KeyCode;
+use platform::WindowId;
+
+pub fn key_up_entry(
+    mut window_id: WindowId,
+    code: KeyCode,
+    is_alt: bool,
+    is_ctrl: bool,
+    is_shift: bool,
+) {
+    let views = VIEW_STORAGE.views.read();
+
+    if let Some(view_id) = window_id
+        .entry()
+        .and_then(|entry| entry.focus_manager.current_view_id())
+    {
+        if let Some(view) = views.get(view_id) {
+            view.write().call_key_up(code, is_alt, is_ctrl, is_shift);
+            return;
+        }
+    }
+
+    window_id
+        .on_key_up(code, is_alt, is_ctrl, is_shift)
+        .error_on_err(format!(
+            "on_key_up {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+            code, is_alt, is_ctrl, is_shift
+        ));
+}
