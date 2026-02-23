@@ -59,7 +59,7 @@ pub fn render_from_view_id<'a>(view_id: ViewId) -> Option<Ref<'a, WindowId, RwLo
 ///
 /// 小心访问bus卡死
 ///
-pub fn event(mut window_id: WindowId, message: Message) -> Result<HandleResult, Error> {
+pub fn event(window_id: WindowId, message: Message) -> Result<HandleResult, Error> {
     let handle_result = match message {
         Message::Draw => {
             trace!("Draw begin");

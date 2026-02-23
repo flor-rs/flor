@@ -48,7 +48,7 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
     let view_state = view_state_cell.read();
     let old_node_id = view_state.node_id;
 
-    let mut style_update = view_state
+    let style_update = view_state
         .layout_style
         .get_update_data_clone(view_id.control_state());
 
