@@ -58,6 +58,7 @@ fn on_measure(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
     style: &Style,
+    control_state: ControlState,
     render: &mut FlorRender,
 ) -> Result<Size<f32>, Error>
 ```
@@ -66,12 +67,13 @@ fn on_measure(
 
 **参数**：
 
-| 参数                 | 类型                     | 说明                               |
-|--------------------|------------------------|----------------------------------|
-| `known_dimensions` | `Size<Option<f32>>`    | 已知的尺寸约束。如果某个维度已确定（`Some`），可以直接使用 |
-| `available_space`  | `Size<AvailableSpace>` | 可用空间（可能是确定值、最小值或无限）              |
-| `style`            | `&Style`               | 当前计算的 Taffy 样式                   |
-| `render`           | `&mut FlorRender`      | 渲染器引用，可用于测量文本尺寸等                 |
+| 参数                 | 类型                     | 说明                                   |
+|--------------------|------------------------|--------------------------------------|
+| `known_dimensions` | `Size<Option<f32>>`    | 已知的尺寸约束。如果某个维度已确定（`Some`），可以直接使用     |
+| `available_space`  | `Size<AvailableSpace>` | 可用空间（可能是确定值、最小值或无限）                  |
+| `style`            | `&Style`               | 当前计算的 Taffy 样式                       |
+| `control_state`    | `ControlState`         | 当前控件状态（Normal/Hover/Active/Disabled） |
+| `render`           | `&mut FlorRender`      | 渲染器引用，可用于测量文本尺寸等                     |
 
 **返回值**：控件希望的尺寸 `Size<f32>`（宽度, 高度）。
 
@@ -146,7 +148,7 @@ fn on_draw(
     &mut self,
     render: &mut FlorRender,
     abs_location: (f32, f32),
-    layout: Layout,
+    layout: ComputedLayout,
 ) -> Result<(), Error>
 ```
 
@@ -154,11 +156,11 @@ fn on_draw(
 
 **参数**：
 
-| 参数             | 类型                | 坐标系       | 说明                      |
-|----------------|-------------------|-----------|-------------------------|
-| `render`       | `&mut FlorRender` | -         | 渲染器，提供绑定各绑定图形 API 的绑定方法 |
-| `abs_location` | `(f32, f32)`      | **窗口坐标系** | 控件在窗口中的绝对位置             |
-| `layout`       | `Layout`          | -         | 控件的布局信息（尺寸、滚动条等）        |
+| 参数             | 类型                | 坐标系       | 说明                                 |
+|----------------|-------------------|-----------|------------------------------------|
+| `render`       | `&mut FlorRender` | -         | 渲染器，提供绑定各绑定图形 API 的绑定方法            |
+| `abs_location` | `(f32, f32)`      | **窗口坐标系** | 控件在窗口中的绝对位置                        |
+| `layout`       | `ComputedLayout`  | -         | 控件的布局信息（尺寸、滚动条等），即 `taffy::Layout` |
 
 > **📝 注意**：`abs_location` 使用**窗口坐标系**，这是因为渲染器的坐标系是窗口坐标系。
 > 这与事件回调的 `mouse_position`（局部坐标系）不同。
@@ -177,7 +179,7 @@ fn on_draw_overlay(
     &mut self,
     render: &mut FlorRender,
     abs_location: (f32, f32),
-    layout: Layout,
+    layout: ComputedLayout,
 ) -> Result<(), Error>
 ```
 
@@ -744,6 +746,81 @@ fn on_update_class(
 
 ---
 
+## 工具提示事件 (Tooltip)
+
+> **📝 注意**：Tooltip 事件使用**覆盖模式**（Override），与其他事件的**叠加模式**不同。
+> 如果用户通过 handler 绑定了外置逻辑，控件的 `on_` 方法**不会**被调用。
+
+### `on_tooltip_show`
+
+```rust
+fn on_tooltip_show(
+    &mut self,
+    key_state: KeyState,
+    mouse_position: MousePosition,
+) -> Result<(), Error>
+```
+
+**调用时机**：鼠标在控件上悬停超过配置的延迟时间后（默认 500ms）。
+
+**参数**：
+
+| 参数               | 类型              | 坐标系          | 说明                     |
+|------------------|-----------------|--------------|------------------------|
+| `key_state`      | `KeyState`      | -            | 当前键盘状态（Shift/Ctrl/Alt） |
+| `mouse_position` | `MousePosition` | **🔴 局部坐标系** | 悬停位置                   |
+
+**何时需要重写**：控件需要实现默认的工具提示显示逻辑时。
+
+**覆盖模式**：
+
+- 如果用户绑定了 `on_tooltip_show_handler` → 只执行用户的 handler，此方法不执行
+- 如果用户未绑定 handler → 执行此方法
+
+**默认实现**：空实现。
+
+### `on_tooltip_hide`
+
+```rust
+fn on_tooltip_hide(&mut self) -> Result<(), Error>
+```
+
+**调用时机**：
+
+- 鼠标从一个控件移到另一个控件时（对旧控件调用）
+- 鼠标离开窗口时
+- 鼠标按下左键时
+
+**参数**：无
+
+**何时需要重写**：控件需要实现默认的工具提示隐藏逻辑时。
+
+**覆盖模式**：同 `on_tooltip_show`。
+
+**默认实现**：空实现。
+
+### 配置
+
+Tooltip 延迟通过 `WindowOption::tooltip_delay` 配置（默认 `Duration::from_millis(500)`）：
+
+```rust
+WindowOption {
+    tooltip_delay: Duration::from_millis(300), // 自定义延迟
+    ..Default::default()
+}
+```
+
+### 框架职责边界
+
+| 框架负责               | 框架不负责              |
+|--------------------|--------------------|
+| ✅ 追踪鼠标悬停时间         | ❌ tooltip 的内容      |
+| ✅ 超时后派发 show 事件    | ❌ tooltip 的显示方式/位置 |
+| ✅ 离开/点击时派发 hide 事件 | ❌ tooltip 的样式/动画   |
+| ✅ 支持 handler 覆盖模式  | ❌ tooltip 的渲染      |
+
+---
+
 ## 最佳实践
 
 1. **坐标系意识**：始终记住鼠标事件使用**局部坐标系**，绘制使用**窗口坐标系**
@@ -751,4 +828,5 @@ fn on_update_class(
 3. **避免阻塞**：事件回调应快速返回，耗时操作应异步处理
 4. **错误处理**：返回 `Err` 不会中断程序，但会被记录到日志
 5. **请求重绘**：状态变化后调用 `self.view_id().request_redraw()` 触发重绘
+
 
