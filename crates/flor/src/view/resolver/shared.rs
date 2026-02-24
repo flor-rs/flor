@@ -1,6 +1,6 @@
 use crate::view::control_state::ControlState;
-use flor_base::graphics::FontWeight;
 use flor_base::types::Color;
+use graphics::base::FontWeight;
 
 /// Parse state prefix (hover:, focus:, active:, disabled:) from class name
 pub fn parse_state_prefix(class: &str) -> (ControlState, &str) {

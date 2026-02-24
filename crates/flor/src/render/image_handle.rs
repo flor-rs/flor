@@ -1,4 +1,4 @@
-use flor_base::graphics::ImageHandle;
+use graphics::base::ImageHandle;
 #[cfg(feature = "direct2d")]
 use graphics::handle::D2DImageHandle;
 #[cfg(feature = "opengl")]

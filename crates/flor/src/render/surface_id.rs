@@ -1,4 +1,4 @@
-use flor_base::graphics::SurfaceId;
+use graphics::base::SurfaceId;
 #[cfg(feature = "direct2d")]
 use graphics::handle::D2DSurfaceId;
 #[cfg(feature = "opengl")]

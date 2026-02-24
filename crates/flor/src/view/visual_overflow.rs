@@ -1,4 +1,4 @@
-use flor_base::graphics::Path;
+use graphics::base::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VisualOverflow {

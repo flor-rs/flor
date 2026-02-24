@@ -1,4 +1,4 @@
-use flor_base::graphics::BrushHandle;
+use graphics::base::BrushHandle;
 
 #[cfg(feature = "direct2d")]
 use graphics::handle::D2DBrushHandle;

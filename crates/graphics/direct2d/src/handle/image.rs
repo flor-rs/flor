@@ -1,6 +1,7 @@
 mod frame_metadata;
 
 use crate::error::D2DError;
+use crate::render_factory::RenderFactory;
 use flor_base::graphics::ImageHandle;
 use lru::LruCache;
 use parking_lot::Mutex;

@@ -1,4 +1,4 @@
-use flor_base::graphics::SvgHandle;
+use graphics::base::SvgHandle;
 #[cfg(feature = "direct2d")]
 use graphics::handle::D2DSvgHandle;
 #[cfg(feature = "opengl")]

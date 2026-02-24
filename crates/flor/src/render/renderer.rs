@@ -10,17 +10,18 @@ use crate::render::surface_id::FlorSurfaceId;
 use crate::render::svg_handle::FlorSvgHandle;
 use crate::render::text_format_handle::FlorTextFormatHandle;
 use crate::render::{FlorBrushHandle, FlorRendererError};
+use flor_base::types::{Color, Transform2D};
 #[cfg(feature = "svg")]
-use flor_base::graphics::SvgDrawOptions;
-use flor_base::graphics::{
+use graphics::base::SvgDrawOptions;
+#[cfg(any(feature = "direct2d", feature = "opengl"))]
+use graphics::base::{
     Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
     TextDrawOptions,
 };
-use flor_base::types::{Color, Transform2D};
 #[cfg(feature = "direct2d")]
-use graphics::D2DRenderer;
+use graphics::{D2DConfig, D2DRenderer};
 #[cfg(feature = "opengl")]
-use graphics::GlRenderer;
+use graphics::{GlConfig, GlRenderer};
 use platform::WindowId;
 
 #[derive(Debug)]
@@ -41,7 +42,7 @@ impl FlorRenderer {
         wait_v_sync: bool,
     ) -> Result<Self, Error> {
         #[cfg(feature = "direct2d")]
-        match D2DRenderer::create(window_id, width, height, wait_v_sync) {
+        match D2DRenderer::create(window_id, width, height, wait_v_sync, D2DConfig::default()) {
             Ok(render) => return Ok(Self::GPU(render)),
             Err(err) => {
                 log::error!("{}", err);
@@ -49,7 +50,7 @@ impl FlorRenderer {
         }
 
         #[cfg(feature = "opengl")]
-        match GlRenderer::create(window_id, width, height, wait_v_sync) {
+        match GlRenderer::create(window_id, width, height, wait_v_sync, GlConfig::default()) {
             Ok(render) => return Ok(Self::GPU(render)),
             Err(err) => {
                 log::error!("{}", err);
