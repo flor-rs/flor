@@ -2,11 +2,9 @@ use crate::graphics::{
     BrushHandle, Gradient, HitTestResult, ImageDrawOptions, ImageHandle, Path, PathDrawOptions,
     SurfaceId, TextDrawOptions, TextFormatHandle,
 };
+#[cfg(feature = "svg")]
+use crate::graphics::{SvgDrawOptions, SvgHandle};
 use crate::types::{Color, Transform2D};
-#[cfg(feature = "svg")]
-use crate::SvgDrawOptions;
-#[cfg(feature = "svg")]
-use crate::SvgHandle;
 use std::any::Any;
 
 pub trait Render: RenderContext {

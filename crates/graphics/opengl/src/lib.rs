@@ -1,14 +1,10 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+pub mod error;
+pub mod handle;
+pub mod platform;
+mod renderer;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use renderer::*;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub mod base {
+    pub use flor_base::graphics::*;
 }

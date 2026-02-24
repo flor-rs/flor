@@ -16,9 +16,10 @@ categories.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["direct2d"]
+default = ["opengl"]
 glow = []
 direct2d = ["dep:flor-graphics-direct2d", "gpu-render-backend"]
+opengl = ["dep:flor-graphics-opengl", "gpu-render-backend"]
 cpu-render-backend = []
 gpu-render-backend = []
 signal-tracing = []
@@ -27,7 +28,7 @@ layout-grid = ["taffy/grid"]
 layout-block = ["taffy/block_layout"]
 
 # 顶层 SVG 虚拟特性（用户只需要启用这个）
-svg = ["flor-graphics-direct2d?/svg"]
+svg = ["flor-graphics-direct2d?/svg", "flor-graphics-opengl?/svg"]
 
 theme-change = ["flor-platform/theme-change"]
 
@@ -36,7 +37,7 @@ clipboard = ["arboard"]
 drag-drop = ["flor-platform/drag-drop"]
 tray = ["flor-platform/tray"]
 
-memory-font = ["flor-graphics-direct2d?/memory-font"]
+memory-font = ["flor-graphics-direct2d?/memory-font", "flor-graphics-opengl?/memory-font"]
 monitor = ["flor-platform/monitor"]
 hi-dpi = ["flor-platform/hi-dpi"]
 
@@ -53,6 +54,7 @@ flor-base = { workspace = true }
 flor-macros = { workspace = true }
 #graphics-opengl = { workspace = true, optional = true }
 flor-graphics-direct2d = { workspace = true, optional = true }
+flor-graphics-opengl = { workspace = true, optional = true }
 taffy = { workspace = true }
 parking_lot = "0.12"
 slotmap = { workspace = true }

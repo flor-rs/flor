@@ -18,13 +18,19 @@ use flor_base::graphics::{
     TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
+#[cfg(feature = "direct2d")]
 use graphics::D2DRender;
+#[cfg(feature = "opengl")]
+use graphics::GlRenderer;
 use platform::WindowId;
 
 #[derive(Debug)]
 pub enum FlorRender {
-    #[cfg(feature = "direct2d")]
-    GPU(D2DRender),
+    #[cfg(feature = "gpu-render-backend")]
+    GPU(
+        #[cfg(feature = "direct2d")] D2DRender,
+        #[cfg(feature = "opengl")] GlRenderer,
+    ),
     // CPU(#[cfg(feature = "gdi")] GDIRender),
 }
 
@@ -43,7 +49,13 @@ impl FlorRender {
             }
         }
 
-        // #[cfg(feature = "direct2d")]
+        #[cfg(feature = "opengl")]
+        match GlRenderer::create(window_id, width, height, wait_v_sync) {
+            Ok(render) => return Ok(Self::GPU(render)),
+            Err(err) => {
+                log::error!("{}", err);
+            }
+        }
 
         Err(Error::InitError("初始化渲染器失败".to_string()))
     }
@@ -121,9 +133,7 @@ impl RenderContext for FlorRender {
     fn create_surface(&mut self, width: u32, height: u32) -> Result<Self::SurfaceId, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => Ok(FlorSurfaceId::D2DSurfaceId(
-                g.create_surface(width, height)?,
-            )),
+            FlorRender::GPU(g) => Ok(FlorSurfaceId::GPU(g.create_surface(width, height)?)),
             #[cfg(feature = "cpu-render-backend")]
             FlorRender::CPU(c) => Ok(c.create_surface(width, height)?),
         }
@@ -133,7 +143,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorSurfaceId::D2DSurfaceId(surface_id) = surface_id {
+                if let FlorSurfaceId::GPU(surface_id) = surface_id {
                     g.set_render_target(surface_id)?;
                     return Ok(());
                 }
@@ -157,9 +167,7 @@ impl RenderContext for FlorRender {
     fn create_image_from_bytes(&mut self, bytes: &[u8]) -> Result<Self::ImageHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => Ok(FlorImageHandle::D2DImageHandle(
-                g.create_image_from_bytes(bytes)?,
-            )),
+            FlorRender::GPU(g) => Ok(FlorImageHandle::GPU(g.create_image_from_bytes(bytes)?)),
             #[cfg(feature = "cpu-render-backend")]
             FlorRender::CPU(c) => Ok(c.create_image_from_bytes(bytes)?),
         }
@@ -174,7 +182,7 @@ impl RenderContext for FlorRender {
     ) -> Result<Self::ImageHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => Ok(FlorImageHandle::D2DImageHandle(
+            FlorRender::GPU(g) => Ok(FlorImageHandle::GPU(
                 g.create_image_from_raw_bytes(raw_bytes, width, height, delays)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
@@ -186,7 +194,7 @@ impl RenderContext for FlorRender {
     fn create_svg(&mut self, bytes: &[u8]) -> Result<Self::SvgHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => Ok(FlorSvgHandle::D2DSvgHandle(g.create_svg(bytes)?)),
+            FlorRender::GPU(g) => Ok(FlorSvgHandle::GPU(g.create_svg(bytes)?)),
             #[cfg(feature = "cpu-render-backend")]
             FlorRender::CPU(c) => Ok(c.create_svg(bytes)?),
         }
@@ -198,7 +206,7 @@ impl RenderContext for FlorRender {
     ) -> Result<Self::TextFormatHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => Ok(FlorTextFormatHandle::D2DTextFormatHandle(
+            FlorRender::GPU(g) => Ok(FlorTextFormatHandle::GPU(
                 g.create_text_format(font_family_name)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
@@ -214,7 +222,7 @@ impl RenderContext for FlorRender {
     ) -> Result<Self::TextFormatHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => Ok(FlorTextFormatHandle::D2DTextFormatHandle(
+            FlorRender::GPU(g) => Ok(FlorTextFormatHandle::GPU(
                 g.create_text_format_from_bytes(font_data, ttc_index)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
@@ -233,7 +241,7 @@ impl RenderContext for FlorRender {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
                 // 解包 GPU 具体的 Format Handle
-                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
+                if let FlorTextFormatHandle::GPU(inner_fmt) = text_format {
                     return Ok(g.measure_text(text, inner_fmt, width, height)?);
                 }
             }
@@ -262,7 +270,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
+                if let FlorTextFormatHandle::GPU(inner_fmt) = text_format {
                     return Ok(g.hit_test_point(text, inner_fmt, width, height, x, y)?);
                 }
             }
@@ -289,7 +297,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
+                if let FlorTextFormatHandle::GPU(inner_fmt) = text_format {
                     return Ok(g.hit_test_text_position(
                         text, inner_fmt, width, height, text_index, trailing,
                     )?);
@@ -315,7 +323,7 @@ impl RenderContext for FlorRender {
     ) -> Result<Self::BrushHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => Ok(FlorBrushHandle::D2DBrushHandle(
+            FlorRender::GPU(g) => Ok(FlorBrushHandle::GPU(
                 g.create_solid_color_brush(color, opacity)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
@@ -329,9 +337,7 @@ impl RenderContext for FlorRender {
     ) -> Result<Self::BrushHandle, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
-            FlorRender::GPU(g) => Ok(FlorBrushHandle::D2DBrushHandle(
-                g.create_gradient_brush(gradient)?,
-            )),
+            FlorRender::GPU(g) => Ok(FlorBrushHandle::GPU(g.create_gradient_brush(gradient)?)),
             #[cfg(feature = "cpu-render-backend")]
             FlorRender::CPU(c) => Ok(c.create_gradient_brush(gradient)?),
         }
@@ -348,7 +354,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorImageHandle::D2DImageHandle(inner) = handle {
+                if let FlorImageHandle::GPU(inner) = handle {
                     g.draw_image(inner, x, y, width, height, options)?;
                     return Ok(()); // 成功则直接返回
                 }
@@ -378,7 +384,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorSvgHandle::D2DSvgHandle(inner) = handle {
+                if let FlorSvgHandle::GPU(inner) = handle {
                     g.draw_svg(inner, x, y, width, height, options)?;
                     return Ok(());
                 }
@@ -409,10 +415,8 @@ impl RenderContext for FlorRender {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
                 // 双重解包
-                if let (
-                    FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt),
-                    FlorBrushHandle::D2DBrushHandle(inner_brush),
-                ) = (text_format, brush)
+                if let (FlorTextFormatHandle::GPU(inner_fmt), FlorBrushHandle::GPU(inner_brush)) =
+                    (text_format, brush)
                 {
                     g.draw_text(
                         text,
@@ -461,7 +465,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorBrushHandle::D2DBrushHandle(inner) = brush {
+                if let FlorBrushHandle::GPU(inner) = brush {
                     g.draw_path(path, inner, stroke_width, options)?;
                     return Ok(());
                 }
@@ -486,7 +490,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorBrushHandle::D2DBrushHandle(inner) = brush {
+                if let FlorBrushHandle::GPU(inner) = brush {
                     g.fill_path(path, inner, options)?;
                     return Ok(());
                 }
@@ -515,7 +519,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorBrushHandle::D2DBrushHandle(inner) = brush {
+                if let FlorBrushHandle::GPU(inner) = brush {
                     g.draw_quad(left, top, width, height, border_width, inner, options)?;
                     return Ok(());
                 }
@@ -544,7 +548,7 @@ impl RenderContext for FlorRender {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRender::GPU(g) => {
-                if let FlorBrushHandle::D2DBrushHandle(inner) = brush {
+                if let FlorBrushHandle::GPU(inner) = brush {
                     g.fill_quad(left, top, width, height, inner, corner_radius, options)?;
                     return Ok(());
                 }

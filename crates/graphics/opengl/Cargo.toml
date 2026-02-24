@@ -13,5 +13,19 @@ keywords.workspace = true
 license.workspace = true
 categories.workspace = true
 
+[features]
+svg = ["flor-base/svg"]
+memory-font = ["flor-base/memory-font"]
+
 [dependencies]
 cosmic-text = "0.18"
+glow = "0.16.0"
+log = { workspace = true }
+thiserror = { workspace = true }
+rustc-hash = { workspace = true }
+once_cell = { workspace = true }
+flor-base = { workspace = true, features = ["graphics"] }
+windows = { workspace = true, features = [
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_OpenGL",
+    "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader"] }

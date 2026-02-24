@@ -11,7 +11,7 @@ use windows_core::Error;
 
 /// 从 IDWriteFontFace 中手动解析 Family Name
 /// OpenType 规范: https://learn.microsoft.com/en-us/typography/opentype/spec/name
-pub unsafe fn get_family_name_from_face(face: &IDWriteFontFace) -> Result<String> {
+pub unsafe fn get_family_name_from_face(face: &IDWriteFontFace) -> Result<String, Error> {
     let mut table_context: *mut c_void = std::ptr::null_mut();
     let mut table_data_ptr: *mut c_void = std::ptr::null_mut();
     let mut table_size: u32 = 0;
