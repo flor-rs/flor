@@ -34,13 +34,15 @@ impl<T: View> LayoutBuilder for T {
                 (style_fn)(current_base)
             },
             move |new_style| {
-                let states = VIEW_STORAGE.states.read();
-                let mut view_state = states
-                    .get(view_id)
-                    .expect(&format!("view[{}] not found ViewState", view_id))
-                    .write();
+                {
+                    let states = VIEW_STORAGE.states.read();
+                    let mut view_state = states
+                        .get(view_id)
+                        .expect(&format!("view[{}] not found ViewState", view_id))
+                        .write();
 
-                view_state.layout_style = new_style;
+                    view_state.layout_style = new_style;
+                }
                 if let Some(window_id) = view_id.window_id() {
                     window_id.bus_re_draw_entry().error_on_err("fail draw");
                 }
