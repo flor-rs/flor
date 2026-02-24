@@ -10,6 +10,7 @@ use std::any::Any;
 pub trait Render: RenderContext {
     type HWND;
     type Render;
+    type Config: Default;
 
     /// 创建渲染上下文
     fn create(
@@ -17,6 +18,7 @@ pub trait Render: RenderContext {
         width: u32,
         height: u32,
         wait_v_sync: bool,
+        config: Self::Config,
     ) -> Result<Self::Render, Self::Error>;
 }
 

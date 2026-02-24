@@ -1,4 +1,5 @@
 use crate::error::GlError;
+use crate::GlConfig;
 use std::ffi::OsStr;
 use std::os::windows::prelude::OsStrExt;
 use std::ptr::null;
@@ -14,7 +15,7 @@ use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 
 static OPENGL32_LIB: OnceLock<usize> = OnceLock::new();
 
-pub fn get_gl_context(h_wnd: HWND) -> Result<glow::Context, GlError> {
+pub fn get_gl_context(h_wnd: HWND, _config: GlConfig) -> Result<glow::Context, GlError> {
     unsafe {
         // 1. 获取设备上下文
         let hdc = GetDC(Some(h_wnd));

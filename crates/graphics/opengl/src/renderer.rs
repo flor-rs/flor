@@ -16,6 +16,9 @@ use flor_base::types::{Color, Transform2D};
 use glow::HasContext;
 use windows::Win32::Foundation::HWND;
 
+mod config;
+pub use config::*;
+
 #[derive(Debug)]
 pub struct GlRenderer {
     gl_context: glow::Context,
@@ -24,14 +27,16 @@ pub struct GlRenderer {
 impl Render for GlRenderer {
     type HWND = HWND;
     type Render = GlRenderer;
+    type Config = GlConfig;
 
     fn create(
         hwnd: impl Into<Self::HWND>,
         width: u32,
         height: u32,
         wait_v_sync: bool,
+        config: Self::Config,
     ) -> Result<Self::Render, Self::Error> {
-        let gl_context = platform::get_gl_context(hwnd.into())?;
+        let gl_context = platform::get_gl_context(hwnd.into(), config)?;
         unsafe {
             platform::set_vsync(wait_v_sync);
             gl_context.viewport(0, 0, width as i32, height as i32);
