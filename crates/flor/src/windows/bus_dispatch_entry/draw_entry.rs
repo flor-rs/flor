@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
-use crate::render::FlorRender;
+use crate::render::FlorRenderer;
 use crate::view::control_state::ControlState;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
@@ -30,7 +30,7 @@ struct DrawFrame {
     stage: DrawStage,
 }
 
-pub fn draw_entry(window_id: WindowId, render: &mut FlorRender) -> Result<(), Error> {
+pub fn draw_entry(window_id: WindowId, render: &mut FlorRenderer) -> Result<(), Error> {
     let views = VIEW_STORAGE.views.read();
     let child_map = VIEW_STORAGE.child_ids.read();
     let view_transform = VIEW_STORAGE.transform.read();

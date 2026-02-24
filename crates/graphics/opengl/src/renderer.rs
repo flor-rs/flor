@@ -1,4 +1,4 @@
-use crate::error::GlRendererError;
+use crate::error::GlError;
 use crate::handle::GlImageHandle;
 use crate::handle::GlSurfaceId;
 #[cfg(feature = "svg")]
@@ -41,7 +41,7 @@ impl Render for GlRenderer {
 }
 
 impl RenderContext for GlRenderer {
-    type Error = GlRendererError;
+    type Error = GlError;
     type ImageHandle = GlImageHandle;
     type SurfaceId = GlSurfaceId;
     type BrushHandle = GlBrushHandle;

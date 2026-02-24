@@ -87,7 +87,7 @@ use windows_numerics::{Matrix3x2, Vector2};
 #[cfg(not(target_os = "windows"))]
 compile_error!("The 'direct2d' feature is only supported on Windows platforms.");
 
-mod error;
+pub mod error;
 
 pub mod base {
     pub use flor_base::graphics::*;
@@ -106,7 +106,7 @@ use crate::memory_font::{get_family_name_from_face, MemoryFontFileLoader};
 
 use crate::color::AsD2dColor;
 use crate::encode::encode_unicode;
-pub use error::*;
+use crate::error::D2DError;
 use flor_base::types::{Color, Transform2D};
 
 pub static RENDER_FACTORY: OnceLock<RenderFactory> = OnceLock::new();
@@ -196,7 +196,7 @@ impl RenderFactory {
         width: u32,
         height: u32,
         wait_v_sync: bool,
-    ) -> Result<D2DRender, windows::core::Error> {
+    ) -> Result<D2DRenderer, windows::core::Error> {
         unsafe {
             debug!("create window render.");
             let size = D2D_SIZE_U { width, height };
@@ -219,7 +219,7 @@ impl RenderFactory {
             let current_render = render.cast::<ID2D1DeviceContext>()?;
             let scratch_brush =
                 current_render.CreateSolidColorBrush(&D2D1_COLOR_F::default(), None)?;
-            Ok(D2DRender {
+            Ok(D2DRenderer {
                 size,
                 hwnd_render: render,
                 current_render,
@@ -250,7 +250,7 @@ pub enum ClipType {
     },
 }
 
-pub struct D2DRender {
+pub struct D2DRenderer {
     pub size: D2D_SIZE_U,
     pub hwnd_render: ID2D1HwndRenderTarget,
     pub current_render: ID2D1DeviceContext,
@@ -268,7 +268,8 @@ pub struct D2DRender {
     /// 暂停剪裁时的深度（None 表示未暂停）
     pub suspended_clip_depth: Option<usize>,
 }
-impl Debug for D2DRender {
+
+impl Debug for D2DRenderer {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // 创建一个 debug 结构体构建器
         let mut debug_struct = f.debug_struct("D2DRender");
@@ -311,7 +312,8 @@ impl Debug for D2DRender {
         debug_struct.finish()
     }
 }
-impl Render for D2DRender {
+
+impl Render for D2DRenderer {
     type HWND = HWND;
     type Render = Self;
 
@@ -326,8 +328,9 @@ impl Render for D2DRender {
         Ok(RenderFactory::get().create_render(hwnd.into(), width, height, wait_v_sync)?)
     }
 }
-impl RenderContext for D2DRender {
-    type Error = D2DBackendError;
+
+impl RenderContext for D2DRenderer {
+    type Error = D2DError;
     type ImageHandle = D2DImageHandle;
     type SurfaceId = D2DSurfaceId;
     type BrushHandle = D2DBrushHandle;
@@ -845,9 +848,7 @@ impl RenderContext for D2DRender {
         // 1. 资源与参数解构
         let bitmap = match handle.bitmaps.get(frame_index) {
             None => {
-                return Err(D2DBackendError::from(Error::ImageFrameNotFound(
-                    frame_index,
-                )));
+                return Err(D2DError::from(Error::ImageFrameNotFound(frame_index)));
             }
             Some(bitmap) => bitmap,
         };
@@ -2613,9 +2614,9 @@ impl RenderContext for D2DRender {
     }
 }
 
-impl D2DRender {
+impl D2DRenderer {
     // 内部 helper：获取可复用的 Effect
-    fn get_or_create_shadow_effect(&mut self) -> Result<ID2D1Effect, D2DBackendError> {
+    fn get_or_create_shadow_effect(&mut self) -> Result<ID2D1Effect, D2DError> {
         // 1. 如果已经存在，直接返回引用的引用
         if let Some(effect) = &self.cached_shadow_effect {
             return Ok(effect.clone());
@@ -2634,7 +2635,7 @@ impl D2DRender {
     fn rebuild_text_format(
         &mut self,
         text_format: &mut D2DTextFormatHandle,
-    ) -> Result<(), D2DBackendError> {
+    ) -> Result<(), D2DError> {
         // 1. 极速路径 (Fast Path)
         // 只要没脏，直接返回。不锁 Map，不查 Key，不做任何多余操作。
         // 这让每一帧调用 rebuild 的开销几乎为 0。
@@ -2734,7 +2735,7 @@ impl D2DRender {
     unsafe fn push_layer_with_geometry<G: Interface>(
         &mut self,
         geometry: &G,
-    ) -> Result<(ID2D1Layer, D2D1_LAYER_PARAMETERS1), D2DBackendError>
+    ) -> Result<(ID2D1Layer, D2D1_LAYER_PARAMETERS1), D2DError>
     where
         G: Into<ID2D1Geometry> + Clone,
     {
@@ -2768,7 +2769,7 @@ impl D2DRender {
     }
 
     /// 内部辅助：将 Path 转换为 Direct2D Geometry
-    fn build_geometry(&self, path: &Path) -> Result<ID2D1PathGeometry1, D2DBackendError> {
+    fn build_geometry(&self, path: &Path) -> Result<ID2D1PathGeometry1, D2DError> {
         unsafe {
             // 1. 创建 PathGeometry
             let geometry = RenderFactory::get().factory.CreatePathGeometry()?;
@@ -2886,7 +2887,7 @@ impl D2DRender {
     /// 内部通用逻辑：执行截屏、模糊并返回画笔和物理位置
     /// 返回: (模糊后的画笔, 物理包围盒左上角偏移)
     // 内部 helper：获取可复用的 Blur Effect
-    fn get_or_create_blur_effect(&mut self) -> Result<ID2D1Effect, D2DBackendError> {
+    fn get_or_create_blur_effect(&mut self) -> Result<ID2D1Effect, D2DError> {
         if let Some(effect) = &self.cached_blur_effect {
             return Ok(effect.clone());
         }
@@ -2901,11 +2902,7 @@ impl D2DRender {
     }
 
     // 内部 helper：获取可复用的 Bitmap (Scratch Bitmap)
-    fn get_scratch_bitmap(
-        &mut self,
-        width: u32,
-        height: u32,
-    ) -> Result<ID2D1Bitmap1, D2DBackendError> {
+    fn get_scratch_bitmap(&mut self, width: u32, height: u32) -> Result<ID2D1Bitmap1, D2DError> {
         unsafe {
             let need_create = if let Some(current_bmp) = &self.cached_blur_bitmap {
                 let size = current_bmp.GetPixelSize();
@@ -2942,7 +2939,7 @@ impl D2DRender {
     }
 
     // 内部 helper：获取可复用的 Crop Effect
-    fn get_or_create_crop_effect(&mut self) -> Result<ID2D1Effect, D2DBackendError> {
+    fn get_or_create_crop_effect(&mut self) -> Result<ID2D1Effect, D2DError> {
         if let Some(effect) = &self.cached_crop_effect {
             return Ok(effect.clone());
         }
@@ -2963,7 +2960,7 @@ impl D2DRender {
         geometry: &ID2D1Geometry,
         blur_radius: f32,
         world_transform: &Matrix3x2,
-    ) -> Result<(ID2D1ImageBrush, Vector2), D2DBackendError> {
+    ) -> Result<(ID2D1ImageBrush, Vector2), D2DError> {
         unsafe {
             let bounds = geometry.GetBounds(Some(world_transform))?;
 
@@ -3066,7 +3063,7 @@ impl D2DRender {
     }
 
     // 内部 Helper：获取一个可用的 Layer
-    fn get_layer(&mut self) -> Result<ID2D1Layer, D2DBackendError> {
+    fn get_layer(&mut self) -> Result<ID2D1Layer, D2DError> {
         if let Some(layer) = self.layer_pool.pop() {
             Ok(layer)
         } else {
@@ -3084,9 +3081,9 @@ impl D2DRender {
     // 这是一个通用的裁剪包装器
     // rect: 裁剪区域（在当前坐标系下）
     // draw_fn: 具体的绘制逻辑闭包
-    fn with_content_clip<F>(&mut self, rect: &D2D_RECT_F, draw_fn: F) -> Result<(), D2DBackendError>
+    fn with_content_clip<F>(&mut self, rect: &D2D_RECT_F, draw_fn: F) -> Result<(), D2DError>
     where
-        F: FnOnce(&mut Self) -> Result<(), D2DBackendError>,
+        F: FnOnce(&mut Self) -> Result<(), D2DError>,
     {
         unsafe {
             // 1. 检查当前变换矩阵，判断是否有旋转
@@ -3157,7 +3154,7 @@ impl D2DRender {
 
 // 辅助函数：获取 SVG 的固有尺寸 (Intrinsic Size)
 #[cfg(feature = "svg")]
-fn get_svg_size(doc: &ID2D1SvgDocument) -> Result<(f32, f32), D2DBackendError> {
+fn get_svg_size(doc: &ID2D1SvgDocument) -> Result<(f32, f32), D2DError> {
     unsafe {
         let root = doc.GetRoot()?;
 

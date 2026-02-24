@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::render::FlorRender;
+use crate::render::FlorRenderer;
 use crate::signal::effect::updater_effect::create_updater;
 use crate::view::resolver::Unit;
 use crate::view::view_builder::builder::ViewBuilder;
@@ -90,7 +90,7 @@ impl WindowOption {
         window_id.set_window_mode(WindowMode::Normal)?;
 
         // 创建渲染器
-        let render = FlorRender::create(window_id, width, height, self.wait_v_sync)?;
+        let render = FlorRenderer::create(window_id, width, height, self.wait_v_sync)?;
         bus::register_render(window_id, render);
 
         let (dpi_x, dpi_y) = window_id.get_dpi()?;

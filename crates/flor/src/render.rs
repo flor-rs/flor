@@ -1,8 +1,8 @@
-pub mod backend_error;
 pub mod brush_handle;
-pub mod flor_render;
+pub mod error;
 pub mod image_handle;
 pub mod load_resource;
+pub mod renderer;
 pub mod surface_id;
 #[cfg(feature = "svg")]
 pub mod svg_handle;
@@ -29,6 +29,6 @@ pub mod text_format_handle;
 pub use svg_handle::*;
 
 pub use {
-    backend_error::*, brush_handle::*, flor_render::*, image_handle::*, load_resource::*,
-    surface_id::*, text_format_handle::*,
+    brush_handle::*, error::*, image_handle::*, load_resource::*, renderer::*, surface_id::*,
+    text_format_handle::*,
 };

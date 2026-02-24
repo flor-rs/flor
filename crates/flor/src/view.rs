@@ -16,7 +16,7 @@ use crate::log_error::ResultLogExt;
 use crate::min_wait_time::MinWaitTime;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
-use crate::render::{FlorImageHandle, FlorRender, FlorRenderError, LoadRenderResource};
+use crate::render::{FlorImageHandle, FlorRenderer, FlorRendererError, LoadRenderResource};
 use crate::view::control_state::ControlState;
 use crate::view::frame_policy::FramePolicy;
 use crate::view::view_id::ViewId;
@@ -203,7 +203,7 @@ pub trait View {
     #[allow(unused_variables)]
     fn on_draw(
         &mut self,
-        render: &mut FlorRender,
+        render: &mut FlorRenderer,
         abs_location: (f32, f32),
         layout: ComputedLayout,
     ) -> Result<(), Error> {
@@ -212,7 +212,7 @@ pub trait View {
     #[allow(unused_variables)]
     fn on_draw_overlay(
         &mut self,
-        render: &mut FlorRender,
+        render: &mut FlorRenderer,
         abs_location: (f32, f32),
         layout: ComputedLayout,
     ) -> Result<(), Error> {
@@ -227,7 +227,7 @@ pub trait View {
         available_space: Size<AvailableSpace>,
         style: &Style,
         control_state: ControlState,
-        render: &mut FlorRender,
+        render: &mut FlorRenderer,
     ) -> Result<Size<f32>, Error> {
         Ok(Size::ZERO)
     }
@@ -1002,12 +1002,12 @@ pub trait View {
 }
 
 impl<T: View> LoadRenderResource for T {
-    fn load_image(&self, image: &[u8]) -> Result<FlorImageHandle, FlorRenderError> {
+    fn load_image(&self, image: &[u8]) -> Result<FlorImageHandle, FlorRendererError> {
         if let Some(x) = render_from_view_id(self.view_id()) {
             let mut render = x.write();
             render.create_image_from_bytes(&image)
         } else {
-            Err(FlorRenderError::RenderNotFound)
+            Err(FlorRendererError::RenderNotFound)
         }
     }
 
@@ -1017,22 +1017,22 @@ impl<T: View> LoadRenderResource for T {
         width: u32,
         height: u32,
         delays: Vec<u16>,
-    ) -> Result<FlorImageHandle, FlorRenderError> {
+    ) -> Result<FlorImageHandle, FlorRendererError> {
         if let Some(x) = render_from_view_id(self.view_id()) {
             let mut render = x.write();
             render.create_image_from_raw_bytes(raw_bytes, width, height, delays)
         } else {
-            Err(FlorRenderError::RenderNotFound)
+            Err(FlorRendererError::RenderNotFound)
         }
     }
 
     #[cfg(feature = "svg")]
-    fn load_svg(&self, svg: &[u8]) -> Result<FlorSvgHandle, FlorRenderError> {
+    fn load_svg(&self, svg: &[u8]) -> Result<FlorSvgHandle, FlorRendererError> {
         if let Some(x) = render_from_view_id(self.view_id()) {
             let mut render = x.write();
             render.create_svg(svg)
         } else {
-            Err(FlorRenderError::RenderNotFound)
+            Err(FlorRendererError::RenderNotFound)
         }
     }
 }

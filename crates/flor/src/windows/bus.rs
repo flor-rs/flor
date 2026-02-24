@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
-use crate::render::FlorRender;
+use crate::render::FlorRenderer;
 use crate::view::view_id::ViewId;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
@@ -17,11 +17,12 @@ use platform::base::HandleResult;
 use platform::base::Message;
 use platform::WindowId;
 
-pub static RENDERS: Lazy<DashMap<WindowId, RwLock<FlorRender>>> = Lazy::new(|| Default::default());
+pub static RENDERS: Lazy<DashMap<WindowId, RwLock<FlorRenderer>>> =
+    Lazy::new(|| Default::default());
 
 /// 注册窗口到总线
 #[inline]
-pub fn register_render(window_id: WindowId, render: FlorRender) {
+pub fn register_render(window_id: WindowId, render: FlorRenderer) {
     RENDERS.insert(window_id, RwLock::new(render));
 }
 
@@ -42,11 +43,11 @@ pub fn remove_window(window_id: WindowId) {
 }
 
 #[inline]
-pub fn render<'a>(window_id: WindowId) -> Option<Ref<'a, WindowId, RwLock<FlorRender>>> {
+pub fn render<'a>(window_id: WindowId) -> Option<Ref<'a, WindowId, RwLock<FlorRenderer>>> {
     RENDERS.get(&window_id)
 }
 
-pub fn render_from_view_id<'a>(view_id: ViewId) -> Option<Ref<'a, WindowId, RwLock<FlorRender>>> {
+pub fn render_from_view_id<'a>(view_id: ViewId) -> Option<Ref<'a, WindowId, RwLock<FlorRenderer>>> {
     let ret = VIEW_STORAGE
         .window_ids
         .read()

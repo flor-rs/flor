@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::log_error::ResultLogExt;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
-use crate::render::{FlorImageHandle, FlorRenderError, LoadRenderResource};
+use crate::render::{FlorImageHandle, FlorRendererError, LoadRenderResource};
 use crate::signal::id::EffectId;
 use crate::view::class::ClassLoader;
 use crate::view::control_state::ControlState;
@@ -508,12 +508,12 @@ impl ViewId {
 }
 
 impl LoadRenderResource for ViewId {
-    fn load_image(&self, image: &[u8]) -> Result<FlorImageHandle, FlorRenderError> {
+    fn load_image(&self, image: &[u8]) -> Result<FlorImageHandle, FlorRendererError> {
         if let Some(x) = render_from_view_id(*self) {
             let mut render = x.write();
             render.create_image_from_bytes(&image)
         } else {
-            Err(FlorRenderError::RenderNotFound)
+            Err(FlorRendererError::RenderNotFound)
         }
     }
     fn load_raw_image(
@@ -522,21 +522,21 @@ impl LoadRenderResource for ViewId {
         width: u32,
         height: u32,
         delays: Vec<u16>,
-    ) -> Result<FlorImageHandle, FlorRenderError> {
+    ) -> Result<FlorImageHandle, FlorRendererError> {
         if let Some(x) = render_from_view_id(*self) {
             let mut render = x.write();
             render.create_image_from_raw_bytes(raw_bytes, width, height, delays)
         } else {
-            Err(FlorRenderError::RenderNotFound)
+            Err(FlorRendererError::RenderNotFound)
         }
     }
     #[cfg(feature = "svg")]
-    fn load_svg(&self, svg: &[u8]) -> Result<FlorSvgHandle, FlorRenderError> {
+    fn load_svg(&self, svg: &[u8]) -> Result<FlorSvgHandle, FlorRendererError> {
         if let Some(x) = render_from_view_id(*self) {
             let mut render = x.write();
             render.create_svg(svg)
         } else {
-            Err(FlorRenderError::RenderNotFound)
+            Err(FlorRendererError::RenderNotFound)
         }
     }
 }

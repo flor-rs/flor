@@ -1,4 +1,4 @@
-use crate::render::backend_error::FlorRenderError;
+use crate::render::FlorRendererError;
 use crate::view::view_id::ViewId;
 use flor_base::types::ColorParseError;
 use thiserror::Error;
@@ -8,7 +8,7 @@ pub enum Error {
     #[error("无效的view_id : `{0}`")]
     ControlUnregistered(ViewId),
     #[error("graphics error: `{0}`")]
-    GraphicsError(#[from] FlorRenderError),
+    GraphicsError(#[from] FlorRendererError),
     #[error("color parse error: `{0}`")]
     ColorParseColor(#[from] ColorParseError),
     #[error("taffy error: `{0}`")]

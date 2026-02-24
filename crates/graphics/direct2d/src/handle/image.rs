@@ -1,5 +1,6 @@
 mod frame_metadata;
 
+use crate::error::D2DError;
 use flor_base::graphics::ImageHandle;
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -359,9 +360,9 @@ impl D2DImageHandle {
         height: u32,
         delays: Vec<u16>,
         current_render: &ID2D1DeviceContext,
-    ) -> Result<Self, D2DBackendError> {
+    ) -> Result<Self, D2DError> {
         if raw_bytes.len() != delays.len() {
-            return Err(D2DBackendError::RendererBaseError(
+            return Err(D2DError::RendererBaseError(
                 flor_base::graphics::Error::ImageFrameDelayMismatch(raw_bytes.len(), delays.len()),
             ));
         }
