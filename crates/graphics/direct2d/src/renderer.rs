@@ -28,7 +28,7 @@ use windows::Win32::Graphics::Direct2D::{
     CLSID_D2D1Crop, CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow, ID2D1Bitmap1, ID2D1Brush,
     ID2D1CommandList, ID2D1DeviceContext, ID2D1DeviceContext5, ID2D1Effect, ID2D1Geometry,
     ID2D1HwndRenderTarget, ID2D1Image, ID2D1ImageBrush, ID2D1Layer, ID2D1PathGeometry1,
-    ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_OPTIONS_NONE,
+    ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_OPTIONS_TARGET,
     D2D1_BITMAP_PROPERTIES1, D2D1_BRUSH_PROPERTIES, D2D1_BUFFER_PRECISION_8BPC_UNORM,
     D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED, D2D1_COLOR_SPACE_SRGB,
     D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_CROP_PROP_RECT, D2D1_DRAW_TEXT_OPTIONS_NONE,
@@ -99,8 +99,8 @@ pub struct D2DRenderer {
     pub layer_pool: Vec<ID2D1Layer>,
     pub clip_stack: Vec<ClipType>,
     pub transform_stack: Vec<Matrix3x2>,
-    /// 暂停剪裁时的深度（None 表示未暂停）
-    pub suspended_clip_depth: Option<usize>,
+    /// 暂停剪裁时的深度栈（支持嵌套暂停）
+    pub suspended_clip_depths: Vec<usize>,
 }
 
 impl Debug for D2DRenderer {
@@ -2231,17 +2231,18 @@ impl RenderContext for D2DRenderer {
     // =========================================================
 
     fn suspend_clip(&mut self) -> Result<(), Self::Error> {
-        // 如果已经暂停，不做任何事
-        if self.suspended_clip_depth.is_some() {
-            return Ok(());
-        }
+        let current_depth = self.clip_stack.len();
+        let last_suspended_depth = self.suspended_clip_depths.last().copied().unwrap_or(0);
 
         // 记录当前剪裁栈深度
-        self.suspended_clip_depth = Some(self.clip_stack.len());
+        self.suspended_clip_depths.push(current_depth);
 
-        // 从后往前弹出所有剪裁（但不从 clip_stack 移除，也不回收 layer）
+        // 从后往前弹出属于当前活动层级的剪裁
         unsafe {
-            for clip_type in self.clip_stack.iter().rev() {
+            for clip_type in self.clip_stack[last_suspended_depth..current_depth]
+                .iter()
+                .rev()
+            {
                 match clip_type {
                     ClipType::AxisAligned { .. } => {
                         self.current_render.PopAxisAlignedClip();
@@ -2258,12 +2259,13 @@ impl RenderContext for D2DRenderer {
 
     fn resume_clip(&mut self) -> Result<(), Self::Error> {
         // 如果没有暂停，不做任何事
-        let Some(suspended_depth) = self.suspended_clip_depth.take() else {
+        let Some(suspended_depth) = self.suspended_clip_depths.pop() else {
             return Ok(());
         };
+        let last_suspended_depth = self.suspended_clip_depths.last().copied().unwrap_or(0);
 
         unsafe {
-            // 1. 先 pop 掉暂停期间新增的所有剪裁（D2D 层面）
+            // 1. 先 pop 掉本次暂停期间新增的所有剪裁（D2D 层面）
             //    这些是在 suspend 之后、resume 之前 push 的
             for clip_type in self.clip_stack[suspended_depth..].iter().rev() {
                 match clip_type {
@@ -2276,7 +2278,7 @@ impl RenderContext for D2DRenderer {
                 }
             }
 
-            // 2. 回收暂停期间新增的 layer 到 pool，并截断 clip_stack
+            // 2. 回收本次暂停期间新增的 layer 到 pool，并截断 clip_stack
             while self.clip_stack.len() > suspended_depth {
                 if let Some(clip_type) = self.clip_stack.pop() {
                     if let ClipType::Layer { layer, .. } = clip_type {
@@ -2287,8 +2289,8 @@ impl RenderContext for D2DRenderer {
                 }
             }
 
-            // 3. 重新 push 暂停前的剪裁（恢复现场）
-            for clip_type in self.clip_stack.iter() {
+            // 3. 重新 push 本次暂停前的剪裁（但只 push 属于当前活动层级的那一段）
+            for clip_type in self.clip_stack[last_suspended_depth..suspended_depth].iter() {
                 match clip_type {
                     ClipType::AxisAligned { rect } => {
                         self.current_render
@@ -2757,7 +2759,7 @@ impl D2DRenderer {
                     pixelFormat: pixel_format,
                     dpiX: dpi_x,
                     dpiY: dpi_y,
-                    bitmapOptions: D2D1_BITMAP_OPTIONS_NONE,
+                    bitmapOptions: D2D1_BITMAP_OPTIONS_TARGET,
                     colorContext: ManuallyDrop::new(None),
                 };
 
@@ -2800,35 +2802,68 @@ impl D2DRenderer {
         unsafe {
             let bounds = geometry.GetBounds(Some(world_transform))?;
 
+            let pad = (blur_radius * 3.0).ceil() as i32;
+
             // 转换为整数坐标 (向外取整，确保覆盖所有像素)
-            let left_u = bounds.left.floor() as i32;
-            let top_u = bounds.top.floor() as i32;
-            let right_u = bounds.right.ceil() as i32;
-            let bottom_u = bounds.bottom.ceil() as i32;
+            let left_u = bounds.left.floor() as i32 - pad;
+            let top_u = bounds.top.floor() as i32 - pad;
+            let right_u = bounds.right.ceil() as i32 + pad;
+            let bottom_u = bounds.bottom.ceil() as i32 + pad;
 
             let width_u = (right_u - left_u).max(1) as u32;
             let height_u = (bottom_u - top_u).max(1) as u32;
 
-            // 1. 获取复用的 Bitmap
+            // 1. 获取复用的储备 Bitmap
             let snapshot = self.get_scratch_bitmap(width_u, height_u)?;
 
-            // 2. 将屏幕内容拷贝到 Bitmap 的 (0,0) 位置
-            let dest_point = D2D_POINT_2U { x: 0, y: 0 };
-            let src_rect = D2D_RECT_U {
-                left: left_u as u32,
-                top: top_u as u32,
-                right: (left_u as u32) + width_u,
-                bottom: (top_u as u32) + height_u,
+            // 必须先清空 Snapshot 避免脏区域
+            let old_target = self.current_render.GetTarget()?;
+            self.current_render.SetTarget(&snapshot);
+            let transparent = D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
             };
+            self.current_render.Clear(Some(&transparent));
+            self.current_render.SetTarget(&old_target);
 
-            // 注意：CopyFromRenderTarget 会把 src_rect 区域拷贝到 bitmap 的 dest_point
-            snapshot.CopyFromRenderTarget(
-                Some(&dest_point),
-                &self.current_render,
-                Some(&src_rect),
-            )?;
+            let rt_size = self.current_render.GetPixelSize();
+            let src_left = left_u.max(0);
+            let src_top = top_u.max(0);
+            let src_right = right_u.min(rt_size.width as i32);
+            let src_bottom = bottom_u.min(rt_size.height as i32);
 
-            // 3. 使用 Crop Effect 裁剪出有效区域 (避免 Blur 采样到右侧/下侧的脏数据)
+            let src_width = (src_right - src_left).max(0) as u32;
+            let src_height = (src_bottom - src_top).max(0) as u32;
+
+            // 如果部分在屏幕内，则复制屏幕内容到 Bitmap
+            if src_width > 0 && src_height > 0 {
+                let dest_point = D2D_POINT_2U {
+                    x: (src_left - left_u) as u32,
+                    y: (src_top - top_u) as u32,
+                };
+                let src_rect = D2D_RECT_U {
+                    left: src_left as u32,
+                    top: src_top as u32,
+                    right: src_right as u32,
+                    bottom: src_bottom as u32,
+                };
+
+                // D2D 严禁在存在 Clip / Layer 时调用 CopyFromRenderTarget，所以我们暂时挂起所有裁剪！
+                self.suspend_clip()?;
+
+                snapshot.CopyFromRenderTarget(
+                    Some(&dest_point),
+                    &self.current_render,
+                    Some(&src_rect),
+                )?;
+
+                // 拷贝完成，恢复所有环境的裁剪
+                self.resume_clip()?;
+            }
+
+            // 2. 使用 Crop Effect 裁剪出有效区域
             let crop_effect = self.get_or_create_crop_effect()?;
             crop_effect.SetInput(0, &snapshot, true);
 
@@ -2844,22 +2879,17 @@ impl D2DRenderer {
                 slice::from_raw_parts(&crop_rect as *const _ as *const u8, size_of::<D2D_RECT_F>()),
             )?;
 
-            // 4. 获取复用的 Blur Effect，连接到 Crop
+            // 3. 模糊裁剪输出
             let blur_effect = self.get_or_create_blur_effect()?;
-
-            // 链接: Blur -> Input(Crop output)
-            // 注意: GetOutput 会增加引用计数，记得这只是个临时 Image 接口
             let crop_output = crop_effect.GetOutput()?;
             blur_effect.SetInput(0, &crop_output, true);
 
-            // 设置参数 (如果半径变了)
             if (self.last_blur_radius - blur_radius).abs() > 0.001 {
                 blur_effect.SetValue(
                     D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0 as u32,
                     D2D1_PROPERTY_TYPE_FLOAT,
                     &blur_radius.to_ne_bytes(),
                 )?;
-                // Border mode 只需要设置一次，但我懒得加 cached_border_mode 了，且开销很小
                 let border_mode = D2D1_BORDER_MODE_HARD;
                 blur_effect.SetValue(
                     D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0 as u32,
@@ -2876,12 +2906,7 @@ impl D2DRenderer {
 
             // 4. 创建画笔 (画笔创建比较轻量，可以保留每次创建，或者也想办法缓存？目前先保留创建)
             let brush_props = D2D1_IMAGE_BRUSH_PROPERTIES {
-                sourceRectangle: D2D_RECT_F {
-                    left: 0.0,
-                    top: 0.0,
-                    right: width_u as f32,
-                    bottom: height_u as f32,
-                },
+                sourceRectangle: crop_rect,
                 extendModeX: D2D1_EXTEND_MODE_CLAMP,
                 extendModeY: D2D1_EXTEND_MODE_CLAMP,
                 interpolationMode: D2D1_INTERPOLATION_MODE_LINEAR,

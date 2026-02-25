@@ -150,7 +150,7 @@ impl RenderFactory {
                 layer_pool: vec![],
                 clip_stack: vec![],
                 transform_stack: vec![],
-                suspended_clip_depth: None,
+                suspended_clip_depths: vec![],
             })
         }
     }
