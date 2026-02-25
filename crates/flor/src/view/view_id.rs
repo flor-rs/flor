@@ -14,11 +14,11 @@ use crate::view::View;
 use crate::windows::bus::render_from_view_id;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WindowEntryVisit;
+use flor_base::graphics::RenderContext;
 #[cfg(feature = "drag-drop")]
 use flor_base::platform::{DragFormat, DropEffect, KeyState};
 use flor_base::platform::{MousePosition, WindowOperations};
 use flor_base::types::Transform2D;
-use graphics::base::RenderContext;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use platform::WindowId;

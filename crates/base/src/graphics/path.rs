@@ -118,6 +118,56 @@ impl Path {
             .close() // 5. 闭合路径 (自动连回左上角)
     }
 
+    /// 创建一个圆角矩形路径
+    /// r: 圆角半径。如果 r <= 0.0 则退化为普通矩形。如果 r 过大则被限制到 width/2 或 height/2
+    pub fn from_rounded_rect(x: f32, y: f32, width: f32, height: f32, r: f32) -> Self {
+        if r <= 0.0 {
+            return Self::from_rect(x, y, width, height);
+        }
+
+        // 限制圆角半径不超出宽高一半
+        let r = r.min(width / 2.0).min(height / 2.0);
+        let kappa = 0.552284749831; // 用于用三次贝塞尔曲线逼近四分之一圆的常数 (4/3)*tan(pi/8)
+        let control_offset = r * kappa;
+
+        // 起点：左上角圆角终点（顶部直线起点）
+        Self::default()
+            .move_to(x + r, y)
+            // 顶边
+            .line_to(x + width - r, y)
+            // 右上圆角
+            .bezier(vec![
+                (x + width - r + control_offset, y),
+                (x + width, y + r - control_offset),
+                (x + width, y + r),
+            ])
+            // 右边
+            .line_to(x + width, y + height - r)
+            // 右下圆角
+            .bezier(vec![
+                (x + width, y + height - r + control_offset),
+                (x + width - r + control_offset, y + height),
+                (x + width - r, y + height),
+            ])
+            // 底边
+            .line_to(x + r, y + height)
+            // 左下圆角
+            .bezier(vec![
+                (x + r - control_offset, y + height),
+                (x, y + height - r + control_offset),
+                (x, y + height - r),
+            ])
+            // 左边
+            .line_to(x, y + r)
+            // 左上圆角
+            .bezier(vec![
+                (x, y + r - control_offset),
+                (x + r - control_offset, y),
+                (x + r, y),
+            ])
+            .close()
+    }
+
     /// 计算 Path 的 AABB 包围盒
     /// 返回元组: (x, y, width, height)
     /// 复杂度: O(N) - 极快

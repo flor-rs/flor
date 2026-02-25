@@ -4,10 +4,6 @@ compile_error!("The 'direct2d' feature is only supported on Windows platforms.")
 
 pub mod error;
 
-pub mod base {
-    pub use flor_base::graphics::*;
-}
-
 pub mod encode;
 pub mod handle;
 pub mod to_d2d;

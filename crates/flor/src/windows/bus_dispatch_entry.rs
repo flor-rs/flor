@@ -52,13 +52,13 @@ use crate::windows::bus_dispatch_entry::right_button_up_entry::right_button_up_e
 use crate::windows::bus_dispatch_entry::tooltip_check_entry::tooltip_check_entry;
 use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_scroll_lines_changed_entry;
 use crate::windows::entry::WindowEntryVisit;
+use flor_base::graphics::RenderContext;
 use flor_base::platform::{InputEvent, KeyCode, KeyState};
 use flor_base::platform::{MousePosition, ScrollAxis};
 #[cfg(feature = "theme-change")]
 use flor_platform_base::ThemeMode;
 #[cfg(feature = "drag-drop")]
 use flor_platform_base::{DragData, DragFormat, DropEffect};
-use graphics::base::RenderContext;
 use platform::WindowId;
 use std::ops::DerefMut;
 use std::sync::atomic::Ordering;

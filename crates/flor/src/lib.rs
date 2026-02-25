@@ -1,11 +1,19 @@
 #[cfg(feature = "direct2d")]
-pub extern crate flor_graphics_direct2d as graphics;
+pub extern crate flor_graphics_direct2d as graphics_gpu;
 #[cfg(feature = "opengl")]
-pub extern crate flor_graphics_opengl as graphics;
+pub extern crate flor_graphics_opengl as graphics_gpu;
+#[cfg(feature = "tiny-skia")]
+pub extern crate flor_graphics_tiny_skia as graphics_cpu;
 pub extern crate flor_platform as platform;
 pub extern crate once_cell;
 pub extern crate parking_lot;
 pub extern crate rustc_hash;
+
+pub mod graphics {
+    pub mod base {
+        pub use flor_base::graphics::*;
+    }
+}
 
 pub mod device_kind;
 pub mod error;

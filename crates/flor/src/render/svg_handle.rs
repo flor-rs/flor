@@ -1,8 +1,10 @@
-use graphics::base::SvgHandle;
+#[cfg(feature = "tiny-skia")]
+use crate::graphics_cpu::handle::TinySkiaSvgHandle;
 #[cfg(feature = "direct2d")]
-use graphics::handle::D2DSvgHandle;
+use crate::graphics_gpu::handle::D2DSvgHandle;
 #[cfg(feature = "opengl")]
-use graphics::handle::GlSvgHandle;
+use crate::graphics_gpu::handle::GlSvgHandle;
+use flor_base::graphics::SvgHandle;
 
 #[derive(Debug, Clone)]
 pub enum FlorSvgHandle {
@@ -11,6 +13,8 @@ pub enum FlorSvgHandle {
         #[cfg(feature = "direct2d")] D2DSvgHandle,
         #[cfg(feature = "opengl")] GlSvgHandle,
     ),
+    #[cfg(feature = "cpu-render-backend")]
+    CPU(#[cfg(feature = "tiny-skia")] TinySkiaSvgHandle),
 }
 
 impl SvgHandle for FlorSvgHandle {}

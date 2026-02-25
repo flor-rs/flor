@@ -1,9 +1,11 @@
-use graphics::base::BrushHandle;
+use flor_base::graphics::BrushHandle;
 
+#[cfg(feature = "tiny-skia")]
+use crate::graphics_cpu::handle::TinySkiaBrushHandle;
 #[cfg(feature = "direct2d")]
-use graphics::handle::D2DBrushHandle;
+use crate::graphics_gpu::handle::D2DBrushHandle;
 #[cfg(feature = "opengl")]
-use graphics::handle::GlBrushHandle;
+use crate::graphics_gpu::handle::GlBrushHandle;
 
 #[derive(Debug, Clone)]
 pub enum FlorBrushHandle {
@@ -12,6 +14,8 @@ pub enum FlorBrushHandle {
         #[cfg(feature = "direct2d")] D2DBrushHandle,
         #[cfg(feature = "opengl")] GlBrushHandle,
     ),
+    #[cfg(feature = "cpu-render-backend")]
+    CPU(#[cfg(feature = "tiny-skia")] TinySkiaBrushHandle),
 }
 
 impl BrushHandle for FlorBrushHandle {}

@@ -1,8 +1,10 @@
-use graphics::base::ImageHandle;
+#[cfg(feature = "tiny-skia")]
+use crate::graphics_cpu::handle::TinySkiaImageHandle;
 #[cfg(feature = "direct2d")]
-use graphics::handle::D2DImageHandle;
+use crate::graphics_gpu::handle::D2DImageHandle;
 #[cfg(feature = "opengl")]
-use graphics::handle::GlImageHandle;
+use crate::graphics_gpu::handle::GlImageHandle;
+use flor_base::graphics::ImageHandle;
 
 #[derive(Debug, Clone)]
 pub enum FlorImageHandle {
@@ -11,6 +13,8 @@ pub enum FlorImageHandle {
         #[cfg(feature = "direct2d")] D2DImageHandle,
         #[cfg(feature = "opengl")] GlImageHandle,
     ),
+    #[cfg(feature = "cpu-render-backend")]
+    CPU(#[cfg(feature = "tiny-skia")] TinySkiaImageHandle),
 }
 
 impl ImageHandle for FlorImageHandle {
@@ -18,6 +22,8 @@ impl ImageHandle for FlorImageHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorImageHandle::GPU(handle) => handle.frame_count(),
+            #[cfg(feature = "cpu-render-backend")]
+            FlorImageHandle::CPU(handle) => handle.frame_count(),
         }
     }
 
@@ -25,6 +31,8 @@ impl ImageHandle for FlorImageHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorImageHandle::GPU(handle) => handle.delays(),
+            #[cfg(feature = "cpu-render-backend")]
+            FlorImageHandle::CPU(handle) => handle.delays(),
         }
     }
 
@@ -32,6 +40,8 @@ impl ImageHandle for FlorImageHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorImageHandle::GPU(handle) => handle.total_delays(),
+            #[cfg(feature = "cpu-render-backend")]
+            FlorImageHandle::CPU(handle) => handle.total_delays(),
         }
     }
 
@@ -39,6 +49,8 @@ impl ImageHandle for FlorImageHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorImageHandle::GPU(handle) => handle.get_size(),
+            #[cfg(feature = "cpu-render-backend")]
+            FlorImageHandle::CPU(handle) => handle.get_size(),
         }
     }
 
@@ -46,6 +58,8 @@ impl ImageHandle for FlorImageHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorImageHandle::GPU(handle) => handle.get_width(),
+            #[cfg(feature = "cpu-render-backend")]
+            FlorImageHandle::CPU(handle) => handle.get_width(),
         }
     }
 
@@ -53,6 +67,8 @@ impl ImageHandle for FlorImageHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorImageHandle::GPU(handle) => handle.get_height(),
+            #[cfg(feature = "cpu-render-backend")]
+            FlorImageHandle::CPU(handle) => handle.get_height(),
         }
     }
 }

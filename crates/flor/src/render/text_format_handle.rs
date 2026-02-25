@@ -1,11 +1,13 @@
-use graphics::base::{
+#[cfg(feature = "tiny-skia")]
+use crate::graphics_cpu::handle::TinySkiaTextFormatHandle;
+#[cfg(feature = "direct2d")]
+use crate::graphics_gpu::handle::D2DTextFormatHandle;
+#[cfg(feature = "opengl")]
+use crate::graphics_gpu::handle::GlTextFormatHandle;
+use flor_base::graphics::{
     FontStretch, FontStyle, FontWeight, ParagraphAlignment, TextAlignment, TextFormatHandle,
     TextTrimming, WordWrapping,
 };
-#[cfg(feature = "direct2d")]
-use graphics::handle::D2DTextFormatHandle;
-#[cfg(feature = "opengl")]
-use graphics::handle::GlTextFormatHandle;
 
 #[derive(Debug, Clone)]
 pub enum FlorTextFormatHandle {
@@ -14,6 +16,8 @@ pub enum FlorTextFormatHandle {
         #[cfg(feature = "direct2d")] D2DTextFormatHandle,
         #[cfg(feature = "opengl")] GlTextFormatHandle,
     ),
+    #[cfg(feature = "cpu-render-backend")]
+    CPU(#[cfg(feature = "tiny-skia")] TinySkiaTextFormatHandle),
 }
 
 impl TextFormatHandle for FlorTextFormatHandle {
@@ -27,6 +31,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
             Self::GPU(h) => {
                 h.set_font_size(size);
             }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
+                h.set_font_size(size);
+            }
         }
         self
     }
@@ -35,6 +43,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.font_size(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.font_size(),
         }
     }
 
@@ -42,6 +52,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => {
+                h.set_font_weight(weight);
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
                 h.set_font_weight(weight);
             }
         }
@@ -52,6 +66,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.font_weight(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.font_weight(),
         }
     }
 
@@ -59,6 +75,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => {
+                h.set_font_style(style);
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
                 h.set_font_style(style);
             }
         }
@@ -69,6 +89,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.font_style(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.font_style(),
         }
     }
 
@@ -76,6 +98,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => {
+                h.set_font_stretch(stretch);
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
                 h.set_font_stretch(stretch);
             }
         }
@@ -86,6 +112,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.font_stretch(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.font_stretch(),
         }
     }
 
@@ -93,6 +121,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.font_family_name(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.font_family_name(),
         }
     }
 
@@ -106,6 +136,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
             Self::GPU(h) => {
                 h.set_text_alignment(align);
             }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
+                h.set_text_alignment(align);
+            }
         }
         self
     }
@@ -114,6 +148,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.text_alignment(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.text_alignment(),
         }
     }
 
@@ -121,6 +157,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => {
+                h.set_paragraph_alignment(align);
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
                 h.set_paragraph_alignment(align);
             }
         }
@@ -131,6 +171,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.paragraph_alignment(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.paragraph_alignment(),
         }
     }
 
@@ -138,6 +180,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => {
+                h.set_word_wrapping(wrapping);
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
                 h.set_word_wrapping(wrapping);
             }
         }
@@ -148,6 +194,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.word_wrapping(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.word_wrapping(),
         }
     }
 
@@ -155,6 +203,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => {
+                h.set_line_height(line_height_factor);
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
                 h.set_line_height(line_height_factor);
             }
         }
@@ -165,6 +217,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.line_height(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.line_height(),
         }
     }
 
@@ -172,6 +226,10 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => {
+                h.set_text_trimming(trimming);
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => {
                 h.set_text_trimming(trimming);
             }
         }
@@ -182,6 +240,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.text_trimming(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.text_trimming(),
         }
     }
 
@@ -189,6 +249,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.dirty(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.dirty(),
         }
     }
 
@@ -196,6 +258,8 @@ impl TextFormatHandle for FlorTextFormatHandle {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             Self::GPU(h) => h.clear_dirty(),
+            #[cfg(feature = "cpu-render-backend")]
+            Self::CPU(h) => h.clear_dirty(),
         }
     }
 }

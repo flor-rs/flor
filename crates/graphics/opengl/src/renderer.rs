@@ -1,11 +1,9 @@
 use crate::error::GlError;
 use crate::handle::GlImageHandle;
 use crate::handle::GlSurfaceId;
-#[cfg(feature = "svg")]
-use crate::handle::GlSvgHandle;
 use crate::handle::{GlBrushHandle, GlTextFormatHandle};
 #[cfg(feature = "svg")]
-use flor_base::graphics::SvgDrawOptions;
+use {crate::handle::GlSvgHandle, flor_base::graphics::SvgDrawOptions};
 
 use crate::platform;
 use flor_base::graphics::{
@@ -25,6 +23,7 @@ pub struct GlRenderer {
 }
 
 impl Render for GlRenderer {
+    #[cfg(target_os = "windows")]
     type HWND = HWND;
     type Render = GlRenderer;
     type Config = GlConfig;

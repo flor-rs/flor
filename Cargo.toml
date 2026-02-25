@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/flor",
     "crates/macros",
+    "crates/graphics/tiny-skia",
     "crates/graphics/opengl",
     "crates/graphics/direct2d",
     "crates/platform/windows",
@@ -26,6 +27,7 @@ flor = { version = "0.1.0", path = "crates/flor" }
 flor-base = { version = "0.1.0", path = "crates/base" }
 flor-graphics-opengl = { version = "0.1.0", path = "./crates/graphics/opengl" }
 flor-graphics-direct2d = { version = "0.1.0", path = "./crates/graphics/direct2d" }
+flor-graphics-tiny-skia = { version = "0.1.0", path = "./crates/graphics/tiny-skia" }
 flor-macros = { version = "0.1.0", path = "crates/macros" }
 dashmap = "*"
 image = "0.25"

@@ -4,25 +4,30 @@
 #![allow(clippy::needless_return)]
 
 use crate::error::Error;
+#[cfg(feature = "direct2d")]
+use crate::graphics_gpu::{D2DConfig, D2DRenderer};
+#[cfg(feature = "opengl")]
+use crate::graphics_gpu::{GlConfig, GlRenderer};
 use crate::render::image_handle::FlorImageHandle;
 use crate::render::surface_id::FlorSurfaceId;
 #[cfg(feature = "svg")]
 use crate::render::svg_handle::FlorSvgHandle;
 use crate::render::text_format_handle::FlorTextFormatHandle;
 use crate::render::{FlorBrushHandle, FlorRendererError};
-use flor_base::types::{Color, Transform2D};
 #[cfg(feature = "svg")]
-use graphics::base::SvgDrawOptions;
-#[cfg(any(feature = "direct2d", feature = "opengl"))]
-use graphics::base::{
+use flor_base::graphics::SvgDrawOptions;
+use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
     TextDrawOptions,
 };
-#[cfg(feature = "direct2d")]
-use graphics::{D2DConfig, D2DRenderer};
-#[cfg(feature = "opengl")]
-use graphics::{GlConfig, GlRenderer};
+use flor_base::types::{Color, Transform2D};
 use platform::WindowId;
+
+#[cfg(not(any(feature = "gpu-render-backend", feature = "cpu-render-backend")))]
+compile_error!("You need to enable the features of at least one CPU or GPU rendering backend.");
+
+#[cfg(all(feature = "direct2d", feature = "opengl"))]
+compile_error!("Only one GPU rendering backend can be enabled at most.");
 
 #[derive(Debug)]
 pub enum FlorRenderer {
@@ -31,7 +36,8 @@ pub enum FlorRenderer {
         #[cfg(feature = "direct2d")] D2DRenderer,
         #[cfg(feature = "opengl")] GlRenderer,
     ),
-    // CPU(#[cfg(feature = "gdi")] GDIRender),
+    #[cfg(feature = "cpu-render-backend")]
+    CPU(#[cfg(feature = "tiny-skia")] crate::graphics_cpu::TinySkiaRenderer),
 }
 
 impl FlorRenderer {
@@ -52,6 +58,20 @@ impl FlorRenderer {
         #[cfg(feature = "opengl")]
         match GlRenderer::create(window_id, width, height, wait_v_sync, GlConfig::default()) {
             Ok(render) => return Ok(Self::GPU(render)),
+            Err(err) => {
+                log::error!("{}", err);
+            }
+        }
+
+        #[cfg(feature = "tiny-skia")]
+        match crate::graphics_cpu::TinySkiaRenderer::create(
+            window_id,
+            width,
+            height,
+            wait_v_sync,
+            crate::graphics_cpu::TinySkiaConfig::default(),
+        ) {
+            Ok(render) => return Ok(Self::CPU(render)),
             Err(err) => {
                 log::error!("{}", err);
             }
@@ -135,7 +155,7 @@ impl RenderContext for FlorRenderer {
             #[cfg(feature = "gpu-render-backend")]
             FlorRenderer::GPU(g) => Ok(FlorSurfaceId::GPU(g.create_surface(width, height)?)),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => Ok(c.create_surface(width, height)?),
+            FlorRenderer::CPU(c) => Ok(FlorSurfaceId::CPU(c.create_surface(width, height)?)),
         }
     }
 
@@ -149,7 +169,12 @@ impl RenderContext for FlorRenderer {
                 }
             }
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => c.set_render_target(target)?,
+            FlorRenderer::CPU(c) => {
+                if let FlorSurfaceId::CPU(surface_id) = surface_id {
+                    c.set_render_target(surface_id)?;
+                    return Ok(());
+                }
+            }
         };
         Err(FlorRendererError::RenderNotFound)
     }
@@ -169,7 +194,7 @@ impl RenderContext for FlorRenderer {
             #[cfg(feature = "gpu-render-backend")]
             FlorRenderer::GPU(g) => Ok(FlorImageHandle::GPU(g.create_image_from_bytes(bytes)?)),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => Ok(c.create_image_from_bytes(bytes)?),
+            FlorRenderer::CPU(c) => Ok(FlorImageHandle::CPU(c.create_image_from_bytes(bytes)?)),
         }
     }
 
@@ -186,7 +211,9 @@ impl RenderContext for FlorRenderer {
                 g.create_image_from_raw_bytes(raw_bytes, width, height, delays)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => Ok(c.create_image_from_bytes(bytes)?),
+            FlorRenderer::CPU(c) => Ok(FlorImageHandle::CPU(
+                c.create_image_from_raw_bytes(raw_bytes, width, height, delays)?,
+            )),
         }
     }
 
@@ -196,7 +223,7 @@ impl RenderContext for FlorRenderer {
             #[cfg(feature = "gpu-render-backend")]
             FlorRenderer::GPU(g) => Ok(FlorSvgHandle::GPU(g.create_svg(bytes)?)),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => Ok(c.create_svg(bytes)?),
+            FlorRenderer::CPU(c) => Ok(FlorSvgHandle::CPU(c.create_svg(bytes)?)),
         }
     }
 
@@ -210,7 +237,9 @@ impl RenderContext for FlorRenderer {
                 g.create_text_format(font_family_name)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => Ok(c.create_text_format(font_family_name)?),
+            FlorRenderer::CPU(c) => Ok(FlorTextFormatHandle::CPU(
+                c.create_text_format(font_family_name)?,
+            )),
         }
     }
 
@@ -226,7 +255,9 @@ impl RenderContext for FlorRenderer {
                 g.create_text_format_from_bytes(font_data, ttc_index)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => Ok(c.create_text_format_from_bytes(font_data, ttc_index)?),
+            FlorRenderer::CPU(c) => Ok(FlorTextFormatHandle::CPU(
+                c.create_text_format_from_bytes(font_data, ttc_index)?,
+            )),
         }
     }
 
@@ -248,7 +279,7 @@ impl RenderContext for FlorRenderer {
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
                 // 解包 CPU 具体的 Format Handle
-                if let FlorTextFormatHandle::CPUTextFormatHandle(inner_fmt) = text_format {
+                if let FlorTextFormatHandle::CPU(inner_fmt) = text_format {
                     let result = c.measure_text(text, inner_fmt, width, height)?;
                     return Ok(result);
                 }
@@ -276,8 +307,8 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
-                    return Ok(g.hit_test_text_position(text, inner_fmt, width, height, x, y)?);
+                if let FlorTextFormatHandle::CPU(inner_fmt) = text_format {
+                    return Ok(c.hit_test_point(text, inner_fmt, width, height, x, y)?);
                 }
             }
         }
@@ -305,8 +336,8 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let FlorTextFormatHandle::D2DTextFormatHandle(inner_fmt) = text_format {
-                    return Ok(g.hit_test_text_position(
+                if let FlorTextFormatHandle::CPU(inner_fmt) = text_format {
+                    return Ok(c.hit_test_text_position(
                         text, inner_fmt, width, height, text_index, trailing,
                     )?);
                 }
@@ -327,7 +358,9 @@ impl RenderContext for FlorRenderer {
                 g.create_solid_color_brush(color, opacity)?,
             )),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => Ok(c.create_solid_color_brush(color, opacity)?),
+            FlorRenderer::CPU(c) => Ok(FlorBrushHandle::CPU(
+                c.create_solid_color_brush(color, opacity)?,
+            )),
         }
     }
 
@@ -339,7 +372,7 @@ impl RenderContext for FlorRenderer {
             #[cfg(feature = "gpu-render-backend")]
             FlorRenderer::GPU(g) => Ok(FlorBrushHandle::GPU(g.create_gradient_brush(gradient)?)),
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => Ok(c.create_gradient_brush(gradient)?),
+            FlorRenderer::CPU(c) => Ok(FlorBrushHandle::CPU(c.create_gradient_brush(gradient)?)),
         }
     }
     fn draw_image(
@@ -361,7 +394,7 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let FlorImageHandle::CPUImageHandle(inner) = handle {
+                if let FlorImageHandle::CPU(inner) = handle {
                     c.draw_image(inner, x, y, width, height, options)?;
                     return Ok(()); // 成功则直接返回
                 }
@@ -391,7 +424,7 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let SvgHandle::CPUSvgHandle(inner) = handle {
+                if let FlorSvgHandle::CPU(inner) = handle {
                     c.draw_svg(inner, x, y, width, height, options)?;
                     return Ok(());
                 }
@@ -433,10 +466,8 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let (
-                    FlorTextFormatHandle::CPUTextFormatHandle(inner_fmt),
-                    FlorBrushHandle::CPUBrushHandle(inner_brush),
-                ) = (text_format, brush)
+                if let (FlorTextFormatHandle::CPU(inner_fmt), FlorBrushHandle::CPU(inner_brush)) =
+                    (text_format, brush)
                 {
                     c.draw_text(
                         text,
@@ -472,7 +503,7 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let FlorBrushHandle::CPUBrushHandle(inner) = brush {
+                if let FlorBrushHandle::CPU(inner) = brush {
                     c.draw_path(path, inner, stroke_width, options)?;
                     return Ok(());
                 }
@@ -497,7 +528,7 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let FlorBrushHandle::CPUBrushHandle(inner) = brush {
+                if let FlorBrushHandle::CPU(inner) = brush {
                     c.fill_path(path, inner, options)?;
                     return Ok(());
                 }
@@ -526,7 +557,7 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let FlorBrushHandle::CPUBrushHandle(inner) = brush {
+                if let FlorBrushHandle::CPU(inner) = brush {
                     c.draw_quad(left, top, width, height, border_width, inner, options)?;
                     return Ok(());
                 }
@@ -555,7 +586,7 @@ impl RenderContext for FlorRenderer {
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
-                if let FlorBrushHandle::CPUBrushHandle(inner) = brush {
+                if let FlorBrushHandle::CPU(inner) = brush {
                     c.fill_quad(left, top, width, height, inner, corner_radius, options)?;
                     return Ok(());
                 }
@@ -586,7 +617,15 @@ impl RenderContext for FlorRenderer {
                 transform,
             )?,
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => c.blur_region(left, top, width, height, radius, transform)?,
+            FlorRenderer::CPU(c) => c.blur_quad(
+                left,
+                top,
+                width,
+                height,
+                corner_radius,
+                blur_radius,
+                transform,
+            )?,
         };
         Ok(())
     }
@@ -601,7 +640,7 @@ impl RenderContext for FlorRenderer {
             #[cfg(feature = "gpu-render-backend")]
             FlorRenderer::GPU(g) => g.blur_path(path, blur_radius, transform)?,
             #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => c..blur_path(path, blur_radius, transform)?,
+            FlorRenderer::CPU(c) => c.blur_path(path, blur_radius, transform)?,
         };
         Ok(())
     }

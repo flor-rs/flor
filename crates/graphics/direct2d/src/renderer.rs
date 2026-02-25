@@ -54,9 +54,9 @@ use windows::Win32::Graphics::DirectWrite::{
 use windows_numerics::{Matrix3x2, Vector2};
 
 #[cfg(feature = "svg")]
-use crate::base::SvgDrawOptions;
-#[cfg(feature = "svg")]
 use crate::handle::{D2DSvgHandle, SvgShadowCache};
+#[cfg(feature = "svg")]
+use flor_base::graphics::SvgDrawOptions;
 #[cfg(feature = "svg")]
 use std::ffi::c_void;
 use std::hash::{DefaultHasher, Hash, Hasher};
