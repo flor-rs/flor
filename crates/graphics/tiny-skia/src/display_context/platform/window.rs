@@ -27,7 +27,7 @@ impl Debug for GdiDisplayContext {
 
 impl DisplayContext for GdiDisplayContext {
     type HWND = HWND;
-    fn create(h_wnd: HWND, config: TinySkiaConfig) -> Result<Self, TinySkiaError>
+    fn create(h_wnd: HWND, _config: TinySkiaConfig) -> Result<Self, TinySkiaError>
     where
         Self: Sized,
     {
@@ -40,6 +40,7 @@ impl DisplayContext for GdiDisplayContext {
     }
     fn present(&mut self, width: u32, height: u32, pixels: &[u8]) -> Result<(), TinySkiaError> {
         #[repr(C)]
+        #[allow(non_camel_case_types)]
         struct BITMAPINFO_RGBA {
             bmi_header: BITMAPINFOHEADER,
             bmi_colors: [u32; 3],
@@ -50,12 +51,12 @@ impl DisplayContext for GdiDisplayContext {
             bmi_colors: [0x000000FF, 0x0000FF00, 0x00FF0000], // R, G, B masks
         };
 
-        bmi.bmi_header.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+        bmi.bmi_header.biSize = size_of::<BITMAPINFOHEADER>() as u32;
         bmi.bmi_header.biWidth = width as i32;
         bmi.bmi_header.biHeight = -(height as i32); // Top-down
         bmi.bmi_header.biPlanes = 1;
         bmi.bmi_header.biBitCount = 32;
-        bmi.bmi_header.biCompression = windows::Win32::Graphics::Gdi::BI_BITFIELDS.0 as u32;
+        bmi.bmi_header.biCompression = windows::Win32::Graphics::Gdi::BI_BITFIELDS.0;
 
         unsafe {
             StretchDIBits(

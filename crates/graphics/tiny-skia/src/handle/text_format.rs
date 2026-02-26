@@ -6,6 +6,7 @@ use slotmap::new_key_type;
 
 #[derive(Debug, Clone)]
 pub struct TinySkiaTextFormatHandle {
+    pub font_system: std::sync::Arc<parking_lot::RwLock<cosmic_text::FontSystem>>,
     pub font_size: f32,
     pub font_weight: FontWeight,
     pub font_style: FontStyle,
@@ -18,9 +19,10 @@ pub struct TinySkiaTextFormatHandle {
     pub text_trimming: TextTrimming,
 }
 
-impl Default for TinySkiaTextFormatHandle {
-    fn default() -> Self {
+impl TinySkiaTextFormatHandle {
+    pub fn new(font_system: std::sync::Arc<parking_lot::RwLock<cosmic_text::FontSystem>>) -> Self {
         Self {
+            font_system,
             font_size: 16.0,
             font_weight: FontWeight::Normal,
             font_style: FontStyle::Normal,
@@ -129,7 +131,7 @@ impl TextFormatHandle for TinySkiaTextFormatHandle {
 }
 
 impl TinySkiaTextFormatHandle {
-    pub(crate) fn to_cosmic_attrs<'a>(&'a self) -> cosmic_text::Attrs<'a> {
+    pub(crate) fn to_cosmic_attrs(&'_ self) -> cosmic_text::Attrs<'_> {
         let weight = match self.font_weight {
             FontWeight::Thin => cosmic_text::Weight::THIN,
             FontWeight::ExtraLight => cosmic_text::Weight::EXTRA_LIGHT,

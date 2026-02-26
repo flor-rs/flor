@@ -5,12 +5,12 @@ use crate::handle::{
 };
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
-    RenderContext, TextDrawOptions,
+    RenderContext, TextAlignment, TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
+use libblur::BlurError;
 use slotmap::SlotMap;
-use tiny_skia::Pixmap;
-
+use tiny_skia::{Paint, Pixmap, PixmapMut, PixmapPaint, PremultipliedColorU8};
 #[cfg(feature = "svg")]
 use {
     crate::handle::{SvgSlotId, TinySkiaSvgHandle},
@@ -19,6 +19,7 @@ use {
 
 mod config;
 use crate::display_context::{DisplayContext, NativeDisplayContext};
+use crate::has_transform::HasTransform;
 use crate::to_tiny_skia::ToTinySkia;
 pub use config::*;
 
@@ -34,7 +35,7 @@ pub struct TinySkiaRenderer {
     pub current_render_target: Option<SurfaceSlotId>,
 
     // Text rendering caches
-    pub font_system: cosmic_text::FontSystem,
+    pub font_system: std::sync::Arc<parking_lot::RwLock<cosmic_text::FontSystem>>,
     pub swash_cache: cosmic_text::SwashCache,
 
     // Clipping state
@@ -72,7 +73,9 @@ impl Render for TinySkiaRenderer {
             wait_v_sync,
             transform_stack: vec![tiny_skia::Transform::identity()],
             current_render_target: None,
-            font_system: cosmic_text::FontSystem::new(),
+            font_system: std::sync::Arc::new(parking_lot::RwLock::new(
+                cosmic_text::FontSystem::new(),
+            )),
             swash_cache: cosmic_text::SwashCache::new(),
             clip_stack: Vec::new(),
             active_clip: None,
@@ -83,6 +86,36 @@ impl Render for TinySkiaRenderer {
 }
 
 impl TinySkiaRenderer {
+    fn fast_blur(
+        pixels: &mut [PremultipliedColorU8],
+        width: usize,
+        height: usize,
+        radius: u32,
+    ) -> Result<(), TinySkiaError> {
+        if radius == 0 || width == 0 || height == 0 {
+            return Err(TinySkiaError::BlurError(BlurError::InvalidArguments));
+        }
+
+        let byte_slice = unsafe {
+            std::slice::from_raw_parts_mut(pixels.as_mut_ptr() as *mut u8, pixels.len() * 4)
+        };
+
+        let mut dst_image = libblur::BlurImageMut::borrow(
+            byte_slice,
+            width as u32,
+            height as u32,
+            libblur::FastBlurChannels::Channels4,
+        );
+
+        libblur::fast_gaussian_next(
+            &mut dst_image,
+            libblur::AnisotropicRadius::new(radius),
+            libblur::ThreadingPolicy::Adaptive,
+            libblur::EdgeMode2D::new(libblur::EdgeMode::Clamp),
+        )?;
+        Ok(())
+    }
+
     fn get_current_transform(&self) -> tiny_skia::Transform {
         self.transform_stack
             .last()
@@ -90,10 +123,18 @@ impl TinySkiaRenderer {
             .unwrap_or(tiny_skia::Transform::identity())
     }
 
+    fn get_options_transform<T: HasTransform>(&self, options: Option<&T>) -> tiny_skia::Transform {
+        let current = self.get_current_transform();
+        options
+            .and_then(|opts| opts.get_transform())
+            .map(|t| current.pre_concat(t.to_tiny_skia()))
+            .unwrap_or(current)
+    }
+
     /// Run a closure with the current render target PixmapMut and the active ClipMask
     fn with_current_pixmap<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut tiny_skia::PixmapMut, Option<&tiny_skia::Mask>) -> R,
+        F: FnOnce(&mut PixmapMut, Option<&tiny_skia::Mask>) -> R,
     {
         let clip = self.active_clip.as_ref();
         if let Some(target) = self.current_render_target {
@@ -102,6 +143,29 @@ impl TinySkiaRenderer {
             }
         }
         f(&mut self.default_pixmap.as_mut(), clip)
+    }
+
+    /// Helper to get swash cache and current pixmap simultaneously without closure capture issues
+    fn split_pixmap_and_cache(
+        &'_ mut self,
+    ) -> (
+        &'_ mut cosmic_text::SwashCache,
+        PixmapMut<'_>,
+        Option<&tiny_skia::Mask>,
+    ) {
+        let clip = self.active_clip.as_ref();
+
+        let pixmap = if let Some(target) = self.current_render_target {
+            if let Some(surface) = self.surface_pixmap.get_mut(target) {
+                surface.as_mut()
+            } else {
+                self.default_pixmap.as_mut()
+            }
+        } else {
+            self.default_pixmap.as_mut()
+        };
+
+        (&mut self.swash_cache, pixmap, clip)
     }
 
     fn build_tiny_skia_path(path: &Path) -> Option<tiny_skia::Path> {
@@ -138,7 +202,7 @@ impl TinySkiaRenderer {
         path: &Path,
         shadow: &flor_base::graphics::Shadow,
         options_transform: Option<&Transform2D>,
-    ) -> Result<(), crate::error::TinySkiaError> {
+    ) -> Result<(), TinySkiaError> {
         let ts_path = if let Some(p) = Self::build_tiny_skia_path(path) {
             p
         } else {
@@ -154,15 +218,14 @@ impl TinySkiaRenderer {
         } else {
             self.get_current_transform()
         };
-        // Apply offset
         let transform = transform.post_translate(shadow.offset_x, shadow.offset_y);
 
-        let mut paint = tiny_skia::Paint::default();
+        let mut paint = Paint::default();
         paint.anti_alias = true;
         paint.set_color(shadow.color.to_tiny_skia());
 
         let bounds = ts_path.bounds();
-        let pad = shadow.blur_radius.ceil() as f32 * 2.0;
+        let pad = shadow.blur_radius.ceil() * 2.0;
 
         let left = (bounds.left() - pad).floor();
         let top = (bounds.top() - pad).floor();
@@ -176,7 +239,7 @@ impl TinySkiaRenderer {
             return Ok(());
         }
 
-        if let Some(mut blur_pixmap) = tiny_skia::Pixmap::new(width, height) {
+        if let Some(mut blur_pixmap) = Pixmap::new(width, height) {
             let mut local_transform = transform;
             local_transform = local_transform.post_translate(-left, -top);
 
@@ -188,12 +251,12 @@ impl TinySkiaRenderer {
                 None,
             );
 
-            crate::fast_box_blur::fast_box_blur(
+            Self::fast_blur(
                 blur_pixmap.pixels_mut(),
                 width as usize,
                 height as usize,
                 shadow.blur_radius.round() as u32,
-            );
+            )?;
 
             let mut draw_transform = tiny_skia::Transform::identity();
             draw_transform = draw_transform.post_translate(left, top);
@@ -203,7 +266,7 @@ impl TinySkiaRenderer {
                     0,
                     0,
                     blur_pixmap.as_ref(),
-                    &tiny_skia::PixmapPaint::default(),
+                    &PixmapPaint::default(),
                     draw_transform,
                     clip,
                 );
@@ -234,7 +297,7 @@ impl TinySkiaRenderer {
 
         if let Some(mut new_mask) = tiny_skia::Mask::new(width, height) {
             if let Some(prev) = prev_mask {
-                new_mask.clone_from(prev); // `tiny_skia::Mask` leverages `clone_from` for efficient buffer copying
+                new_mask.clone_from(prev);
                 new_mask.intersect_path(
                     &ts_path,
                     tiny_skia::FillRule::Winding,
@@ -256,8 +319,293 @@ impl TinySkiaRenderer {
 
         self.update_clip_mask();
     }
+
+    fn set_brush(brush: &TinySkiaBrushHandle, paint: &mut Paint) {
+        match brush {
+            TinySkiaBrushHandle::Solid(color) => {
+                paint.set_color(*color);
+            }
+            TinySkiaBrushHandle::Gradient { gradient } => {
+                let mut stops = Vec::new();
+                match gradient {
+                    Gradient::Linear { start, end, colors } => {
+                        for (pos, c) in colors {
+                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
+                        }
+                        if let Some(shader) = tiny_skia::LinearGradient::new(
+                            tiny_skia::Point::from_xy(start.0, start.1),
+                            tiny_skia::Point::from_xy(end.0, end.1),
+                            stops,
+                            tiny_skia::SpreadMode::Pad,
+                            tiny_skia::Transform::identity(),
+                        ) {
+                            paint.shader = shader;
+                        } else {
+                            paint.set_color_rgba8(0, 0, 0, 255);
+                        }
+                    }
+                    Gradient::Radial {
+                        center,
+                        radius,
+                        colors,
+                    } => {
+                        for (pos, c) in colors {
+                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
+                        }
+                        if let Some(shader) = tiny_skia::RadialGradient::new(
+                            tiny_skia::Point::from_xy(center.0, center.1),
+                            0.0,
+                            tiny_skia::Point::from_xy(center.0, center.1),
+                            *radius,
+                            stops,
+                            tiny_skia::SpreadMode::Pad,
+                            tiny_skia::Transform::identity(),
+                        ) {
+                            paint.shader = shader;
+                        } else {
+                            paint.set_color_rgba8(0, 0, 0, 255);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn convert_rgba_to_premultiplied(src_rgba: &[u8], dst_premultiplied: &mut [u8]) {
+        for (src, dst) in src_rgba
+            .chunks_exact(4)
+            .zip(dst_premultiplied.chunks_exact_mut(4))
+        {
+            let r = src[0];
+            let g = src[1];
+            let b = src[2];
+            let a = src[3];
+            let color = tiny_skia::ColorU8::from_rgba(r, g, b, a).premultiply();
+            dst[0] = color.red();
+            dst[1] = color.green();
+            dst[2] = color.blue();
+            dst[3] = color.alpha();
+        }
+    }
+
+    fn recolor_shadow(pixmap: &mut Pixmap, color_r: u32, color_g: u32, color_b: u32, color_a: f32) {
+        for pixel in pixmap.pixels_mut() {
+            let a = pixel.alpha() as f32 / 255.0;
+            let final_a = a * color_a;
+            if final_a > 0.0 {
+                let fa8 = (final_a * 255.0).round() as u8;
+                let fr8 = (color_r as f32 * final_a).round() as u8;
+                let fg8 = (color_g as f32 * final_a).round() as u8;
+                let fb8 = (color_b as f32 * final_a).round() as u8;
+
+                *pixel = PremultipliedColorU8::from_rgba(fr8, fg8, fb8, fa8)
+                    .unwrap_or(PremultipliedColorU8::TRANSPARENT);
+            } else {
+                *pixel = PremultipliedColorU8::TRANSPARENT;
+            }
+        }
+    }
+
+    fn fill_rect_with_transform(
+        &mut self,
+        offset_x: f32,
+        offset_y: f32,
+        sw: f32,
+        sh: f32,
+        paint: &Paint,
+        transform: tiny_skia::Transform,
+    ) {
+        if let Some(rect) = tiny_skia::Rect::from_xywh(offset_x, offset_y, sw, sh) {
+            self.with_current_pixmap(|p, clip| {
+                p.fill_rect(rect, paint, transform, clip);
+            });
+        }
+    }
+
+    #[cfg(feature = "svg")]
+    fn clone_pixmap(pixmap: &Pixmap) -> Option<Pixmap> {
+        let mut clone = Pixmap::new(pixmap.width(), pixmap.height())?;
+        clone.data_mut().copy_from_slice(pixmap.data());
+        Some(clone)
+    }
+
+    /// Check whether the laid-out text overflows the given physical dimensions.
+    /// Returns `true` if any layout run is wider than `phys_width` or if the
+    /// accumulated line height exceeds `phys_height` (when height > 0).
+    fn check_layout_overflow(
+        buffer: &cosmic_text::Buffer,
+        phys_width: f32,
+        phys_height: f32,
+        height: f32,
+    ) -> bool {
+        let mut total_h = 0.0f32;
+        for run in buffer.layout_runs() {
+            if run.line_w > phys_width {
+                return true;
+            }
+            if height > 0.0 && total_h + run.line_height > phys_height {
+                return true;
+            }
+            total_h += run.line_height;
+        }
+        false
+    }
+
+    fn prepare_text_buffer(
+        font_system: &mut cosmic_text::FontSystem,
+        text: &str,
+        text_format: &TinySkiaTextFormatHandle,
+        width: f32,
+        height: f32,
+        dpi_x: f32,
+        dpi_y: f32,
+    ) -> cosmic_text::Buffer {
+        let font_size = text_format.font_size * dpi_y;
+        let phys_width = width * dpi_x;
+        let phys_height = height * dpi_y;
+
+        let mut buffer = cosmic_text::Buffer::new(
+            font_system,
+            cosmic_text::Metrics::new(font_size, font_size * text_format.line_height_factor),
+        );
+        buffer.set_size(
+            font_system,
+            if width > 0.0 { Some(phys_width) } else { None },
+            if height > 0.0 {
+                Some(phys_height)
+            } else {
+                None
+            },
+        );
+        // Justified alignment requires word wrapping — cosmic_text only
+        // expands inter-word spaces on non-last lines, so without wrapping
+        // the single line is treated as "last" and never justified.
+        let wrap = if text_format.text_alignment == TextAlignment::Justified
+            && text_format.to_cosmic_wrap() == cosmic_text::Wrap::None
+        {
+            cosmic_text::Wrap::Word
+        } else {
+            text_format.to_cosmic_wrap()
+        };
+        buffer.set_wrap(font_system, wrap);
+
+        let trimming = text_format.text_trimming;
+        let mut final_text = text.to_string();
+
+        if width > 0.0 && trimming != flor_base::graphics::TextTrimming::None {
+            buffer.set_text(
+                font_system,
+                text,
+                &text_format.to_cosmic_attrs(),
+                cosmic_text::Shaping::Advanced,
+                text_format.to_cosmic_align(),
+            );
+            buffer.shape_until_scroll(font_system, false);
+
+            let do_trim = Self::check_layout_overflow(&buffer, phys_width, phys_height, height);
+
+            if do_trim {
+                let is_word = trimming == flor_base::graphics::TextTrimming::EllipsisWord;
+                let has_ellipsis =
+                    trimming == flor_base::graphics::TextTrimming::EllipsisChar || is_word;
+                let chars: Vec<(usize, char)> = text.char_indices().collect();
+
+                let mut l = 0;
+                let mut r = chars.len();
+                let mut best_text = String::new();
+
+                while l <= r && r < usize::MAX {
+                    let m = l + (r - l) / 2;
+                    if m > chars.len() {
+                        break;
+                    }
+                    let mut test_text = if m < chars.len() {
+                        text[..chars[m].0].to_string()
+                    } else {
+                        text.to_string()
+                    };
+
+                    if is_word && m < chars.len() {
+                        if let Some(idx) = test_text.rfind(char::is_whitespace) {
+                            test_text.truncate(idx);
+                        }
+                    }
+
+                    if has_ellipsis {
+                        test_text.push_str("...");
+                    }
+
+                    buffer.set_text(
+                        font_system,
+                        &test_text,
+                        &text_format.to_cosmic_attrs(),
+                        cosmic_text::Shaping::Advanced,
+                        text_format.to_cosmic_align(),
+                    );
+                    buffer.shape_until_scroll(font_system, false);
+
+                    let overflow =
+                        Self::check_layout_overflow(&buffer, phys_width, phys_height, height);
+
+                    if overflow {
+                        if m == 0 {
+                            break;
+                        }
+                        r = m - 1;
+                    } else {
+                        best_text = test_text;
+                        if l == usize::MAX || m == usize::MAX {
+                            break;
+                        }
+                        l = m + 1;
+                    }
+                }
+                final_text = best_text;
+            }
+        }
+
+        buffer.set_text(
+            font_system,
+            &final_text,
+            &text_format.to_cosmic_attrs(),
+            cosmic_text::Shaping::Advanced,
+            text_format.to_cosmic_align(),
+        );
+        buffer.shape_until_scroll(font_system, false);
+        buffer
+    }
+
+    fn get_glyph_pixel(
+        glyph_color: Option<tiny_skia::Color>,
+        a: f32,
+        fa: u8,
+    ) -> PremultipliedColorU8 {
+        if let Some(c) = glyph_color {
+            let mut p_color = c;
+            p_color.apply_opacity(a);
+            p_color.premultiply().to_color_u8()
+        } else {
+            PremultipliedColorU8::from_rgba(fa, fa, fa, fa)
+                .unwrap_or(PremultipliedColorU8::TRANSPARENT)
+        }
+    }
 }
 
+struct FuncTimer(&'static str, std::time::Instant);
+impl FuncTimer {
+    fn new(name: &'static str) -> Self {
+        Self(name, std::time::Instant::now())
+    }
+}
+impl Drop for FuncTimer {
+    fn drop(&mut self) {
+        let elapsed = self.1.elapsed();
+        println!(
+            "[RenderContext] TinySkiaRenderer::{} took {:?}",
+            self.0, elapsed
+        );
+    }
+}
 impl RenderContext for TinySkiaRenderer {
     type Error = TinySkiaError;
     type ImageHandle = TinySkiaImageHandle;
@@ -268,10 +616,12 @@ impl RenderContext for TinySkiaRenderer {
     type TextFormatHandle = TinySkiaTextFormatHandle;
 
     fn begin(&mut self) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("begin");
         Ok(())
     }
 
     fn end(&mut self) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("end");
         self.context.present(
             self.default_pixmap.width(),
             self.default_pixmap.height(),
@@ -284,9 +634,10 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn clear(&mut self, color: Color) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("clear");
         self.with_current_pixmap(|p, clip| {
             if let Some(c) = clip {
-                let mut paint = tiny_skia::Paint::default();
+                let mut paint = Paint::default();
                 paint.set_color(color.to_tiny_skia());
                 p.fill_rect(
                     tiny_skia::Rect::from_xywh(0.0, 0.0, p.width() as f32, p.height() as f32)
@@ -303,10 +654,12 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn test(&mut self) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("test");
         Ok(())
     }
 
     fn update_window_size(&mut self, width: u32, height: u32) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("update_window_size");
         if let Some(pixmap) = Pixmap::new(width.max(1), height.max(1)) {
             self.default_pixmap = pixmap;
             self.clip_stack.clear();
@@ -316,6 +669,7 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("set_scale_factor");
         self.dpi_scale = (dpi_x, dpi_y);
         if let Some(first) = self.transform_stack.first_mut() {
             *first = tiny_skia::Transform::from_scale(dpi_x, dpi_y);
@@ -324,13 +678,15 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn create_surface(&mut self, width: u32, height: u32) -> Result<Self::SurfaceId, Self::Error> {
-        let pixmap = tiny_skia::Pixmap::new(width.max(1), height.max(1))
-            .ok_or(TinySkiaError::CreateSurfaceError)?;
+        let _timer = FuncTimer::new("create_surface");
+        let pixmap =
+            Pixmap::new(width.max(1), height.max(1)).ok_or(TinySkiaError::CreateSurfaceError)?;
         let id = self.surface_pixmap.insert(pixmap);
         Ok(TinySkiaSurfaceId { id })
     }
 
     fn set_render_target(&mut self, surface_id: &Self::SurfaceId) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("set_render_target");
         if self.surface_pixmap.contains_key(surface_id.id) {
             self.current_render_target = Some(surface_id.id);
             Ok(())
@@ -340,35 +696,22 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn reset_render_target(&mut self) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("reset_render_target");
         self.current_render_target = None;
         Ok(())
     }
 
     fn create_image_from_bytes(&mut self, bytes: &[u8]) -> Result<Self::ImageHandle, Self::Error> {
+        let _timer = FuncTimer::new("create_image_from_bytes");
         let img = image::load_from_memory(bytes).map_err(|_| TinySkiaError::ImageDecodeError)?;
         let rgba = img.to_rgba8();
         let width = rgba.width();
         let height = rgba.height();
 
-        let mut pixmap =
-            tiny_skia::Pixmap::new(width, height).ok_or(TinySkiaError::CreateSurfaceError)?;
+        let mut pixmap = Pixmap::new(width, height).ok_or(TinySkiaError::CreateSurfaceError)?;
 
         let slice = pixmap.data_mut();
-        // image crate rgba is R, G, B, A order (unpremultiplied typically)
-        // tiny-skia requires premultiplied R, G, B, A or B, G, R, A depending on platform, but color::from_rgba assumes standard unpremultiplied
-        // The most proper way is to use Pixmap::data_mut() and write [u8; 4] array if memory layout matches, or loop through pixels.
-        for (src, dst) in rgba.chunks_exact(4).zip(slice.chunks_exact_mut(4)) {
-            let r = src[0];
-            let g = src[1];
-            let b = src[2];
-            let a = src[3];
-            // tiny-skia expects premultiplied alpha
-            let color = tiny_skia::ColorU8::from_rgba(r, g, b, a).premultiply();
-            dst[0] = color.red();
-            dst[1] = color.green();
-            dst[2] = color.blue();
-            dst[3] = color.alpha();
-        }
+        Self::convert_rgba_to_premultiplied(&rgba, slice);
 
         Ok(TinySkiaImageHandle {
             width,
@@ -386,23 +729,13 @@ impl RenderContext for TinySkiaRenderer {
         height: u32,
         delays: Vec<u16>,
     ) -> Result<Self::ImageHandle, Self::Error> {
+        let _timer = FuncTimer::new("create_image_from_raw_bytes");
         let mut frames = Vec::with_capacity(raw_bytes.len());
         for frame_bytes in raw_bytes {
-            let mut pixmap =
-                tiny_skia::Pixmap::new(width, height).ok_or(TinySkiaError::CreateSurfaceError)?;
+            let mut pixmap = Pixmap::new(width, height).ok_or(TinySkiaError::CreateSurfaceError)?;
             let slice = pixmap.data_mut();
 
-            for (src, dst) in frame_bytes.chunks_exact(4).zip(slice.chunks_exact_mut(4)) {
-                let r = src[0];
-                let g = src[1];
-                let b = src[2];
-                let a = src[3];
-                let color = tiny_skia::ColorU8::from_rgba(r, g, b, a).premultiply();
-                dst[0] = color.red();
-                dst[1] = color.green();
-                dst[2] = color.blue();
-                dst[3] = color.alpha();
-            }
+            Self::convert_rgba_to_premultiplied(frame_bytes, slice);
             frames.push(pixmap);
         }
 
@@ -419,6 +752,7 @@ impl RenderContext for TinySkiaRenderer {
 
     #[cfg(feature = "svg")]
     fn create_svg(&mut self, bytes: &[u8]) -> Result<Self::SvgHandle, Self::Error> {
+        let _timer = FuncTimer::new("create_svg");
         let opt = usvg::Options::default();
         let tree =
             usvg::Tree::from_data(bytes, &opt).map_err(|_| TinySkiaError::CreateSurfaceError)?;
@@ -439,7 +773,8 @@ impl RenderContext for TinySkiaRenderer {
         &mut self,
         font_family_name: &str,
     ) -> Result<Self::TextFormatHandle, Self::Error> {
-        let mut handle = TinySkiaTextFormatHandle::default();
+        let _timer = FuncTimer::new("create_text_format");
+        let mut handle = TinySkiaTextFormatHandle::new(self.font_system.clone());
         handle.font_family_name = font_family_name.to_string();
         Ok(handle)
     }
@@ -450,9 +785,10 @@ impl RenderContext for TinySkiaRenderer {
         font_data: &[u8],
         _ttc_index: u32,
     ) -> Result<Self::TextFormatHandle, Self::Error> {
+        let _timer = FuncTimer::new("create_text_format_from_bytes");
         let source = cosmic_text::fontdb::Source::Binary(std::sync::Arc::new(font_data.to_vec()));
-        self.font_system.db_mut().load_font_source(source);
-        let handle = TinySkiaTextFormatHandle::default();
+        self.font_system.write().db_mut().load_font_source(source);
+        let handle = TinySkiaTextFormatHandle::new(self.font_system.clone());
         Ok(handle)
     }
 
@@ -463,35 +799,18 @@ impl RenderContext for TinySkiaRenderer {
         width: f32,
         height: f32,
     ) -> Result<(f32, f32), Self::Error> {
+        let _timer = FuncTimer::new("measure_text");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let font_size = text_format.font_size * dpi_y;
-        let mut temp_system = cosmic_text::FontSystem::new();
-        let mut buffer = cosmic_text::Buffer::new(
-            &mut temp_system,
-            cosmic_text::Metrics::new(font_size, font_size * text_format.line_height_factor),
-        );
-        buffer.set_size(
-            &mut temp_system,
-            if width > 0.0 {
-                Some(width * dpi_x)
-            } else {
-                None
-            },
-            if height > 0.0 {
-                Some(height * dpi_y)
-            } else {
-                None
-            },
-        );
-        buffer.set_wrap(&mut temp_system, text_format.to_cosmic_wrap());
-        buffer.set_text(
+        let mut temp_system = text_format.font_system.write();
+        let buffer = Self::prepare_text_buffer(
             &mut temp_system,
             text,
-            &text_format.to_cosmic_attrs(),
-            cosmic_text::Shaping::Advanced,
-            text_format.to_cosmic_align(),
+            text_format,
+            width,
+            height,
+            dpi_x,
+            dpi_y,
         );
-        buffer.shape_until_scroll(&mut temp_system, false);
 
         let mut max_w = 0.0f32;
         let mut total_h = 0.0f32;
@@ -512,34 +831,20 @@ impl RenderContext for TinySkiaRenderer {
         x: f32,
         y: f32,
     ) -> Result<HitTestResult, Self::Error> {
+        let _timer = FuncTimer::new("hit_test_point");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let font_size = text_format.font_size * dpi_y;
-        let phys_width = width * dpi_x;
         let phys_height = height * dpi_y;
 
-        let mut temp_system = cosmic_text::FontSystem::new();
-        let mut buffer = cosmic_text::Buffer::new(
-            &mut temp_system,
-            cosmic_text::Metrics::new(font_size, font_size * text_format.line_height_factor),
-        );
-        buffer.set_size(
-            &mut temp_system,
-            if width > 0.0 { Some(phys_width) } else { None },
-            if height > 0.0 {
-                Some(phys_height)
-            } else {
-                None
-            },
-        );
-        buffer.set_wrap(&mut temp_system, text_format.to_cosmic_wrap());
-        buffer.set_text(
+        let mut temp_system = text_format.font_system.write();
+        let buffer = Self::prepare_text_buffer(
             &mut temp_system,
             text,
-            &text_format.to_cosmic_attrs(),
-            cosmic_text::Shaping::Advanced,
-            text_format.to_cosmic_align(),
+            text_format,
+            width,
+            height,
+            dpi_x,
+            dpi_y,
         );
-        buffer.shape_until_scroll(&mut temp_system, false);
 
         let mut total_h = 0.0f32;
         for run in buffer.layout_runs() {
@@ -580,34 +885,20 @@ impl RenderContext for TinySkiaRenderer {
         text_index: usize,
         trailing: bool,
     ) -> Result<(f32, f32), Self::Error> {
+        let _timer = FuncTimer::new("hit_test_text_position");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let font_size = text_format.font_size * dpi_y;
-        let phys_width = width * dpi_x;
         let phys_height = height * dpi_y;
 
-        let mut temp_system = cosmic_text::FontSystem::new();
-        let mut buffer = cosmic_text::Buffer::new(
-            &mut temp_system,
-            cosmic_text::Metrics::new(font_size, font_size * text_format.line_height_factor),
-        );
-        buffer.set_size(
-            &mut temp_system,
-            if width > 0.0 { Some(phys_width) } else { None },
-            if height > 0.0 {
-                Some(phys_height)
-            } else {
-                None
-            },
-        );
-        buffer.set_wrap(&mut temp_system, text_format.to_cosmic_wrap());
-        buffer.set_text(
+        let mut temp_system = text_format.font_system.write();
+        let buffer = Self::prepare_text_buffer(
             &mut temp_system,
             text,
-            &text_format.to_cosmic_attrs(),
-            cosmic_text::Shaping::Advanced,
-            text_format.to_cosmic_align(),
+            text_format,
+            width,
+            height,
+            dpi_x,
+            dpi_y,
         );
-        buffer.shape_until_scroll(&mut temp_system, false);
 
         let mut total_h = 0.0f32;
         for run in buffer.layout_runs() {
@@ -643,6 +934,7 @@ impl RenderContext for TinySkiaRenderer {
         color: Color,
         opacity: Option<f32>,
     ) -> Result<Self::BrushHandle, Self::Error> {
+        let _timer = FuncTimer::new("create_solid_color_brush");
         let mut tiny_color = color.to_tiny_skia();
         if let Some(op) = opacity {
             tiny_color.apply_opacity(op);
@@ -654,6 +946,7 @@ impl RenderContext for TinySkiaRenderer {
         &mut self,
         gradient: &Gradient,
     ) -> Result<Self::BrushHandle, Self::Error> {
+        let _timer = FuncTimer::new("create_gradient_brush");
         Ok(TinySkiaBrushHandle::Gradient {
             gradient: gradient.clone(),
         })
@@ -668,10 +961,11 @@ impl RenderContext for TinySkiaRenderer {
         height: Option<f32>,
         options: Option<&ImageDrawOptions>,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("draw_image");
         let target_width = width.unwrap_or(handle.width as f32);
         let target_height = height.unwrap_or(handle.height as f32);
 
-        let mut paint = tiny_skia::Paint::default();
+        let mut paint = Paint::default();
         paint.anti_alias = true;
 
         let mut shader_transform = tiny_skia::Transform::identity();
@@ -699,21 +993,12 @@ impl RenderContext for TinySkiaRenderer {
             return Ok(());
         };
 
-        let transform = if let Some(opts) = options {
-            if let Some(t) = &opts.transform {
-                self.get_current_transform().pre_concat(t.to_tiny_skia())
-            } else {
-                self.get_current_transform()
-            }
-        } else {
-            self.get_current_transform()
-        };
+        let transform = self.get_options_transform(options);
 
         let frame_index = options.and_then(|o| o.frame_index).unwrap_or(0);
         let frames = &handle.frames;
         let pixmap = frames.get(frame_index).unwrap_or_else(|| &frames[0]);
 
-        // 1. Draw shadow if present
         if let Some(opts) = options {
             if let Some(shadow) = &opts.shadow {
                 let pad = (shadow.blur_radius.ceil() * 2.5).max(0.0);
@@ -721,7 +1006,7 @@ impl RenderContext for TinySkiaRenderer {
                 let sh = (target_height + pad * 2.0).ceil() as u32;
 
                 if sw > 0 && sh > 0 {
-                    if let Some(mut shadow_pixmap) = tiny_skia::Pixmap::new(sw, sh) {
+                    if let Some(mut shadow_pixmap) = Pixmap::new(sw, sh) {
                         shadow_pixmap.fill(tiny_skia::Color::TRANSPARENT);
 
                         let shadow_render_transform =
@@ -736,7 +1021,7 @@ impl RenderContext for TinySkiaRenderer {
                             shadow_render_transform,
                         );
 
-                        let mut img_paint = tiny_skia::Paint::default();
+                        let mut img_paint = Paint::default();
                         img_paint.shader = img_pattern;
                         img_paint.anti_alias = true;
 
@@ -758,30 +1043,21 @@ impl RenderContext for TinySkiaRenderer {
                         let color_b = shadow.color.b as u32;
                         let color_a = shadow.color.a as f32 / 255.0;
 
-                        for pixel in shadow_pixmap.pixels_mut() {
-                            let a = pixel.alpha() as f32 / 255.0;
-                            let final_a = a * color_a;
-                            if final_a > 0.0 {
-                                let fa8 = (final_a * 255.0).round() as u8;
-                                let fr8 = (color_r as f32 * final_a).round() as u8;
-                                let fg8 = (color_g as f32 * final_a).round() as u8;
-                                let fb8 = (color_b as f32 * final_a).round() as u8;
-
-                                *pixel =
-                                    tiny_skia::PremultipliedColorU8::from_rgba(fr8, fg8, fb8, fa8)
-                                        .unwrap_or(tiny_skia::PremultipliedColorU8::TRANSPARENT);
-                            } else {
-                                *pixel = tiny_skia::PremultipliedColorU8::TRANSPARENT;
-                            }
-                        }
+                        Self::recolor_shadow(
+                            &mut shadow_pixmap,
+                            color_r,
+                            color_g,
+                            color_b,
+                            color_a,
+                        );
 
                         if shadow.blur_radius > 0.0 {
-                            crate::fast_box_blur::fast_box_blur(
+                            Self::fast_blur(
                                 shadow_pixmap.pixels_mut(),
                                 sw as usize,
                                 sh as usize,
                                 shadow.blur_radius.round() as u32,
-                            );
+                            )?;
                         }
 
                         let offset_x = x - pad + shadow.offset_x;
@@ -795,41 +1071,19 @@ impl RenderContext for TinySkiaRenderer {
                             tiny_skia::Transform::from_translate(offset_x, offset_y),
                         );
 
-                        let mut paint = tiny_skia::Paint::default();
+                        let mut paint = Paint::default();
                         paint.shader = pattern;
                         paint.anti_alias = true;
 
-                        let mut pb2 = tiny_skia::PathBuilder::new();
-                        if let Some(rect) =
-                            tiny_skia::Rect::from_xywh(offset_x, offset_y, sw as f32, sh as f32)
-                        {
-                            pb2.push_rect(rect);
-                            if let Some(path2) = pb2.finish() {
-                                self.with_current_pixmap(|p, clip| {
-                                    p.fill_path(
-                                        &path2,
-                                        &paint,
-                                        tiny_skia::FillRule::Winding,
-                                        transform,
-                                        clip,
-                                    );
-                                });
-                            }
-                        }
+                        self.fill_rect_with_transform(
+                            offset_x, offset_y, sw as f32, sh as f32, &paint, transform,
+                        );
                     }
                 }
             }
         }
 
-        let transform = if let Some(opts) = options {
-            if let Some(t) = &opts.transform {
-                self.get_current_transform().pre_concat(t.to_tiny_skia())
-            } else {
-                self.get_current_transform()
-            }
-        } else {
-            self.get_current_transform()
-        };
+        let transform = self.get_options_transform(options);
 
         let frame_index = options.and_then(|o| o.frame_index).unwrap_or(0);
         let frames = &handle.frames;
@@ -877,6 +1131,7 @@ impl RenderContext for TinySkiaRenderer {
         height: Option<f32>,
         options: Option<&SvgDrawOptions>,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("draw_svg");
         let target_width = width.unwrap_or(handle.width as f32);
         let target_height = height.unwrap_or(handle.height as f32);
 
@@ -894,7 +1149,6 @@ impl RenderContext for TinySkiaRenderer {
             }
         }
 
-        // 1. Draw shadow if present
         if let Some(opts) = options {
             if let Some(shadow) = &opts.shadow {
                 let pad = (shadow.blur_radius.ceil() * 2.5).max(0.0);
@@ -905,22 +1159,14 @@ impl RenderContext for TinySkiaRenderer {
                 if sw > 0 && sh > 0 {
                     let mut cached_shadow = None;
 
-                    // Scope for reading lock
                     {
                         let cache = handle.cache.read();
                         if let Some((ref pixmap, (sx, sy), br)) = cache.shadow_pixmap {
-                            // Check if scale and blur_radius are approximately the same
                             if (sx - scale_x).abs() < 0.001
                                 && (sy - scale_y).abs() < 0.001
                                 && (br - shadow.blur_radius).abs() < 0.001
                             {
-                                // Make a clone of the pixmap to use outside the lock
-                                if let Some(mut clone_pixmap) =
-                                    tiny_skia::Pixmap::new(pixmap.width(), pixmap.height())
-                                {
-                                    clone_pixmap.data_mut().copy_from_slice(pixmap.data());
-                                    cached_shadow = Some(clone_pixmap);
-                                }
+                                cached_shadow = Self::clone_pixmap(pixmap);
                             }
                         }
                     }
@@ -928,8 +1174,7 @@ impl RenderContext for TinySkiaRenderer {
                     let shadow_pixmap_to_draw = if let Some(cached) = cached_shadow {
                         cached
                     } else {
-                        // Needs rendering
-                        let mut new_shadow_pixmap = tiny_skia::Pixmap::new(sw, sh).unwrap(); // fallback safe
+                        let mut new_shadow_pixmap = Pixmap::new(sw, sh).unwrap();
                         new_shadow_pixmap.fill(tiny_skia::Color::TRANSPARENT);
 
                         let shadow_render_transform =
@@ -947,36 +1192,26 @@ impl RenderContext for TinySkiaRenderer {
                         let color_b = shadow.color.b as u32;
                         let color_a = shadow.color.a as f32 / 255.0;
 
-                        for pixel in new_shadow_pixmap.pixels_mut() {
-                            let a = pixel.alpha() as f32 / 255.0;
-                            let final_a = a * color_a;
-                            if final_a > 0.0 {
-                                let fa8 = (final_a * 255.0).round() as u8;
-                                let fr8 = (color_r as f32 * final_a).round() as u8;
-                                let fg8 = (color_g as f32 * final_a).round() as u8;
-                                let fb8 = (color_b as f32 * final_a).round() as u8;
-
-                                *pixel =
-                                    tiny_skia::PremultipliedColorU8::from_rgba(fr8, fg8, fb8, fa8)
-                                        .unwrap_or(tiny_skia::PremultipliedColorU8::TRANSPARENT);
-                            } else {
-                                *pixel = tiny_skia::PremultipliedColorU8::TRANSPARENT;
-                            }
-                        }
+                        Self::recolor_shadow(
+                            &mut new_shadow_pixmap,
+                            color_r,
+                            color_g,
+                            color_b,
+                            color_a,
+                        );
 
                         if shadow.blur_radius > 0.0 {
-                            crate::fast_box_blur::fast_box_blur(
+                            Self::fast_blur(
                                 new_shadow_pixmap.pixels_mut(),
                                 sw as usize,
                                 sh as usize,
                                 shadow.blur_radius.round() as u32,
-                            );
+                            )?;
                         }
 
-                        // Write back to cache
                         {
                             let mut cache = handle.cache.write();
-                            if let Some(mut clone_to_cache) = tiny_skia::Pixmap::new(sw, sh) {
+                            if let Some(mut clone_to_cache) = Pixmap::new(sw, sh) {
                                 clone_to_cache
                                     .data_mut()
                                     .copy_from_slice(new_shadow_pixmap.data());
@@ -988,46 +1223,28 @@ impl RenderContext for TinySkiaRenderer {
                         new_shadow_pixmap
                     };
 
-                    // Draw shadow
                     let offset_x = x - pad + shadow.offset_x;
                     let offset_y = y - pad + shadow.offset_y;
 
                     let pattern = tiny_skia::Pattern::new(
-                        shadow_pixmap_to_draw.as_ref(), // Use the cached or newly rendered shadow buffer
+                        shadow_pixmap_to_draw.as_ref(),
                         tiny_skia::SpreadMode::Pad,
                         tiny_skia::FilterQuality::Bilinear,
                         1.0,
                         tiny_skia::Transform::from_translate(offset_x, offset_y),
                     );
 
-                    let mut paint = tiny_skia::Paint::default();
+                    let mut paint = Paint::default();
                     paint.shader = pattern;
                     paint.anti_alias = true;
 
-                    let mut pb = tiny_skia::PathBuilder::new();
-                    if let Some(rect) =
-                        tiny_skia::Rect::from_xywh(offset_x, offset_y, sw as f32, sh as f32)
-                    {
-                        pb.push_rect(rect);
-                        if let Some(path) = pb.finish() {
-                            self.with_current_pixmap(|p, clip| {
-                                p.fill_path(
-                                    &path,
-                                    &paint,
-                                    tiny_skia::FillRule::Winding,
-                                    transform,
-                                    clip,
-                                );
-                            });
-                        }
-                    }
+                    self.fill_rect_with_transform(
+                        offset_x, offset_y, sw as f32, sh as f32, &paint, transform,
+                    );
                 }
             }
         }
 
-        // 2. Draw actual SVG
-
-        // Scope for SVG body cache
         let mut cached_body = None;
         let tw = target_width.ceil() as u32;
         let th = target_height.ceil() as u32;
@@ -1037,12 +1254,7 @@ impl RenderContext for TinySkiaRenderer {
                 let cache = handle.cache.read();
                 if let Some((ref pixmap, (sx, sy))) = cache.svg_pixmap {
                     if (sx - scale_x).abs() < 0.001 && (sy - scale_y).abs() < 0.001 {
-                        if let Some(mut clone_pixmap) =
-                            tiny_skia::Pixmap::new(pixmap.width(), pixmap.height())
-                        {
-                            clone_pixmap.data_mut().copy_from_slice(pixmap.data());
-                            cached_body = Some(clone_pixmap);
-                        }
+                        cached_body = Self::clone_pixmap(pixmap);
                     }
                 }
             }
@@ -1050,7 +1262,7 @@ impl RenderContext for TinySkiaRenderer {
             let body_pixmap_to_draw = if let Some(cached) = cached_body {
                 cached
             } else {
-                let mut new_body_pixmap = tiny_skia::Pixmap::new(tw, th).unwrap();
+                let mut new_body_pixmap = Pixmap::new(tw, th).unwrap();
                 new_body_pixmap.fill(tiny_skia::Color::TRANSPARENT);
 
                 let svg_render_transform = tiny_skia::Transform::from_scale(scale_x, scale_y);
@@ -1062,7 +1274,7 @@ impl RenderContext for TinySkiaRenderer {
 
                 {
                     let mut cache = handle.cache.write();
-                    if let Some(mut clone_to_cache) = tiny_skia::Pixmap::new(tw, th) {
+                    if let Some(mut clone_to_cache) = Pixmap::new(tw, th) {
                         clone_to_cache
                             .data_mut()
                             .copy_from_slice(new_body_pixmap.data());
@@ -1073,7 +1285,6 @@ impl RenderContext for TinySkiaRenderer {
                 new_body_pixmap
             };
 
-            // Draw original SVG from cache
             let final_transform = transform.pre_translate(x, y);
 
             let pattern = tiny_skia::Pattern::new(
@@ -1084,19 +1295,11 @@ impl RenderContext for TinySkiaRenderer {
                 final_transform,
             );
 
-            let mut paint = tiny_skia::Paint::default();
+            let mut paint = Paint::default();
             paint.shader = pattern;
             paint.anti_alias = true;
 
-            let mut pb = tiny_skia::PathBuilder::new();
-            if let Some(rect) = tiny_skia::Rect::from_xywh(x, y, tw as f32, th as f32) {
-                pb.push_rect(rect);
-                if let Some(path) = pb.finish() {
-                    self.with_current_pixmap(|p, clip| {
-                        p.fill_path(&path, &paint, tiny_skia::FillRule::Winding, transform, clip);
-                    });
-                }
-            }
+            self.fill_rect_with_transform(x, y, tw as f32, th as f32, &paint, transform);
         }
 
         Ok(())
@@ -1111,35 +1314,24 @@ impl RenderContext for TinySkiaRenderer {
         width: f32,
         height: f32,
         brush: &Self::BrushHandle,
-        _options: Option<&TextDrawOptions>,
+        options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("draw_text");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let font_size = text_format.font_size * dpi_y;
-        let phys_width = width * dpi_x;
         let phys_height = height * dpi_y;
+        // Note: phys_width is computed inside prepare_text_buffer;
+        // draw_text itself only needs phys_height for paragraph alignment.
 
-        let mut buffer = cosmic_text::Buffer::new(
-            &mut self.font_system,
-            cosmic_text::Metrics::new(font_size, font_size * text_format.line_height_factor),
-        );
-        buffer.set_size(
-            &mut self.font_system,
-            if width > 0.0 { Some(phys_width) } else { None },
-            if height > 0.0 {
-                Some(phys_height)
-            } else {
-                None
-            },
-        );
-        buffer.set_wrap(&mut self.font_system, text_format.to_cosmic_wrap());
-        buffer.set_text(
-            &mut self.font_system,
+        let mut temp_system = text_format.font_system.write();
+        let buffer = Self::prepare_text_buffer(
+            &mut temp_system,
             text,
-            &text_format.to_cosmic_attrs(),
-            cosmic_text::Shaping::Advanced,
-            text_format.to_cosmic_align(),
+            text_format,
+            width,
+            height,
+            dpi_x,
+            dpi_y,
         );
-        buffer.shape_until_scroll(&mut self.font_system, false);
 
         let mut total_h = 0.0f32;
         for run in buffer.layout_runs() {
@@ -1152,224 +1344,446 @@ impl RenderContext for TinySkiaRenderer {
             _ => 0.0,
         };
 
-        let mut paint = tiny_skia::Paint::default();
-        paint.anti_alias = true;
+        let runs: Vec<_> = buffer.layout_runs().collect();
 
-        let glyph_color = match brush {
-            TinySkiaBrushHandle::Solid(color) => {
-                paint.set_color(*color);
-                Some(*color)
-            }
-            TinySkiaBrushHandle::Gradient { .. } => None,
-        };
+        let transform = self.get_options_transform(options);
 
-        let transform = self.get_current_transform();
+        let draw_glyphs = |swash_cache: &mut cosmic_text::SwashCache,
+                           temp_system: &mut cosmic_text::FontSystem,
+                           render_target: &mut PixmapMut,
+                           clip_mask: Option<&tiny_skia::Mask>,
+                           render_transform: tiny_skia::Transform,
+                           override_color: Option<tiny_skia::Color>| {
+            for (_run_idx, run) in runs.iter().enumerate() {
+                for glyph in run.glyphs.iter() {
+                    // cosmic_text already handles justified alignment by
+                    // distributing extra space into glyph.x positions on
+                    // non-last lines.  The last line of a paragraph is
+                    // intentionally left-aligned (standard typography).
+                    let glyph_x_shift = 0.0f32;
 
-        for run in buffer.layout_runs() {
-            for glyph in run.glyphs.iter() {
-                let physical_glyph =
-                    glyph.physical((left * dpi_x, top * dpi_y + offset_y + run.line_y), 1.0);
+                    let has_rotation = render_transform.kx != 0.0 || render_transform.ky != 0.0;
 
-                if let Some(image) = self
-                    .swash_cache
-                    .get_image(&mut self.font_system, physical_glyph.cache_key)
-                {
-                    let gx = physical_glyph.x as f32 + image.placement.left as f32;
-                    let gy = physical_glyph.y as f32 - image.placement.top as f32;
+                    // ── Vector-outline path (rotation present) ──────────────────
+                    // Like D2D, obtain the glyph outline as vector commands and
+                    // fill the resulting path with the *full* render_transform.
+                    // Rasterization happens AFTER the rotation, so there is zero
+                    // bitmap interpolation loss.
+                    if has_rotation {
+                        // We still need a CacheKey at 1× DPI scale to fetch the
+                        // *unscaled* outline from cosmic-text.
+                        let physical_glyph = glyph.physical(
+                            (
+                                left * dpi_x + glyph_x_shift,
+                                top * dpi_y + offset_y + run.line_y,
+                            ),
+                            1.0,
+                        );
 
-                    let logical_gx = gx / dpi_x;
-                    let logical_gy = gy / dpi_y;
+                        if let Some(commands) =
+                            swash_cache.get_outline_commands(temp_system, physical_glyph.cache_key)
+                        {
+                            let gx = physical_glyph.x as f32;
+                            let gy = physical_glyph.y as f32;
 
-                    if image.placement.width == 0 || image.placement.height == 0 {
+                            // Build a tiny_skia::Path from the outline commands.
+                            // The commands are in glyph-local space (origin at
+                            // the glyph's rasterisation position).  We translate
+                            // them to pixel coordinates.
+                            let mut pb = tiny_skia::PathBuilder::new();
+                            for cmd in commands {
+                                match cmd {
+                                    cosmic_text::Command::MoveTo(v) => {
+                                        pb.move_to(gx + v.x, gy - v.y);
+                                    }
+                                    cosmic_text::Command::LineTo(v) => {
+                                        pb.line_to(gx + v.x, gy - v.y);
+                                    }
+                                    cosmic_text::Command::QuadTo(c, p) => {
+                                        pb.quad_to(gx + c.x, gy - c.y, gx + p.x, gy - p.y);
+                                    }
+                                    cosmic_text::Command::CurveTo(c1, c2, p) => {
+                                        pb.cubic_to(
+                                            gx + c1.x,
+                                            gy - c1.y,
+                                            gx + c2.x,
+                                            gy - c2.y,
+                                            gx + p.x,
+                                            gy - p.y,
+                                        );
+                                    }
+                                    cosmic_text::Command::Close => {
+                                        pb.close();
+                                    }
+                                }
+                            }
+
+                            if let Some(glyph_path) = pb.finish() {
+                                let fill_color = override_color.or_else(|| {
+                                    if let TinySkiaBrushHandle::Solid(c) = brush {
+                                        Some(*c)
+                                    } else {
+                                        None
+                                    }
+                                });
+
+                                let mut paint = Paint::default();
+                                paint.anti_alias = true;
+
+                                if let Some(c) = fill_color {
+                                    paint.set_color(c);
+                                } else {
+                                    Self::set_brush(brush, &mut paint);
+                                }
+
+                                // The outline coordinates are in physical (DPI-scaled)
+                                // pixel space.  The render_transform already
+                                // contains the DPI scale, so we need to undo it
+                                // before applying the full transform:
+                                //   render_transform * Scale(1/dpi_x, 1/dpi_y)
+                                let outline_transform =
+                                    render_transform.pre_scale(1.0 / dpi_x, 1.0 / dpi_y);
+
+                                render_target.fill_path(
+                                    &glyph_path,
+                                    &paint,
+                                    tiny_skia::FillRule::Winding,
+                                    outline_transform,
+                                    clip_mask,
+                                );
+                            }
+                        }
+                        // Outline not available (e.g. color emoji) → fall through
+                        // to bitmap path below is not needed; simply skip.
                         continue;
                     }
 
-                    if let Some(mut pixmap) =
-                        tiny_skia::Pixmap::new(image.placement.width, image.placement.height)
+                    // ── Bitmap path (no rotation — fast path) ───────────────────
+                    let scale_x = (render_transform.sx * render_transform.sx
+                        + render_transform.ky * render_transform.ky)
+                        .sqrt();
+                    let scale_y = (render_transform.kx * render_transform.kx
+                        + render_transform.sy * render_transform.sy)
+                        .sqrt();
+                    let raster_scale = scale_x.max(scale_y).max(0.001);
+
+                    let physical_glyph = glyph.physical(
+                        (
+                            (left * dpi_x + glyph_x_shift) * raster_scale,
+                            (top * dpi_y + offset_y + run.line_y) * raster_scale,
+                        ),
+                        raster_scale,
+                    );
+
+                    if let Some(image) =
+                        swash_cache.get_image(temp_system, physical_glyph.cache_key)
                     {
-                        let pixels = pixmap.pixels_mut();
+                        let gx = physical_glyph.x as f32 + image.placement.left as f32;
+                        let gy = physical_glyph.y as f32 - image.placement.top as f32;
 
-                        let mut i = 0;
-                        match image.content {
-                            cosmic_text::SwashContent::SubpixelMask => {
-                                for _y in 0..image.placement.height {
-                                    for _x in 0..image.placement.width {
-                                        let r = image.data[i * 3];
-                                        let g = image.data[i * 3 + 1];
-                                        let b = image.data[i * 3 + 2];
-                                        let a =
-                                            ((r as u32 + g as u32 + b as u32) / 3) as f32 / 255.0;
-                                        let fa = (a * 255.0).round() as u8;
-                                        if let Some(c) = glyph_color {
-                                            let mut p_color = c;
-                                            p_color.apply_opacity(a);
-                                            pixels[i] = p_color.premultiply().to_color_u8();
-                                        } else {
-                                            // Mask for gradient
-                                            pixels[i] = tiny_skia::PremultipliedColorU8::from_rgba(
-                                                fa, fa, fa, fa,
-                                            )
-                                            .unwrap_or(
-                                                tiny_skia::PremultipliedColorU8::TRANSPARENT,
-                                            );
-                                        }
-                                        i += 1;
-                                    }
-                                }
-                            }
-                            cosmic_text::SwashContent::Mask => {
-                                for _y in 0..image.placement.height {
-                                    for _x in 0..image.placement.width {
-                                        let a = image.data[i] as f32 / 255.0;
-                                        let fa = image.data[i];
-                                        if let Some(c) = glyph_color {
-                                            let mut p_color = c;
-                                            p_color.apply_opacity(a);
-                                            pixels[i] = p_color.premultiply().to_color_u8();
-                                        } else {
-                                            // Mask for gradient
-                                            pixels[i] = tiny_skia::PremultipliedColorU8::from_rgba(
-                                                fa, fa, fa, fa,
-                                            )
-                                            .unwrap_or(
-                                                tiny_skia::PremultipliedColorU8::TRANSPARENT,
-                                            );
-                                        }
-                                        i += 1;
-                                    }
-                                }
-                            }
-                            cosmic_text::SwashContent::Color => {
-                                for _y in 0..image.placement.height {
-                                    for _x in 0..image.placement.width {
-                                        let r = image.data[i * 4];
-                                        let g = image.data[i * 4 + 1];
-                                        let b = image.data[i * 4 + 2];
-                                        let a = image.data[i * 4 + 3];
-                                        let color = tiny_skia::Color::from_rgba8(r, g, b, a);
-                                        pixels[i] = color.premultiply().to_color_u8();
-                                        i += 1;
-                                    }
-                                }
-                            }
+                        let logical_gx = gx / raster_scale;
+                        let logical_gy = gy / raster_scale;
+
+                        if image.placement.width == 0 || image.placement.height == 0 {
+                            continue;
                         }
 
-                        // Apply gradient shader if we are not solid color
-                        if glyph_color.is_none() {
-                            let mut stops = Vec::new();
-                            let mut local_shader = None;
+                        if let Some(mut pixmap) =
+                            Pixmap::new(image.placement.width, image.placement.height)
+                        {
+                            let pixels = pixmap.pixels_mut();
+                            let mut i = 0;
 
-                            // To map the local glyph coordinates (0, 0) to world coordinates for the shader evaluation,
-                            // The shader transform takes generic points to world points.
-                            // The point `(0, 0)` in our pixmap will be placed at `transform.pre_translate(gx, gy)`
-                            // So the transform for the shader is precisely `transform.pre_translate(gx, gy)`
-                            // inverted? No, the transform passed to `LinearGradient::new` maps the gradient's local shape to the destination geometry!
-                            //
-                            // Wait! In TinySkia, the gradient's start/end are directly specified in WORLD/Destination coordinates if transform is identity.
-                            // However, we are drawing into a temporary pixmap where (0,0) represents the WORLD coordinate `transform.map_point(gx, gy)`.
-                            // So, the world coordinate `(X_world, Y_world)` corresponds to local `(X_world - px, Y_world - py)` mapped back.
-                            // Let's formulate the transform: if a point `p_local` in the pixmap maps to `p_world = transform * translate(gx,gy) * p_local`,
-                            // then the inverse mapping from `p_local` back to the Shader's space must mimic the global context.
-                            // Because tiny_skia `fill_rect` uses an Identity transform for the Rect relative to the Shader,
-                            // the shader evaluates at `p_local`.
-                            // So we want the shader at `p_local` to evaluate as if it was at `p_world`.
-                            // That means `p_local -> p_world` should be the Transform supplied to the Gradient!
+                            let mut base_glyph_color = override_color;
+                            if base_glyph_color.is_none() {
+                                if let TinySkiaBrushHandle::Solid(c) = brush {
+                                    let color_op = *c;
+                                    base_glyph_color = Some(color_op);
+                                }
+                            }
 
-                            let shader_transform = transform
+                            match image.content {
+                                cosmic_text::SwashContent::SubpixelMask => {
+                                    for _y in 0..image.placement.height {
+                                        for _x in 0..image.placement.width {
+                                            let r = image.data[i * 3];
+                                            let g = image.data[i * 3 + 1];
+                                            let b = image.data[i * 3 + 2];
+                                            let a = ((r as u32 + g as u32 + b as u32) / 3) as f32
+                                                / 255.0;
+                                            pixels[i] = Self::get_glyph_pixel(
+                                                base_glyph_color,
+                                                a,
+                                                (a * 255.0).round() as u8,
+                                            );
+                                            i += 1;
+                                        }
+                                    }
+                                }
+                                cosmic_text::SwashContent::Mask => {
+                                    for _y in 0..image.placement.height {
+                                        for _x in 0..image.placement.width {
+                                            let a = image.data[i] as f32 / 255.0;
+                                            pixels[i] = Self::get_glyph_pixel(
+                                                base_glyph_color,
+                                                a,
+                                                image.data[i],
+                                            );
+                                            i += 1;
+                                        }
+                                    }
+                                }
+                                cosmic_text::SwashContent::Color => {
+                                    for _y in 0..image.placement.height {
+                                        for _x in 0..image.placement.width {
+                                            let a = image.data[i * 4 + 3];
+                                            if let Some(c) = base_glyph_color {
+                                                pixels[i] = Self::get_glyph_pixel(
+                                                    Some(c),
+                                                    a as f32 / 255.0,
+                                                    a,
+                                                );
+                                            } else {
+                                                let r = image.data[i * 4];
+                                                let g = image.data[i * 4 + 1];
+                                                let b = image.data[i * 4 + 2];
+                                                let color =
+                                                    tiny_skia::Color::from_rgba8(r, g, b, a);
+                                                pixels[i] = color.premultiply().to_color_u8();
+                                            }
+                                            i += 1;
+                                        }
+                                    }
+                                }
+                            }
+
+                            let inv_raster = 1.0 / raster_scale;
+
+                            if base_glyph_color.is_none() {
+                                let mut stops = Vec::new();
+                                let mut local_shader = None;
+
+                                let shader_transform = render_transform
+                                    .pre_translate(logical_gx, logical_gy)
+                                    .pre_scale(inv_raster, inv_raster)
+                                    .invert()
+                                    .unwrap_or(tiny_skia::Transform::identity());
+
+                                if let TinySkiaBrushHandle::Gradient { gradient } = brush {
+                                    match gradient {
+                                        Gradient::Linear { start, end, colors } => {
+                                            for (pos, c) in colors {
+                                                stops.push(tiny_skia::GradientStop::new(
+                                                    *pos,
+                                                    c.to_tiny_skia(),
+                                                ));
+                                            }
+                                            local_shader = tiny_skia::LinearGradient::new(
+                                                tiny_skia::Point::from_xy(start.0, start.1),
+                                                tiny_skia::Point::from_xy(end.0, end.1),
+                                                stops,
+                                                tiny_skia::SpreadMode::Pad,
+                                                shader_transform,
+                                            );
+                                        }
+                                        Gradient::Radial {
+                                            center,
+                                            radius,
+                                            colors,
+                                        } => {
+                                            for (pos, c) in colors {
+                                                stops.push(tiny_skia::GradientStop::new(
+                                                    *pos,
+                                                    c.to_tiny_skia(),
+                                                ));
+                                            }
+                                            local_shader = tiny_skia::RadialGradient::new(
+                                                tiny_skia::Point::from_xy(center.0, center.1),
+                                                0.0,
+                                                tiny_skia::Point::from_xy(center.0, center.1),
+                                                *radius,
+                                                stops,
+                                                tiny_skia::SpreadMode::Pad,
+                                                shader_transform,
+                                            );
+                                        }
+                                    }
+                                }
+
+                                if let Some(shader) = local_shader {
+                                    let mut mask_paint = Paint::default();
+                                    mask_paint.shader = shader;
+                                    mask_paint.blend_mode = tiny_skia::BlendMode::SourceIn;
+                                    mask_paint.anti_alias = true;
+
+                                    if let Some(rect) = tiny_skia::Rect::from_xywh(
+                                        0.0,
+                                        0.0,
+                                        image.placement.width as f32,
+                                        image.placement.height as f32,
+                                    ) {
+                                        pixmap.fill_rect(
+                                            rect,
+                                            &mask_paint,
+                                            tiny_skia::Transform::identity(),
+                                            None,
+                                        );
+                                    }
+                                }
+                            }
+
+                            let local_transform = render_transform
                                 .pre_translate(logical_gx, logical_gy)
-                                .pre_scale(1.0 / dpi_x, 1.0 / dpi_y)
-                                .invert()
-                                .unwrap_or(tiny_skia::Transform::identity());
+                                .pre_scale(inv_raster, inv_raster);
 
-                            if let TinySkiaBrushHandle::Gradient { gradient } = brush {
-                                match gradient {
-                                    flor_base::graphics::Gradient::Linear {
-                                        start,
-                                        end,
-                                        colors,
-                                    } => {
-                                        for (pos, c) in colors {
-                                            stops.push(tiny_skia::GradientStop::new(
-                                                *pos,
-                                                c.to_tiny_skia(),
-                                            ));
-                                        }
-                                        local_shader = tiny_skia::LinearGradient::new(
-                                            tiny_skia::Point::from_xy(start.0, start.1),
-                                            tiny_skia::Point::from_xy(end.0, end.1),
-                                            stops,
-                                            tiny_skia::SpreadMode::Pad,
-                                            shader_transform,
-                                        );
-                                    }
-                                    flor_base::graphics::Gradient::Radial {
-                                        center,
-                                        radius,
-                                        colors,
-                                    } => {
-                                        for (pos, c) in colors {
-                                            stops.push(tiny_skia::GradientStop::new(
-                                                *pos,
-                                                c.to_tiny_skia(),
-                                            ));
-                                        }
-                                        local_shader = tiny_skia::RadialGradient::new(
-                                            tiny_skia::Point::from_xy(center.0, center.1),
-                                            *radius,
-                                            tiny_skia::Point::from_xy(center.0, center.1),
-                                            0.0,
-                                            stops,
-                                            tiny_skia::SpreadMode::Pad,
-                                            shader_transform,
-                                        );
-                                    }
-                                }
-                            }
+                            let mut pixmap_paint = PixmapPaint::default();
+                            pixmap_paint.quality = tiny_skia::FilterQuality::Bicubic;
 
-                            if let Some(shader) = local_shader {
-                                let mut mask_paint = tiny_skia::Paint::default();
-                                mask_paint.shader = shader;
-                                mask_paint.blend_mode = tiny_skia::BlendMode::SourceIn;
-                                mask_paint.anti_alias = true;
-
-                                if let Some(rect) = tiny_skia::Rect::from_xywh(
-                                    0.0,
-                                    0.0,
-                                    image.placement.width as f32,
-                                    image.placement.height as f32,
-                                ) {
-                                    // Use Transform::identity() because rect is purely local to the pixmap, and the shader transform handles mapping.
-                                    pixmap.fill_rect(
-                                        rect,
-                                        &mask_paint,
-                                        tiny_skia::Transform::identity(),
-                                        None,
-                                    );
-                                }
-                            }
-                        }
-
-                        // draw the glyph pixmap onto the target surface
-                        let mut local_transform = transform;
-                        // Transform sets logical position, then decodes the DPI scale for the physical pixmap
-                        local_transform = local_transform
-                            .pre_translate(logical_gx, logical_gy)
-                            .pre_scale(1.0 / dpi_x, 1.0 / dpi_y);
-
-                        self.with_current_pixmap(|p, clip| {
-                            p.draw_pixmap(
+                            render_target.draw_pixmap(
                                 0,
                                 0,
                                 pixmap.as_ref(),
-                                &tiny_skia::PixmapPaint::default(),
+                                &pixmap_paint,
                                 local_transform,
-                                clip,
+                                clip_mask,
                             );
-                        });
+                        }
+                    }
+                }
+            }
+        };
+
+        if let Some(opts) = options {
+            if let Some(shadow) = &opts.shadow {
+                let shadow_color = shadow.color.to_tiny_skia();
+
+                if shadow.blur_radius <= 0.0 {
+                    // Fast path hard shadow
+                    let shadow_transform =
+                        transform.post_translate(shadow.offset_x, shadow.offset_y);
+                    let (cache, mut p, c) = self.split_pixmap_and_cache();
+                    draw_glyphs(
+                        cache,
+                        &mut temp_system,
+                        &mut p,
+                        c,
+                        shadow_transform,
+                        Some(shadow_color),
+                    );
+                } else {
+                    // Soft shadow — rendered into an offscreen pixmap, blurred,
+                    // then composited back with offset (and optional rotation).
+
+                    // ── 1. Strip rotation from transform for the offscreen render ──
+                    // We need to render glyphs *without* rotation into the shadow
+                    // pixmap (so the BB calculation is valid and glyphs fit).
+                    // The rotation is re-applied during compositing.
+                    let base_transform = self.get_current_transform(); // DPI + view, no user xform
+                                                                       // `transform` = base_transform * user_xform (may include rotation)
+                                                                       // For shadow offscreen, use only base_transform (DPI scale).
+
+                    let pad = (shadow.blur_radius.ceil() * 3.0).max(0.0);
+                    let pad_log = pad;
+
+                    let mut bb_min_x = f32::MAX;
+                    let mut bb_min_y = f32::MAX;
+                    let mut bb_max_x = f32::MIN;
+                    let mut bb_max_y = f32::MIN;
+
+                    for run in runs.iter() {
+                        for glyph in run.glyphs.iter() {
+                            let px = left + glyph.x / dpi_x;
+                            let py = top + offset_y / dpi_y + run.line_y / dpi_y;
+                            bb_min_x = bb_min_x.min(px);
+                            bb_min_y = bb_min_y.min(py - run.line_height / dpi_y);
+                            bb_max_x = bb_max_x.max(px + glyph.w / dpi_x);
+                            bb_max_y = bb_max_y.max(py + run.line_height / dpi_y);
+                        }
+                    }
+                    if bb_min_x > bb_max_x {
+                        bb_min_x = left;
+                        bb_max_x = left + width;
+                        bb_min_y = top;
+                        bb_max_y = top + height;
+                    }
+
+                    let sw = ((bb_max_x - bb_min_x + pad_log * 2.0) * dpi_x).ceil() as u32;
+                    let sh = ((bb_max_y - bb_min_y + pad_log * 2.0) * dpi_y).ceil() as u32;
+
+                    if sw > 0 && sh > 0 && sw < 8192 && sh < 8192 {
+                        if let Some(mut shadow_pixmap) = Pixmap::new(sw, sh) {
+                            shadow_pixmap.fill(tiny_skia::Color::TRANSPARENT);
+
+                            // ── 2. Draw glyphs into shadow pixmap (no rotation) ──
+                            // Use base_transform (DPI only) shifted so that
+                            // bb_min maps to (pad_log, pad_log) in pixmap space.
+                            let bounds_transform = base_transform
+                                .pre_translate(-bb_min_x + pad_log, -bb_min_y + pad_log);
+                            let swash_cache = &mut self.swash_cache;
+                            draw_glyphs(
+                                swash_cache,
+                                &mut temp_system,
+                                &mut shadow_pixmap.as_mut(),
+                                None,
+                                bounds_transform,
+                                Some(shadow_color),
+                            );
+
+                            // ── 3. Blur ──
+                            // D2D uses `blur_radius` as Gaussian standard deviation
+                            // (sigma).  libblur's fast_gaussian uses radius.  To
+                            // approximate: radius ≈ 2 * sigma gives a visually
+                            // similar spread.
+                            let blur_px =
+                                (shadow.blur_radius * 2.0 * dpi_x).round().max(1.0) as u32;
+                            Self::fast_blur(
+                                shadow_pixmap.pixels_mut(),
+                                sw as usize,
+                                sh as usize,
+                                blur_px,
+                            )
+                            .ok();
+
+                            // ── 4. Composite the blurred shadow onto the screen ──
+                            // Extract the user's rotation/scale from the full
+                            // transform so the shadow rotates with the text.
+                            let user_xform = if transform != base_transform {
+                                // user_xform = base_transform⁻¹ * transform
+                                base_transform
+                                    .invert()
+                                    .map(|inv| inv.pre_concat(transform))
+                                    .unwrap_or(tiny_skia::Transform::identity())
+                            } else {
+                                tiny_skia::Transform::identity()
+                            };
+
+                            // Position shadow pixmap at the correct screen location,
+                            // then apply the user's rotation.
+                            let shadow_draw_transform = user_xform.pre_translate(
+                                bb_min_x - pad_log + shadow.offset_x,
+                                bb_min_y - pad_log + shadow.offset_y,
+                            );
+
+                            self.with_current_pixmap(|p, c| {
+                                let mut shadow_paint = PixmapPaint::default();
+                                shadow_paint.quality = tiny_skia::FilterQuality::Bicubic;
+                                p.draw_pixmap(
+                                    0,
+                                    0,
+                                    shadow_pixmap.as_ref(),
+                                    &shadow_paint,
+                                    shadow_draw_transform,
+                                    c,
+                                );
+                            });
+                        }
                     }
                 }
             }
         }
+
+        let (cache, mut p, c) = self.split_pixmap_and_cache();
+        draw_glyphs(cache, &mut temp_system, &mut p, c, transform, None);
 
         Ok(())
     }
@@ -1381,75 +1795,21 @@ impl RenderContext for TinySkiaRenderer {
         stroke_width: f32,
         options: Option<&PathDrawOptions>,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("draw_path");
         let ts_path = if let Some(p) = Self::build_tiny_skia_path(path) {
             p
         } else {
             return Ok(());
         };
 
-        let mut paint = tiny_skia::Paint::default();
+        let mut paint = Paint::default();
         paint.anti_alias = true;
-        match brush {
-            TinySkiaBrushHandle::Solid(color) => {
-                paint.set_color(*color);
-            }
-            TinySkiaBrushHandle::Gradient { gradient } => {
-                let mut stops = Vec::new();
-                match gradient {
-                    flor_base::graphics::Gradient::Linear { start, end, colors } => {
-                        for (pos, c) in colors {
-                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
-                        }
-                        if let Some(shader) = tiny_skia::LinearGradient::new(
-                            tiny_skia::Point::from_xy(start.0, start.1),
-                            tiny_skia::Point::from_xy(end.0, end.1),
-                            stops,
-                            tiny_skia::SpreadMode::Pad,
-                            tiny_skia::Transform::identity(),
-                        ) {
-                            paint.shader = shader;
-                        } else {
-                            paint.set_color_rgba8(0, 0, 0, 255);
-                        }
-                    }
-                    flor_base::graphics::Gradient::Radial {
-                        center,
-                        radius,
-                        colors,
-                    } => {
-                        for (pos, c) in colors {
-                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
-                        }
-                        if let Some(shader) = tiny_skia::RadialGradient::new(
-                            tiny_skia::Point::from_xy(center.0, center.1),
-                            *radius,
-                            tiny_skia::Point::from_xy(center.0, center.1),
-                            0.0,
-                            stops,
-                            tiny_skia::SpreadMode::Pad,
-                            tiny_skia::Transform::identity(),
-                        ) {
-                            paint.shader = shader;
-                        } else {
-                            paint.set_color_rgba8(0, 0, 0, 255);
-                        }
-                    }
-                }
-            }
-        }
+        Self::set_brush(brush, &mut paint);
 
         let mut stroke = tiny_skia::Stroke::default();
         stroke.width = stroke_width;
 
-        let transform = if let Some(opts) = options {
-            if let Some(t) = &opts.transform {
-                self.get_current_transform().pre_concat(t.to_tiny_skia())
-            } else {
-                self.get_current_transform()
-            }
-        } else {
-            self.get_current_transform()
-        };
+        let transform = self.get_options_transform(options);
 
         self.with_current_pixmap(|p, clip| {
             p.stroke_path(&ts_path, &paint, &stroke, transform, clip);
@@ -1463,13 +1823,14 @@ impl RenderContext for TinySkiaRenderer {
         brush: &Self::BrushHandle,
         options: Option<&PathDrawOptions>,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("fill_path");
         let ts_path = if let Some(p) = Self::build_tiny_skia_path(path) {
             p
         } else {
             return Ok(());
         };
 
-        let mut paint = tiny_skia::Paint::default();
+        let mut paint = Paint::default();
         paint.anti_alias = true;
 
         if let Some(opts) = options {
@@ -1478,64 +1839,9 @@ impl RenderContext for TinySkiaRenderer {
             }
         }
 
-        match brush {
-            TinySkiaBrushHandle::Solid(color) => {
-                paint.set_color(*color);
-            }
-            TinySkiaBrushHandle::Gradient { gradient } => {
-                let mut stops = Vec::new();
-                match gradient {
-                    flor_base::graphics::Gradient::Linear { start, end, colors } => {
-                        for (pos, c) in colors {
-                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
-                        }
-                        if let Some(shader) = tiny_skia::LinearGradient::new(
-                            tiny_skia::Point::from_xy(start.0, start.1),
-                            tiny_skia::Point::from_xy(end.0, end.1),
-                            stops,
-                            tiny_skia::SpreadMode::Pad,
-                            tiny_skia::Transform::identity(),
-                        ) {
-                            paint.shader = shader;
-                        } else {
-                            paint.set_color_rgba8(0, 0, 0, 255);
-                        }
-                    }
-                    flor_base::graphics::Gradient::Radial {
-                        center,
-                        radius,
-                        colors,
-                    } => {
-                        for (pos, c) in colors {
-                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
-                        }
-                        if let Some(shader) = tiny_skia::RadialGradient::new(
-                            tiny_skia::Point::from_xy(center.0, center.1),
-                            *radius,
-                            tiny_skia::Point::from_xy(center.0, center.1),
-                            0.0,
-                            stops,
-                            tiny_skia::SpreadMode::Pad,
-                            tiny_skia::Transform::identity(),
-                        ) {
-                            paint.shader = shader;
-                        } else {
-                            paint.set_color_rgba8(0, 0, 0, 255);
-                        }
-                    }
-                }
-            }
-        }
+        Self::set_brush(brush, &mut paint);
 
-        let transform = if let Some(opts) = options {
-            if let Some(t) = &opts.transform {
-                self.get_current_transform().pre_concat(t.to_tiny_skia())
-            } else {
-                self.get_current_transform()
-            }
-        } else {
-            self.get_current_transform()
-        };
+        let transform = self.get_options_transform(options);
 
         self.with_current_pixmap(|p, clip| {
             p.fill_path(
@@ -1559,70 +1865,16 @@ impl RenderContext for TinySkiaRenderer {
         brush: &Self::BrushHandle,
         options: Option<&PathDrawOptions>,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("draw_quad");
         let mut stroke = tiny_skia::Stroke::default();
         stroke.width = border_width;
 
-        let transform = if let Some(opts) = options {
-            if let Some(t) = &opts.transform {
-                self.get_current_transform().pre_concat(t.to_tiny_skia())
-            } else {
-                self.get_current_transform()
-            }
-        } else {
-            self.get_current_transform()
-        };
+        let transform = self.get_options_transform(options);
 
-        let mut paint = tiny_skia::Paint::default();
+        let mut paint = Paint::default();
         paint.anti_alias = true;
 
-        match brush {
-            TinySkiaBrushHandle::Solid(color) => {
-                paint.set_color(*color);
-            }
-            TinySkiaBrushHandle::Gradient { gradient } => {
-                let mut stops = Vec::new();
-                match gradient {
-                    flor_base::graphics::Gradient::Linear { start, end, colors } => {
-                        for (pos, c) in colors {
-                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
-                        }
-                        if let Some(shader) = tiny_skia::LinearGradient::new(
-                            tiny_skia::Point::from_xy(start.0, start.1),
-                            tiny_skia::Point::from_xy(end.0, end.1),
-                            stops,
-                            tiny_skia::SpreadMode::Pad,
-                            tiny_skia::Transform::identity(),
-                        ) {
-                            paint.shader = shader;
-                        } else {
-                            paint.set_color_rgba8(0, 0, 0, 255);
-                        }
-                    }
-                    flor_base::graphics::Gradient::Radial {
-                        center,
-                        radius,
-                        colors,
-                    } => {
-                        for (pos, c) in colors {
-                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
-                        }
-                        if let Some(shader) = tiny_skia::RadialGradient::new(
-                            tiny_skia::Point::from_xy(center.0, center.1),
-                            *radius,
-                            tiny_skia::Point::from_xy(center.0, center.1),
-                            0.0,
-                            stops,
-                            tiny_skia::SpreadMode::Pad,
-                            tiny_skia::Transform::identity(),
-                        ) {
-                            paint.shader = shader;
-                        } else {
-                            paint.set_color_rgba8(0, 0, 0, 255);
-                        }
-                    }
-                }
-            }
-        }
+        Self::set_brush(brush, &mut paint);
 
         let path = Path::from_rect(left, top, width, height);
         if let Some(ts_path) = Self::build_tiny_skia_path(&path) {
@@ -1643,66 +1895,12 @@ impl RenderContext for TinySkiaRenderer {
         corner_radius: Option<f32>,
         options: Option<&PathDrawOptions>,
     ) -> Result<(), Self::Error> {
-        let transform = if let Some(opts) = options {
-            if let Some(t) = &opts.transform {
-                self.get_current_transform().pre_concat(t.to_tiny_skia())
-            } else {
-                self.get_current_transform()
-            }
-        } else {
-            self.get_current_transform()
-        };
+        let _timer = FuncTimer::new("fill_quad");
+        let transform = self.get_options_transform(options);
 
-        let mut paint = tiny_skia::Paint::default();
+        let mut paint = Paint::default();
         paint.anti_alias = true;
-        match brush {
-            TinySkiaBrushHandle::Solid(color) => {
-                paint.set_color(*color);
-            }
-            TinySkiaBrushHandle::Gradient { gradient } => {
-                let mut stops = Vec::new();
-                match gradient {
-                    flor_base::graphics::Gradient::Linear { start, end, colors } => {
-                        for (pos, c) in colors {
-                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
-                        }
-                        if let Some(shader) = tiny_skia::LinearGradient::new(
-                            tiny_skia::Point::from_xy(start.0, start.1),
-                            tiny_skia::Point::from_xy(end.0, end.1),
-                            stops,
-                            tiny_skia::SpreadMode::Pad,
-                            tiny_skia::Transform::identity(),
-                        ) {
-                            paint.shader = shader;
-                        } else {
-                            paint.set_color_rgba8(0, 0, 0, 255);
-                        }
-                    }
-                    flor_base::graphics::Gradient::Radial {
-                        center,
-                        radius,
-                        colors,
-                    } => {
-                        for (pos, c) in colors {
-                            stops.push(tiny_skia::GradientStop::new(*pos, c.to_tiny_skia()));
-                        }
-                        if let Some(shader) = tiny_skia::RadialGradient::new(
-                            tiny_skia::Point::from_xy(center.0, center.1),
-                            *radius,
-                            tiny_skia::Point::from_xy(center.0, center.1),
-                            0.0,
-                            stops,
-                            tiny_skia::SpreadMode::Pad,
-                            tiny_skia::Transform::identity(),
-                        ) {
-                            paint.shader = shader;
-                        } else {
-                            paint.set_color_rgba8(0, 0, 0, 255);
-                        }
-                    }
-                }
-            }
-        }
+        Self::set_brush(brush, &mut paint);
 
         let r = corner_radius.unwrap_or(0.0);
 
@@ -1714,7 +1912,6 @@ impl RenderContext for TinySkiaRenderer {
         }
 
         if r <= 0.0 {
-            // Fast path for flat rectangle
             if let Some(rect) = tiny_skia::Rect::from_xywh(left, top, width, height) {
                 self.with_current_pixmap(|p, clip| p.fill_rect(rect, &paint, transform, clip));
             }
@@ -1746,6 +1943,7 @@ impl RenderContext for TinySkiaRenderer {
         blur_radius: f32,
         transform: Option<&Transform2D>,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("blur_quad");
         let path = Path::from_rounded_rect(left, top, width, height, corner_radius);
         self.blur_path(&path, blur_radius, transform)
     }
@@ -1756,6 +1954,7 @@ impl RenderContext for TinySkiaRenderer {
         blur_radius: f32,
         options_transform: Option<&Transform2D>,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("blur_path");
         let ts_path = if let Some(p) = Self::build_tiny_skia_path(path) {
             p
         } else {
@@ -1779,14 +1978,14 @@ impl RenderContext for TinySkiaRenderer {
         };
 
         let bounds = screen_path.bounds();
-        let pad = blur_radius.ceil() as f32 * 2.5;
+        let pad = blur_radius.ceil() * 2.5;
 
         let left = (bounds.left() - pad).floor() as i32;
         let top = (bounds.top() - pad).floor() as i32;
         let right = (bounds.right() + pad).ceil() as i32;
         let bottom = (bounds.bottom() + pad).ceil() as i32;
 
-        let mut extracted_pixels: Option<tiny_skia::Pixmap> = None;
+        let mut extracted_pixels: Option<Pixmap> = None;
         let mut actual_left = 0.0;
         let mut actual_top = 0.0;
 
@@ -1794,8 +1993,7 @@ impl RenderContext for TinySkiaRenderer {
         let h = (bottom - top) as u32;
 
         if w > 0 && h > 0 {
-            if let Some(mut pixmap) = tiny_skia::Pixmap::new(w, h) {
-                // Initialize to transparent black
+            if let Some(mut pixmap) = Pixmap::new(w, h) {
                 pixmap.fill(tiny_skia::Color::TRANSPARENT);
 
                 self.with_current_pixmap(|p, _clip| {
@@ -1843,14 +2041,9 @@ impl RenderContext for TinySkiaRenderer {
         if let Some(mut blur_pixmap) = extracted_pixels {
             let bw = blur_pixmap.width() as usize;
             let bh = blur_pixmap.height() as usize;
-            crate::fast_box_blur::fast_box_blur(
-                blur_pixmap.pixels_mut(),
-                bw,
-                bh,
-                blur_radius.round() as u32,
-            );
+            Self::fast_blur(blur_pixmap.pixels_mut(), bw, bh, blur_radius.round() as u32)?;
 
-            let mut pattern_paint = tiny_skia::Paint::default();
+            let mut pattern_paint = Paint::default();
             pattern_paint.anti_alias = true;
 
             let pattern = tiny_skia::Pattern::new(
@@ -1878,6 +2071,7 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn push_clip(&mut self, rect: (f32, f32, f32, f32)) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("push_clip");
         let path = Path::from_rect(rect.0, rect.1, rect.2, rect.3);
         if let Some(ts_path) = Self::build_tiny_skia_path(&path) {
             self.push_path_internal(ts_path);
@@ -1890,6 +2084,7 @@ impl RenderContext for TinySkiaRenderer {
         rect: (f32, f32, f32, f32),
         radius: f32,
     ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("push_rounded_clip");
         let path = Path::from_rounded_rect(rect.0, rect.1, rect.2, rect.3, radius);
         if let Some(ts_path) = Self::build_tiny_skia_path(&path) {
             self.push_path_internal(ts_path);
@@ -1898,6 +2093,7 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn push_path_clip(&mut self, path: &Path) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("push_path_clip");
         if let Some(ts_path) = Self::build_tiny_skia_path(path) {
             self.push_path_internal(ts_path);
         }
@@ -1905,6 +2101,7 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn pop_clip(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("pop_clip");
         if let Some(target) = target_depth {
             let target = target as usize;
             if self.clip_stack.len() > target {
@@ -1920,34 +2117,38 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn get_clip_depth(&mut self) -> Result<u32, Self::Error> {
+        let _timer = FuncTimer::new("get_clip_depth");
         Ok(self.clip_stack.len() as u32)
     }
 
     fn suspend_clip(&mut self) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("suspend_clip");
         self.clip_suspended = true;
         self.update_clip_mask();
         Ok(())
     }
 
     fn resume_clip(&mut self) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("resume_clip");
         self.clip_suspended = false;
         self.update_clip_mask();
         Ok(())
     }
 
     fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("push_transform");
         let ts = transform.to_tiny_skia();
         let current = self
             .transform_stack
             .last()
             .copied()
             .unwrap_or(tiny_skia::Transform::identity());
-        // Depending on pre or post multiplication order, usually it's current.pre_concat(ts)
         self.transform_stack.push(current.pre_concat(ts));
         Ok(())
     }
 
     fn pop_transform(&mut self, _target_depth: Option<u32>) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("pop_transform");
         if let Some(target) = _target_depth {
             let target = target as usize;
             if self.transform_stack.len() > target && target > 0 {
@@ -1962,6 +2163,7 @@ impl RenderContext for TinySkiaRenderer {
     }
 
     fn get_transform_depth(&mut self) -> Result<u32, Self::Error> {
+        let _timer = FuncTimer::new("get_transform_depth");
         Ok(self.transform_stack.len() as u32)
     }
 
@@ -1969,11 +2171,9 @@ impl RenderContext for TinySkiaRenderer {
         &mut self,
         _rect: Option<(f32, f32, u32, u32)>,
     ) -> Result<Vec<u8>, Self::Error> {
-        // currently ignoring optional rect and snapshotting whole default_pixmap
-        // to return RGBA bytes
+        let _timer = FuncTimer::new("capture_snapshot");
         let data = self.default_pixmap.data();
         let mut out = Vec::with_capacity(data.len());
-        // Un-premultiply
         for chunk in data.chunks_exact(4) {
             let pr = chunk[0] as u32;
             let pg = chunk[1] as u32;

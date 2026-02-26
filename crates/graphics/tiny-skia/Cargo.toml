@@ -30,6 +30,7 @@ windows = { workspace = true, features = [
     "Win32_Graphics_Dwm",
 ] }
 slotmap = { workspace = true }
+libblur = "0.23.1"
 
 [lints]
 workspace = true

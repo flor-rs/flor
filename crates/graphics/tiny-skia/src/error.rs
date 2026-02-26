@@ -1,3 +1,4 @@
+use libblur::BlurError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,4 +14,6 @@ pub enum TinySkiaError {
     ImageDecodeError,
     #[error("invalid image format")]
     ImageInvalidFormat,
+    #[error("blur error")]
+    BlurError(#[from] BlurError),
 }
