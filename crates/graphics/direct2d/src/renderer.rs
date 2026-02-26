@@ -2522,10 +2522,21 @@ impl D2DRenderer {
             new_text_format.SetParagraphAlignment(dw_para_align)?;
 
             // Wrapping
-            let dw_wrap = match text_format.word_wrapping() {
-                WordWrapping::NoWrap => DWRITE_WORD_WRAPPING_NO_WRAP,
-                WordWrapping::Wrap => DWRITE_WORD_WRAPPING_WRAP,
-                WordWrapping::Character => DWRITE_WORD_WRAPPING_CHARACTER,
+            // Justified alignment requires word wrapping — without wrapping
+            // DirectWrite treats the single un-wrapped line as a non-last
+            // line and incorrectly applies inter-word expansion. With
+            // wrapping enabled the line becomes the "last line" of a
+            // paragraph and is left-aligned (standard typography).
+            let dw_wrap = if text_format.text_alignment() == TextAlignment::Justified
+                && text_format.word_wrapping() == WordWrapping::NoWrap
+            {
+                DWRITE_WORD_WRAPPING_WRAP
+            } else {
+                match text_format.word_wrapping() {
+                    WordWrapping::NoWrap => DWRITE_WORD_WRAPPING_NO_WRAP,
+                    WordWrapping::Wrap => DWRITE_WORD_WRAPPING_WRAP,
+                    WordWrapping::Character => DWRITE_WORD_WRAPPING_CHARACTER,
+                }
             };
             new_text_format.SetWordWrapping(dw_wrap)?;
 
