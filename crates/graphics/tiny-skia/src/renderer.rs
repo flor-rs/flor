@@ -667,13 +667,26 @@ impl RenderContext for TinySkiaRenderer {
         }
         Ok(())
     }
-
     fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
         let _timer = FuncTimer::new("set_scale_factor");
         self.dpi_scale = (dpi_x, dpi_y);
-        if let Some(first) = self.transform_stack.first_mut() {
-            *first = tiny_skia::Transform::from_scale(dpi_x, dpi_y);
-        }
+
+        // let transform = match scale {
+        //     Some(t) => tiny_skia::Transform::from_row(t.m11, t.m12, t.m21, t.m22, t.dx, t.dy),
+        //     None => {
+        //         let scale_x = dpi_x / 96.0;
+        //         let scale_y = dpi_y / 96.0;
+        //         if (scale_x - 1.0).abs() < f32::EPSILON && (scale_y - 1.0).abs() < f32::EPSILON {
+        //             tiny_skia::Transform::identity()
+        //         } else {
+        //             tiny_skia::Transform::from_scale(scale_x, scale_y)
+        //         }
+        //     }
+        // };
+
+        // if let Some(first) = self.transform_stack.first_mut() {
+        //     *first = transform;
+        // }
         Ok(())
     }
 

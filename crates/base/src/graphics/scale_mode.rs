@@ -32,3 +32,53 @@ pub enum ScaleMode {
     /// 如果图像大于目标矩形，它将超出边界。
     Center,
 }
+
+impl ScaleMode {
+    /// 计算缩放后的绘制区域
+    /// x, y: 容器起始坐标
+    /// target_w, target_h: 容器尺寸
+    /// content_w, content_h: 内容原始尺寸 (对于你的 SVG 来说就是 intrinsic * dpi)
+    pub fn calc_draw_rect(
+        &self,
+        x: f32,
+        y: f32,
+        target_w: f32,
+        target_h: f32,
+        content_w: f32,
+        content_h: f32,
+    ) -> (f32, f32, f32, f32) {
+        let mut draw_x = x;
+        let mut draw_y = y;
+        let mut draw_w = target_w;
+        let mut draw_h = target_h;
+
+        match self {
+            ScaleMode::None => {
+                draw_w = content_w;
+                draw_h = content_h;
+            }
+            ScaleMode::Fit | ScaleMode::Cover => {
+                let scale_x = target_w / content_w;
+                let scale_y = target_h / content_h;
+                let scale = if matches!(self, ScaleMode::Fit) {
+                    scale_x.min(scale_y)
+                } else {
+                    scale_x.max(scale_y)
+                };
+                draw_w = content_w * scale;
+                draw_h = content_h * scale;
+                draw_x = x + (target_w - draw_w) / 2.0;
+                draw_y = y + (target_h - draw_h) / 2.0;
+            }
+            ScaleMode::Center => {
+                draw_w = content_w;
+                draw_h = content_h;
+                draw_x = x + (target_w - draw_w) / 2.0;
+                draw_y = y + (target_h - draw_h) / 2.0;
+            }
+            ScaleMode::Stretch => {}
+        }
+
+        (draw_x, y, draw_w, draw_h)
+    }
+}

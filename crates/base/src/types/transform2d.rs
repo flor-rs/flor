@@ -146,6 +146,34 @@ impl Transform2D {
         self * Self::skew(kx_rad, ky_rad)
     }
 
+    /// 正交投影矩阵（通常用于将窗口像素坐标系转换为 OpenGL 的 NDC 坐标系）
+    /// - `width`: 屏幕宽度
+    /// - `height`: 屏幕高度
+    ///
+    /// 这个矩阵将执行以下操作：
+    /// 1. 缩放 X：使得 0..width 映射到 0..2。
+    /// 2. 平移 X：向左移动 1，由于 0..2 向左平移后，就变成了 -1..1（标准的 NDC 的横向）。
+    /// 3. 缩放 Y：由于我们要将屏幕 Y 朝下（即通常的视窗模型）转换为 OpenGL 的 Y 朝上，所以带有一个翻转效果：使得 0..height 映射成 0..-2。
+    /// 4. 平移 Y：向下平移 1，让它覆盖由 1 到 -1 的范围。
+    pub fn ortho(width: f32, height: f32) -> Self {
+        if width <= 0.0 || height <= 0.0 {
+            return Self::IDENTITY;
+        }
+
+        Transform2D {
+            m11: 2.0 / width,
+            m12: 0.0,
+            m21: 0.0,
+            m22: -2.0 / height,
+            dx: -1.0,
+            dy: 1.0,
+        }
+    }
+
+    pub fn then_ortho(self, width: f32, height: f32) -> Self {
+        self * Self::ortho(width, height)
+    }
+
     // =========================================================
     // 复合辅助函数 (Complex Helpers)
     // =========================================================
