@@ -825,7 +825,7 @@ impl RenderContext for D2DRenderer {
                     shadow_effect.SetValue(
                         D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                         D2D1_PROPERTY_TYPE_FLOAT,
-                        &shadow_opts.blur_radius.to_ne_bytes(),
+                        &(shadow_opts.blur_radius * 0.4).to_ne_bytes(),
                     )?;
 
                     let d2d_color = shadow_opts.color.as_d2d_color();
@@ -1095,7 +1095,7 @@ impl RenderContext for D2DRenderer {
                         cache.shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                             D2D1_PROPERTY_TYPE_FLOAT,
-                            &shadow_opts.blur_radius.to_ne_bytes(),
+                            &(shadow_opts.blur_radius * 0.4).to_ne_bytes(),
                         )?;
                         cache.last_blur_radius = shadow_opts.blur_radius;
                     }
@@ -1251,7 +1251,7 @@ impl RenderContext for D2DRenderer {
                             shadow_effect.SetValue(
                                 D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                                 D2D1_PROPERTY_TYPE_FLOAT,
-                                &shadow.blur_radius.to_ne_bytes(),
+                                &(shadow.blur_radius * 0.4).to_ne_bytes(),
                             )?;
                             shadow_effect.SetValue(
                                 D2D1_SHADOW_PROP_COLOR.0 as u32,
@@ -1406,7 +1406,7 @@ impl RenderContext for D2DRenderer {
                         shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                             D2D1_PROPERTY_TYPE_FLOAT,
-                            &shadow.blur_radius.to_ne_bytes(),
+                            &(shadow.blur_radius * 0.4).to_ne_bytes(),
                         )?;
                         shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_COLOR.0 as u32,
@@ -1550,7 +1550,7 @@ impl RenderContext for D2DRenderer {
                         shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                             D2D1_PROPERTY_TYPE_FLOAT,
-                            &shadow.blur_radius.to_ne_bytes(),
+                            &(shadow.blur_radius * 0.4).to_ne_bytes(),
                         )?;
                         shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_COLOR.0 as u32,
@@ -1711,7 +1711,7 @@ impl RenderContext for D2DRenderer {
                         shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                             D2D1_PROPERTY_TYPE_FLOAT,
-                            &shadow.blur_radius.to_ne_bytes(),
+                            &(shadow.blur_radius * 0.4).to_ne_bytes(),
                         )?;
                         shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_COLOR.0 as u32,
@@ -1893,7 +1893,7 @@ impl RenderContext for D2DRenderer {
                         shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                             D2D1_PROPERTY_TYPE_FLOAT,
-                            &shadow.blur_radius.to_ne_bytes(),
+                            &(shadow.blur_radius * 0.4).to_ne_bytes(),
                         )?;
                         shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_COLOR.0 as u32,
@@ -2899,7 +2899,7 @@ impl D2DRenderer {
                 blur_effect.SetValue(
                     D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0 as u32,
                     D2D1_PROPERTY_TYPE_FLOAT,
-                    &blur_radius.to_ne_bytes(),
+                    &(blur_radius * 0.4).to_ne_bytes(),
                 )?;
                 let border_mode = D2D1_BORDER_MODE_HARD;
                 blur_effect.SetValue(
