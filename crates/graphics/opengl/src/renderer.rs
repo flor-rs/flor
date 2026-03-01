@@ -668,16 +668,7 @@ impl RenderContext for GlRenderer {
 
         let offset_y = text_format.calc_offset_y(&buffer, phys_height);
 
-        let color = match brush {
-            GlBrushHandle::Solid(c) => [
-                c.r as f32 / 255.0,
-                c.g as f32 / 255.0,
-                c.b as f32 / 255.0,
-                c.a as f32 / 255.0,
-            ],
-            // 暂时回退到白色如果不支持渐变文本
-            GlBrushHandle::Gradient { .. } => [1.0, 1.0, 1.0, 1.0],
-        };
+        let brush_data = brush.to_shader_data();
 
         let mut glyphs_to_draw = Vec::new();
 
@@ -757,11 +748,22 @@ impl RenderContext for GlRenderer {
         unsafe {
             let gl = &self.gl_context;
             self.text_program.use_program(gl);
-            gl.active_texture(glow::TEXTURE0);
+
+            let tex = self.create_gradient_texture(&brush_data).unwrap_or(None);
 
             self.text_program.bind_transform(gl, self.proj_transform);
+
+            if let Some(t_id) = tex {
+                // 如果启用了超大渐变，bind_brush_data里把 u_stop_data 绑定到了 TEXTURE1
+                self.text_program.bind_brush_data(gl, &brush_data, 1);
+                gl.active_texture(glow::TEXTURE1);
+                gl.bind_texture(glow::TEXTURE_2D, Some(t_id));
+            } else {
+                self.text_program.bind_brush_data(gl, &brush_data, 0);
+            }
+            // 字体图集永远绑定在 TEXTURE0
             self.text_program.bind_texture(gl, 0);
-            self.text_program.bind_text_color(gl, color);
+            gl.active_texture(glow::TEXTURE0);
 
             gl.bind_vertex_array(Some(self.text_vao));
 
@@ -817,6 +819,9 @@ impl RenderContext for GlRenderer {
                 gl.draw_arrays(glow::TRIANGLES, 0, (batch_vertices.len() / 4) as i32);
             }
 
+            if let Some(t_id) = tex {
+                gl.delete_texture(t_id);
+            }
             self.text_program.unbind(gl);
         }
         Ok(())
@@ -830,26 +835,12 @@ impl RenderContext for GlRenderer {
         _options: Option<&PathDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("draw_path");
-        let color = brush.to_color_array();
-
-        let geometry = self
-            .tessellator
-            .tessellate_stroke(path, stroke_width, color)?;
-
-        if geometry.vertices.is_empty() || geometry.indices.is_empty() {
-            return Ok(());
-        }
+        let brush_data = brush.to_shader_data();
+        let geometry = self.tessellator.tessellate_stroke(path, stroke_width)?;
 
         unsafe {
-            let gl = &self.gl_context;
-            self.color_program.use_program(gl);
-            self.color_program.bind_transform(gl, self.proj_transform);
-
-            self.render_elements(&geometry.vertices, &geometry.indices)?;
-
-            self.color_program.unbind(gl);
+            self.render_tessellated_geometry(&geometry, &brush_data)?;
         }
-
         Ok(())
     }
 
@@ -860,22 +851,11 @@ impl RenderContext for GlRenderer {
         _options: Option<&PathDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("fill_path");
-        let color = brush.to_color_array();
-
-        let geometry = self.tessellator.tessellate_fill(path, color)?;
-
-        if geometry.vertices.is_empty() || geometry.indices.is_empty() {
-            return Ok(());
-        }
+        let brush_data = brush.to_shader_data();
+        let geometry = self.tessellator.tessellate_fill(path)?;
 
         unsafe {
-            let gl = &self.gl_context;
-            self.color_program.use_program(gl);
-            self.color_program.bind_transform(gl, self.proj_transform);
-
-            self.render_elements(&geometry.vertices, &geometry.indices)?;
-
-            self.color_program.unbind(gl);
+            self.render_tessellated_geometry(&geometry, &brush_data)?;
         }
         Ok(())
     }
@@ -946,9 +926,7 @@ impl RenderContext for GlRenderer {
             return Ok(());
         }
 
-        let geometry = self
-            .tessellator
-            .tessellate_fill(path, [1.0, 1.0, 1.0, 1.0])?;
+        let geometry = self.tessellator.tessellate_fill(path)?;
 
         if geometry.vertices.is_empty() || geometry.indices.is_empty() {
             return Ok(());
@@ -964,6 +942,7 @@ impl RenderContext for GlRenderer {
 
             // 准备两个 FBO 级纹理（全屏大小）进行 Ping-Pong 渲染
             let screen_texture = gl.create_texture()?;
+            gl.bind_texture(glow::TEXTURE_2D, Some(screen_texture));
             // 将整个屏幕当前的画面 Copy 下来作为底层模糊输入 (系统可能无 Alpha 通道，使用 RGB 默认 Alpha = 1.0)
             gl.copy_tex_image_2d(
                 glow::TEXTURE_2D,
@@ -974,6 +953,26 @@ impl RenderContext for GlRenderer {
                 win_w as i32,
                 win_h as i32,
                 0,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::LINEAR as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::LINEAR as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_S,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_T,
+                glow::CLAMP_TO_EDGE as i32,
             );
 
             // 创建用于存放横向模糊结果的中间纹理和 FBO
@@ -1011,11 +1010,9 @@ impl RenderContext for GlRenderer {
             gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(glow::TEXTURE_2D, Some(screen_texture));
 
-            // 构建全屏四边形用于拷贝 (stride=24 也就是 6 个 floats, [x, y, r, g, b, a])
-            let fullscreen_vertices: [f32; 36] = [
-                -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0,
-                1.0, 1.0, 1.0, 1.0,
+            // 构建全屏四边形用于拷贝 (stride=8 也就是 2 个 floats, [x, y])
+            let fullscreen_vertices: [f32; 12] = [
+                -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0,
             ];
 
             self.render_arrays(&fullscreen_vertices, glow::TRIANGLES, 6)?;
@@ -1135,24 +1132,83 @@ mod utils {
 }
 
 impl GlRenderer {
+    unsafe fn create_gradient_texture(
+        &self,
+        brush_data: &crate::handle::GlGradientData,
+    ) -> Result<Option<glow::Texture>, GlError> {
+        let num_pixels = 256;
+        let pixels = brush_data.get_texture_pixels(num_pixels);
+        if pixels.is_empty() {
+            return Ok(None);
+        }
+        let gl = &self.gl_context;
+        let tex = gl.create_texture()?;
+        gl.tex_image_2d(
+            glow::TEXTURE_2D,
+            0,
+            glow::RGBA32F as i32,
+            num_pixels as i32,
+            1,
+            0,
+            glow::RGBA,
+            glow::FLOAT,
+            PixelUnpackData::Slice(Some(std::slice::from_raw_parts(
+                pixels.as_ptr() as *const u8,
+                pixels.len() * std::mem::size_of::<f32>(),
+            ))),
+        );
+        Ok(Some(tex))
+    }
+
+    #[inline]
+    unsafe fn render_tessellated_geometry(
+        &self,
+        geometry: &lyon_tessellation::VertexBuffers<Vertex, u32>,
+        brush_data: &crate::handle::GlGradientData,
+    ) -> Result<(), GlError> {
+        if geometry.vertices.is_empty() || geometry.indices.is_empty() {
+            return Ok(());
+        }
+
+        let gl = &self.gl_context;
+        self.color_program.use_program(gl);
+        self.color_program.bind_transform(gl, self.proj_transform);
+
+        let tex_opt = self.create_gradient_texture(brush_data)?;
+        if let Some(tex) = tex_opt {
+            gl.active_texture(glow::TEXTURE0);
+            gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+        }
+
+        self.color_program.bind_brush_data(gl, brush_data, 0);
+
+        self.render_elements(&geometry.vertices, &geometry.indices)?;
+
+        if let Some(tex) = tex_opt {
+            gl.delete_texture(tex);
+        }
+        self.color_program.unbind(gl);
+
+        Ok(())
+    }
     #[inline]
     unsafe fn render_elements<V>(&self, vertices: &[V], indices: &[u32]) -> Result<(), GlError> {
         let gl = &self.gl_context;
         gl.bind_vertex_array(Some(self.color_vao));
         gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.color_vbo));
 
-        let vertex_bytes = std::slice::from_raw_parts(
+        let vertex_bytes = slice::from_raw_parts(
             vertices.as_ptr() as *const u8,
-            vertices.len() * std::mem::size_of::<V>(),
+            vertices.len() * size_of::<V>(),
         );
         gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, vertex_bytes, glow::DYNAMIC_DRAW);
 
         let ebo = gl.create_buffer()?;
         gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(ebo));
 
-        let index_bytes = std::slice::from_raw_parts(
+        let index_bytes = slice::from_raw_parts(
             indices.as_ptr() as *const u8,
-            indices.len() * std::mem::size_of::<u32>(),
+            indices.len() * size_of::<u32>(),
         );
         gl.buffer_data_u8_slice(glow::ELEMENT_ARRAY_BUFFER, index_bytes, glow::DYNAMIC_DRAW);
 

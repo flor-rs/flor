@@ -2,25 +2,89 @@
 
 pub const COLOR_VERTEX_SHADER: &str = r#"#version 330 core
 layout (location = 0) in vec2 a_pos;
-layout (location = 1) in vec4 a_color;
 
 uniform mat3 u_transform;
-out vec4 v_color;
+out vec2 v_pos;
 
 void main() {
     vec3 pos = u_transform * vec3(a_pos, 1.0);
     // 假设正交投影由 u_transform 提前算入 MVP 中
     gl_Position = vec4(pos.xy, 0.0, 1.0);
-    v_color = a_color;
+    v_pos = a_pos;
 }
 "#;
 
 pub const COLOR_FRAGMENT_SHADER: &str = r#"#version 330 core
-in vec4 v_color;
+in vec2 v_pos;
 out vec4 FragColor;
 
+// 渐变统一参数
+uniform int u_gradient_type; // 0: Solid, 1: Linear, 2: Radial
+uniform int u_stop_count;
+uniform vec2 u_start;
+uniform vec2 u_end;
+uniform float u_stops[32];
+uniform vec4 u_colors[32];
+
+// 超过 32 个断点的备用方案：数据纹理
+uniform bool u_use_texture;
+uniform sampler2D u_stop_data;
+
 void main() {
-    FragColor = v_color;
+    // 纯色
+    if (u_gradient_type == 0 || u_stop_count <= 1) {
+        FragColor = u_colors[0];
+        return;
+    }
+
+    // 渐变投影计算 t 值
+    float t = 0.0;
+    if (u_gradient_type == 1) {
+        // 线性渐变
+        vec2 dir = u_end - u_start;
+        float lenSq = dot(dir, dir);
+        if (lenSq > 0.00001) {
+            t = dot(v_pos - u_start, dir) / lenSq;
+        }
+    } else if (u_gradient_type == 2) {
+        // 径向渐变
+        float dist = distance(v_pos, u_start);
+        float radius = u_end.x; // radius 存在 u_end.x
+        if (radius > 0.00001) {
+            t = dist / radius;
+        }
+    }
+    
+    t = clamp(t, 0.0, 1.0);
+
+    vec4 color;
+    
+    if (u_use_texture) {
+        // 使用纹理采样读取数据
+        // 数据排列方式：[stop, r, g, b, a], 但这里为了简化直接让 CPU 生成 1D 颜色条（256px等宽）
+        // 这样就可以利用硬件直接采样并插值。因为 256px 纹理可以直接使用 texture 采样：
+        color = texture(u_stop_data, vec2(t, 0.5));
+    } else {
+        // Uniform 数组插值
+        color = u_colors[0];
+        for (int i = 0; i < u_stop_count - 1; i++) {
+            if (t >= u_stops[i] && t <= u_stops[i+1]) {
+                float dt = u_stops[i+1] - u_stops[i];
+                float factor = 0.0;
+                if (dt > 0.00001) {
+                    factor = (t - u_stops[i]) / dt;
+                }
+                color = mix(u_colors[i], u_colors[i+1], factor);
+                break;
+            } else if (t > u_stops[i+1]) {
+                color = u_colors[i+1];
+            }
+        }
+    }
+
+    // 极轻量防色带抖动 (Dithering)
+    float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) / 255.0;
+    FragColor = color + vec4(dither, dither, dither, 0.0);
 }
 "#;
 
@@ -30,11 +94,13 @@ layout (location = 1) in vec2 a_texCoord;
 
 uniform mat3 u_transform;
 out vec2 v_texCoord;
+out vec2 v_pos;
 
 void main() {
     vec3 pos = u_transform * vec3(a_pos, 1.0);
     gl_Position = vec4(pos.xy, 0.0, 1.0);
     v_texCoord = a_texCoord;
+    v_pos = a_pos;
 }
 "#;
 
@@ -53,20 +119,75 @@ void main() {
 
 pub const TEXT_FRAGMENT_SHADER: &str = r#"#version 330 core
 in vec2 v_texCoord;
+in vec2 v_pos;
 out vec4 FragColor;
 
 uniform sampler2D u_texture;
-uniform vec4 u_textColor;
+
+// 渐变统一参数
+uniform int u_gradient_type; // 0: Solid, 1: Linear, 2: Radial
+uniform int u_stop_count;
+uniform vec2 u_start;
+uniform vec2 u_end;
+uniform float u_stops[32];
+uniform vec4 u_colors[32];
+
+// 超过 32 个断点的备用方案：数据纹理
+uniform bool u_use_texture;
+uniform sampler2D u_stop_data;
 
 void main() {
-    // 假设字形 atlas 的 alpha 通道决定形态
     float alpha = texture(u_texture, v_texCoord).a;
-    FragColor = vec4(u_textColor.rgb, u_textColor.a * alpha);
+    if (alpha <= 0.0) {
+        discard;
+    }
+
+    vec4 color;
+    if (u_gradient_type == 0 || u_stop_count <= 1) {
+        color = u_colors[0];
+    } else {
+        float t = 0.0;
+        if (u_gradient_type == 1) {
+            vec2 dir = u_end - u_start;
+            float lenSq = dot(dir, dir);
+            if (lenSq > 0.00001) {
+                t = dot(v_pos - u_start, dir) / lenSq;
+            }
+        } else if (u_gradient_type == 2) {
+            float dist = distance(v_pos, u_start);
+            float radius = u_end.x;
+            if (radius > 0.00001) {
+                t = dist / radius;
+            }
+        }
+        t = clamp(t, 0.0, 1.0);
+
+        if (u_use_texture) {
+            color = texture(u_stop_data, vec2(t, 0.5));
+        } else {
+            color = u_colors[0];
+            for (int i = 0; i < u_stop_count - 1; i++) {
+                if (t >= u_stops[i] && t <= u_stops[i+1]) {
+                    float dt = u_stops[i+1] - u_stops[i];
+                    float factor = 0.0;
+                    if (dt > 0.00001) {
+                        factor = (t - u_stops[i]) / dt;
+                    }
+                    color = mix(u_colors[i], u_colors[i+1], factor);
+                    break;
+                } else if (t > u_stops[i+1]) {
+                    color = u_colors[i+1];
+                }
+            }
+        }
+    }
+
+    FragColor = vec4(color.rgb, color.a * alpha);
 }
 "#;
 
 pub const BLUR_FRAGMENT_SHADER: &str = r#"#version 330 core
-in vec4 v_color;
+in vec2 v_pos;
 out vec4 FragColor;
 
 uniform sampler2D u_texture;

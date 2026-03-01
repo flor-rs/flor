@@ -9,7 +9,6 @@ use lyon_tessellation::{
 #[derive(Copy, Clone, Debug)]
 pub struct Vertex {
     pub position: [f32; 2],
-    pub color: [f32; 4],
 }
 
 #[repr(C)]
@@ -71,7 +70,6 @@ impl Tessellator {
     pub fn tessellate_fill(
         &mut self,
         path: &flor_base::graphics::Path,
-        color: [f32; 4],
     ) -> Result<VertexBuffers<Vertex, u32>, String> {
         let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let lyon_path = Self::build_lyon_path(path);
@@ -83,7 +81,6 @@ impl Tessellator {
                 &mut BuffersBuilder::new(&mut geometry, |vertex: lyon_tessellation::FillVertex| {
                     Vertex {
                         position: vertex.position().to_array(),
-                        color,
                     }
                 }),
             )
@@ -96,7 +93,6 @@ impl Tessellator {
         &mut self,
         path: &flor_base::graphics::Path,
         stroke_width: f32,
-        color: [f32; 4],
     ) -> Result<VertexBuffers<Vertex, u32>, String> {
         let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let lyon_path = Self::build_lyon_path(path);
@@ -114,7 +110,6 @@ impl Tessellator {
                     &mut geometry,
                     |vertex: lyon_tessellation::StrokeVertex| Vertex {
                         position: vertex.position().to_array(),
-                        color,
                     },
                 ),
             )

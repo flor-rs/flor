@@ -133,6 +133,47 @@ impl ShaderProgram {
         }
     }
 
+    pub fn bind_brush_data(
+        &self,
+        gl: &glow::Context,
+        data: &crate::handle::GlGradientData,
+        tex_unit_index: i32,
+    ) {
+        unsafe {
+            if let Some(loc) = gl.get_uniform_location(self.id, "u_gradient_type") {
+                gl.uniform_1_i32(Some(&loc), data.gradient_type);
+            }
+            if let Some(loc) = gl.get_uniform_location(self.id, "u_stop_count") {
+                gl.uniform_1_i32(Some(&loc), data.stop_count);
+            }
+            if let Some(loc) = gl.get_uniform_location(self.id, "u_start") {
+                gl.uniform_2_f32(Some(&loc), data.start[0], data.start[1]);
+            }
+            if let Some(loc) = gl.get_uniform_location(self.id, "u_end") {
+                gl.uniform_2_f32(Some(&loc), data.end[0], data.end[1]);
+            }
+
+            let use_texture = !data.overflow_texture_data.is_empty();
+            if let Some(loc) = gl.get_uniform_location(self.id, "u_use_texture") {
+                gl.uniform_1_i32(Some(&loc), if use_texture { 1 } else { 0 });
+            }
+
+            if use_texture {
+                if let Some(loc) = gl.get_uniform_location(self.id, "u_stop_data") {
+                    gl.uniform_1_i32(Some(&loc), tex_unit_index);
+                }
+            } else {
+                if let Some(loc) = gl.get_uniform_location(self.id, "u_stops") {
+                    gl.uniform_1_f32_slice(Some(&loc), &data.stops[0..data.stop_count as usize]);
+                }
+                if let Some(loc) = gl.get_uniform_location(self.id, "u_colors") {
+                    let c_len = (data.stop_count * 4) as usize;
+                    gl.uniform_4_f32_slice(Some(&loc), &data.colors[0..c_len]);
+                }
+            }
+        }
+    }
+
     pub fn delete(&self, gl: &glow::Context) {
         unsafe {
             gl.delete_program(self.id);
