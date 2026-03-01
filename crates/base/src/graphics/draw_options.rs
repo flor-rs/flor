@@ -24,6 +24,7 @@ pub struct SvgDrawOptions {
     pub transform: Option<Transform2D>,
     /// 可选阴影
     pub shadow: Option<Shadow>,
+    pub opacity: Option<f32>,
 }
 
 /// Path 绘制可选参数
