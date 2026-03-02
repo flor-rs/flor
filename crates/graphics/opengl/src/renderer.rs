@@ -4,8 +4,8 @@ use crate::handle::GlSurfaceId;
 use crate::handle::{GlBrushHandle, GlTextFormatHandle};
 use cosmic_text::{CacheKey, FontSystem, Placement, SwashCache};
 use flor_base::graphics::{
-    Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
-    ScaleMode, Shadow, SurfaceDrawOptions, TextDrawOptions,
+    Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
+    RenderContext, ScaleMode, Shadow, SurfaceDrawOptions, TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
 use glow::{HasContext, NativeTexture, PixelUnpackData};
@@ -268,7 +268,7 @@ impl RenderContext for GlRenderer {
             let texture = gl.create_texture_tex_image_2d(
                 physical_w,
                 physical_h,
-                glow::PixelUnpackData::Slice(None),
+                PixelUnpackData::Slice(None),
             )?;
 
             // 创建 FBO
@@ -300,7 +300,7 @@ impl RenderContext for GlRenderer {
 
             // 检查 FBO 状态
             if gl.check_framebuffer_status(glow::FRAMEBUFFER) != glow::FRAMEBUFFER_COMPLETE {
-                return Err(crate::error::GlError::CustomError(
+                return Err(GlError::CustomError(
                     "Framebuffer is not complete".to_string(),
                 ));
             }
@@ -312,7 +312,7 @@ impl RenderContext for GlRenderer {
             Ok(GlSurfaceId {
                 width,
                 height,
-                inner: std::sync::Arc::new(crate::handle::SurfaceInner {
+                inner: Arc::new(crate::handle::SurfaceInner {
                     gl_context: self.gl_context.clone(),
                     texture,
                     fbo,
@@ -399,7 +399,7 @@ impl RenderContext for GlRenderer {
             frames: Arc::new(raw_bytes.clone()),
             cache: Arc::new(crate::handle::ImageCacheInner {
                 gl_context: self.gl_context.clone(),
-                textures: parking_lot::Mutex::new(Vec::new()),
+                textures: Mutex::new(Vec::new()),
             }),
         })
     }
@@ -516,12 +516,8 @@ impl RenderContext for GlRenderer {
         }
 
         let offset_y = match text_format.paragraph_alignment {
-            flor_base::graphics::ParagraphAlignment::Center if phys_height > total_h => {
-                (phys_height - total_h) / 2.0
-            }
-            flor_base::graphics::ParagraphAlignment::Bottom if phys_height > total_h => {
-                phys_height - total_h
-            }
+            ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
+            ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
             _ => 0.0,
         };
 
@@ -576,12 +572,8 @@ impl RenderContext for GlRenderer {
         }
 
         let offset_y = match text_format.paragraph_alignment {
-            flor_base::graphics::ParagraphAlignment::Center if phys_height > total_h => {
-                (phys_height - total_h) / 2.0
-            }
-            flor_base::graphics::ParagraphAlignment::Bottom if phys_height > total_h => {
-                phys_height - total_h
-            }
+            ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
+            ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
             _ => 0.0,
         };
 
@@ -745,13 +737,11 @@ impl RenderContext for GlRenderer {
                     let transform = resvg::tiny_skia::Transform::from_scale(sx, sy);
                     resvg::render(&handle.tree, transform, &mut pixmap.as_mut());
 
-                    let new_texture = unsafe {
-                        self.gl_context.create_texture_tex_image_2d(
-                            physical_w as i32,
-                            physical_h as i32,
-                            PixelUnpackData::Slice(Some(pixmap.data())),
-                        )?
-                    };
+                    let new_texture = self.gl_context.create_texture_tex_image_2d(
+                        physical_w as i32,
+                        physical_h as i32,
+                        PixelUnpackData::Slice(Some(pixmap.data())),
+                    )?;
 
                     if let Some((_, _, old_tex)) =
                         option_texture.replace((physical_w, physical_h, new_texture))
@@ -931,7 +921,7 @@ impl RenderContext for GlRenderer {
                             let texture = self.gl_context.create_texture_tex_image_2d(
                                 w as i32,
                                 h as i32,
-                                glow::PixelUnpackData::Slice(Some(&rgba_data[..])),
+                                PixelUnpackData::Slice(Some(&rgba_data[..])),
                             )?;
 
                             v.insert((texture, image.placement));
@@ -1108,15 +1098,7 @@ impl RenderContext for GlRenderer {
             return Ok(());
         }
 
-        let (fbo_w, fbo_h) = if let Some(surface) = &self.current_surface {
-            let (dpi_x, dpi_y) = self.dpi_scale;
-            (
-                (surface.width as f32 * dpi_x).ceil() as i32,
-                (surface.height as f32 * dpi_y).ceil() as i32,
-            )
-        } else {
-            (self.window_size.0 as i32, self.window_size.1 as i32)
-        };
+        let (fbo_w, fbo_h) = self.get_fbo_size();
 
         if fbo_w <= 0 || fbo_h <= 0 {
             return Ok(());
@@ -1386,6 +1368,36 @@ mod utils {
 }
 
 impl GlRenderer {
+    #[inline]
+    fn get_fbo_size(&self) -> (i32, i32) {
+        if let Some(surface) = &self.current_surface {
+            let (dpi_x, dpi_y) = self.dpi_scale;
+            (
+                (surface.width as f32 * dpi_x).ceil() as i32,
+                (surface.height as f32 * dpi_y).ceil() as i32,
+            )
+        } else {
+            (self.window_size.0 as i32, self.window_size.1 as i32)
+        }
+    }
+
+    #[inline]
+    fn apply_shadow_clip(
+        &mut self,
+        shadow: &Shadow,
+        bounds: (f32, f32, f32, f32),
+        clip_path: Option<&Path>,
+    ) -> Result<(), GlError> {
+        if shadow.inset {
+            if let Some(p) = clip_path {
+                self.push_path_clip(p)?;
+            } else if bounds.2 > 0.0 && bounds.3 > 0.0 {
+                self.push_clip(bounds)?;
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn render_shadow<F>(
         &mut self,
         shadow: &Shadow,
@@ -1417,13 +1429,7 @@ impl GlRenderer {
         };
 
         if shadow.blur_radius <= 0.0 {
-            if shadow.inset {
-                if let Some(p) = clip_path {
-                    self.push_path_clip(p)?;
-                } else if w > 0.0 && h > 0.0 {
-                    self.push_clip((x, y, w, h))?;
-                }
-            }
+            self.apply_shadow_clip(shadow, (x, y, w, h), clip_path)?;
 
             draw_mask(self, Some(&combined_transform))?;
 
@@ -1434,25 +1440,18 @@ impl GlRenderer {
                     glow::ONE,
                     glow::ONE_MINUS_SRC_ALPHA,
                 );
+                self.pop_clip(None)?;
             }
             return Ok(());
         }
 
-        let (fbo_w, fbo_h) = if let Some(surface) = &self.current_surface {
-            let (dpi_x, dpi_y) = self.dpi_scale;
-            (
-                (surface.width as f32 * dpi_x).ceil() as i32,
-                (surface.height as f32 * dpi_y).ceil() as i32,
-            )
-        } else {
-            (self.window_size.0 as i32, self.window_size.1 as i32)
-        };
+        let (fbo_w, fbo_h) = self.get_fbo_size();
 
         // --- FBO Blur Path ---
         let mask_texture = self.gl_context.create_texture_tex_image_2d(
             fbo_w,
             fbo_h,
-            glow::PixelUnpackData::Slice(None),
+            PixelUnpackData::Slice(None),
         )?;
         let mask_fbo = self.gl_context.create_framebuffer()?;
         self.gl_context
@@ -1497,7 +1496,7 @@ impl GlRenderer {
         let pingpong_texture = self.gl_context.create_texture_tex_image_2d(
             fbo_w,
             fbo_h,
-            glow::PixelUnpackData::Slice(None),
+            PixelUnpackData::Slice(None),
         )?;
         let pingpong_fbo = self.gl_context.create_framebuffer()?;
         self.gl_context
@@ -1676,9 +1675,9 @@ impl GlRenderer {
             gl.bind_texture(glow::TEXTURE_2D, Some(tex));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.text_vbo));
 
-            let vertex_bytes = std::slice::from_raw_parts(
+            let vertex_bytes = slice::from_raw_parts(
                 batch_vertices.as_ptr() as *const u8,
-                batch_vertices.len() * std::mem::size_of::<f32>(),
+                batch_vertices.len() * size_of::<f32>(),
             );
 
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, vertex_bytes, glow::DYNAMIC_DRAW);
@@ -1713,9 +1712,9 @@ impl GlRenderer {
             0,
             glow::RGBA,
             glow::FLOAT,
-            PixelUnpackData::Slice(Some(std::slice::from_raw_parts(
+            PixelUnpackData::Slice(Some(slice::from_raw_parts(
                 pixels.as_ptr() as *const u8,
-                pixels.len() * std::mem::size_of::<f32>(),
+                pixels.len() * size_of::<f32>(),
             ))),
         );
         Ok(Some(tex))
@@ -1837,9 +1836,9 @@ impl GlRenderer {
         gl.bind_vertex_array(Some(self.color_vao));
         gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.color_vbo));
 
-        let vertex_bytes = std::slice::from_raw_parts(
+        let vertex_bytes = slice::from_raw_parts(
             vertices.as_ptr() as *const u8,
-            vertices.len() * std::mem::size_of::<V>(),
+            vertices.len() * size_of::<V>(),
         );
         gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, vertex_bytes, glow::DYNAMIC_DRAW);
 
