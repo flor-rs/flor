@@ -31,7 +31,7 @@ mod config;
 use crate::renderer::context::GlContext;
 pub use config::*;
 
-mod context;
+pub mod context;
 
 pub(crate) static FONT_SYSTEM: OnceLock<Mutex<FontSystem>> = OnceLock::new();
 
@@ -44,7 +44,7 @@ macro_rules! time_it {
 // #[derive(Debug)] removed for manual implementation
 pub struct GlRenderer {
     display_context: NativeDisplayContext,
-    pub gl_context: GlContext,
+    pub gl_context: Arc<GlContext>,
 
     // Scale and Viewport
     // dpi 缩放倍率，这里是倍率
@@ -104,7 +104,7 @@ impl Render for GlRenderer {
         config: Self::Config,
     ) -> Result<Self::Render, Self::Error> {
         let display_context = NativeDisplayContext::create(hwnd.into(), config)?;
-        let gl_context = GlContext::from_context(display_context.get_gl_context());
+        let gl_context = Arc::new(GlContext::from_context(display_context.get_gl_context()));
         unsafe {
             display_context.set_v_sync(wait_v_sync);
             gl_context.viewport(0, 0, width as i32, height as i32);
@@ -308,9 +308,12 @@ impl RenderContext for GlRenderer {
             Ok(GlSurfaceId {
                 width,
                 height,
-                texture,
-                fbo,
-                rbo: Some(rbo),
+                inner: std::sync::Arc::new(crate::handle::SurfaceInner {
+                    gl_context: self.gl_context.clone(),
+                    texture,
+                    fbo,
+                    rbo: Some(rbo),
+                }),
             })
         }
     }
@@ -322,7 +325,7 @@ impl RenderContext for GlRenderer {
 
         unsafe {
             self.gl_context
-                .bind_framebuffer(glow::FRAMEBUFFER, Some(surface_id.fbo));
+                .bind_framebuffer(glow::FRAMEBUFFER, Some(surface_id.inner.fbo));
             self.gl_context.viewport(0, 0, physical_w, physical_h);
             self.proj_transform =
                 Transform2D::ortho(surface_id.width as f32, surface_id.height as f32);
@@ -369,7 +372,7 @@ impl RenderContext for GlRenderer {
         let id = self.next_image_id;
         self.next_image_id += 1;
 
-        Ok(GlImageHandle::new(id, bytes)?)
+        Ok(GlImageHandle::new(id, bytes, self.gl_context.clone())?)
     }
 
     fn create_image_from_raw_bytes(
@@ -390,7 +393,10 @@ impl RenderContext for GlRenderer {
             delays,
             total_delays,
             frames: Arc::new(raw_bytes.clone()),
-            cache: Mutex::new(Vec::new()),
+            cache: Arc::new(crate::handle::ImageCacheInner {
+                gl_context: self.gl_context.clone(),
+                textures: parking_lot::Mutex::new(Vec::new()),
+            }),
         })
     }
 
@@ -402,7 +408,10 @@ impl RenderContext for GlRenderer {
             .map_err(|e| GlError::CustomError(format!("SVG parse error: {:?}", e)))?;
 
         Ok(GlSvgHandle {
-            cache: Mutex::new(None),
+            cache: Arc::new(crate::handle::SvgCacheInner {
+                gl_context: self.gl_context.clone(),
+                texture: Mutex::new(None),
+            }),
             tree: Arc::new(tree),
         })
     }
@@ -640,7 +649,7 @@ impl RenderContext for GlRenderer {
             .min(handle.frames.len().saturating_sub(1));
 
         let texture = {
-            let mut cache = handle.cache.lock();
+            let mut cache = handle.cache.textures.lock();
             if cache.is_empty() {
                 // 初次渲染时，一次性把图片的所有帧加载到显存里！
                 for frame_data in handle.frames.iter() {
@@ -693,7 +702,7 @@ impl RenderContext for GlRenderer {
         let physical_h = (draw_h * self.dpi_scale.1).ceil() as u32;
 
         let texture = {
-            let mut option_texture = handle.cache.lock();
+            let mut option_texture = handle.cache.texture.lock();
 
             match option_texture.as_ref().copied() {
                 Some((w, h, tex)) if w == physical_w && h == physical_h => tex,
@@ -760,7 +769,14 @@ impl RenderContext for GlRenderer {
             scale_mode.calc_draw_rect(x, y, target_w, target_h, img_w, img_h);
 
         let opacity = options.and_then(|o| o.opacity);
-        self.draw_texture(draw_x, draw_y, draw_w, draw_h, handle.texture, opacity);
+        self.draw_texture(
+            draw_x,
+            draw_y,
+            draw_w,
+            draw_h,
+            handle.inner.texture,
+            opacity,
+        );
         Ok(())
     }
 
@@ -1156,7 +1172,7 @@ impl RenderContext for GlRenderer {
             // ================= Pass 2: Vertical Blur to Final Shape =================
             // 切回目标帧缓冲并开回混合
             if let Some(surface) = &self.current_surface {
-                gl.bind_framebuffer(glow::FRAMEBUFFER, Some(surface.fbo));
+                gl.bind_framebuffer(glow::FRAMEBUFFER, Some(surface.inner.fbo));
             } else {
                 gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             }

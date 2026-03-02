@@ -1,3 +1,4 @@
+use crate::renderer::context::GlContext;
 use flor_base::graphics::ImageHandle;
 use glow::NativeTexture;
 use image::codecs::gif::GifDecoder;
@@ -7,32 +8,39 @@ use parking_lot::Mutex;
 use std::io::{BufReader, Cursor};
 use std::sync::Arc;
 
-#[derive(Debug)]
+pub struct ImageCacheInner {
+    pub gl_context: Arc<GlContext>,
+    pub textures: Mutex<Vec<NativeTexture>>,
+}
+
+impl Drop for ImageCacheInner {
+    fn drop(&mut self) {
+        let mut textures = self.textures.lock();
+        for &tex in textures.iter() {
+            unsafe {
+                use glow::HasContext;
+                self.gl_context.delete_texture(tex);
+            }
+        }
+        textures.clear();
+    }
+}
+
+impl std::fmt::Debug for ImageCacheInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageCacheInner").finish()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct GlImageHandle {
     pub id: u64,
     pub width: u32,
     pub height: u32,
     pub delays: Vec<u16>,
     pub total_delays: u128,
-    // 暂时先用 raw bytes 或者 CPU 端的副本保存。由于 OpenGL Texture 无法实现 Send/Sync 且与 GL Context 深度绑定，
-    // 我们可能需要在初次使用该 ImageHandle 时由 Renderer 上传，或者在这里保存 texture 的内部 ID 和 context 相关封装。
-    // 为了满足目前的句柄拷贝语义，我们存放预乘后的像素数据，由 Renderer 维护 ID 映射。
     pub frames: Arc<Vec<Vec<u8>>>,
-    pub cache: Mutex<Vec<NativeTexture>>,
-}
-
-impl Clone for GlImageHandle {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            width: self.width,
-            height: self.height,
-            delays: self.delays.clone(),
-            total_delays: self.total_delays,
-            frames: self.frames.clone(),
-            cache: Mutex::new(Vec::new()),
-        }
-    }
+    pub cache: Arc<ImageCacheInner>,
 }
 
 impl ImageHandle for GlImageHandle {
@@ -62,18 +70,18 @@ impl ImageHandle for GlImageHandle {
 }
 
 impl GlImageHandle {
-    pub fn new(id: u64, bytes: &[u8]) -> ImageResult<Self> {
+    pub fn new(id: u64, bytes: &[u8], gl_context: Arc<GlContext>) -> ImageResult<Self> {
         let format = image::guess_format(bytes)?;
 
         match format {
             ImageFormat::Gif => {
                 let decoder = GifDecoder::new(BufReader::new(Cursor::new(bytes)))?;
-                Self::build_handle(id, decoder.into_frames().collect_frames()?)
+                Self::build_handle(id, decoder.into_frames().collect_frames()?, gl_context)
             }
             ImageFormat::WebP => {
-                let mut decoder = WebPDecoder::new(BufReader::new(Cursor::new(bytes)))?;
+                let decoder = WebPDecoder::new(BufReader::new(Cursor::new(bytes)))?;
                 if decoder.has_animation() {
-                    Self::build_handle(id, decoder.into_frames().collect_frames()?)
+                    Self::build_handle(id, decoder.into_frames().collect_frames()?, gl_context)
                 } else {
                     let img = image::load_from_memory_with_format(bytes, format)?.into_rgba8();
                     Ok(Self {
@@ -83,7 +91,10 @@ impl GlImageHandle {
                         delays: vec![],
                         total_delays: 0,
                         frames: Arc::new(vec![img.into_raw()]),
-                        cache: Mutex::new(Vec::new()),
+                        cache: Arc::new(ImageCacheInner {
+                            gl_context,
+                            textures: Mutex::new(Vec::new()),
+                        }),
                     })
                 }
             }
@@ -96,13 +107,20 @@ impl GlImageHandle {
                     delays: vec![],
                     total_delays: 0,
                     frames: Arc::new(vec![img.into_raw()]),
-                    cache: Mutex::new(Vec::new()),
+                    cache: Arc::new(ImageCacheInner {
+                        gl_context,
+                        textures: Mutex::new(Vec::new()),
+                    }),
                 })
             }
         }
     }
 
-    fn build_handle(id: u64, collect_frames: Vec<Frame>) -> ImageResult<GlImageHandle> {
+    fn build_handle(
+        id: u64,
+        collect_frames: Vec<Frame>,
+        gl_context: Arc<GlContext>,
+    ) -> ImageResult<GlImageHandle> {
         let mut delays = vec![];
         let mut frames = vec![];
         let mut width = 0;
@@ -128,7 +146,10 @@ impl GlImageHandle {
             delays,
             total_delays,
             frames: Arc::new(frames.clone()), // Use cloned frames to satisfy scope/len
-            cache: Mutex::new(Vec::new()),
+            cache: Arc::new(ImageCacheInner {
+                gl_context,
+                textures: Mutex::new(Vec::new()),
+            }),
         })
     }
 }

@@ -6,6 +6,12 @@ pub struct GlContext {
     gl_context: Context,
 }
 
+impl std::fmt::Debug for GlContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GlContext").finish()
+    }
+}
+
 impl GlContext {
     pub fn from_context(gl_context: Context) -> GlContext {
         Self { gl_context }
