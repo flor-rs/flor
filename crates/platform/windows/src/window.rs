@@ -169,7 +169,7 @@ impl WindowApi for WindowId {
             use crate::Monitor;
             // 原理是 MonitorFromWindow
             let monitor = Monitor::monitor_from_window_id(*self)?;
-            Ok((monitor.dpi_x(), monitor.dpi_y()))
+            Ok((monitor.dpi_x() as f32, monitor.dpi_y() as f32))
         }
     }
 
