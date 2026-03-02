@@ -1,5 +1,4 @@
 use flor_base::graphics::SurfaceId;
-use glow::HasContext;
 
 #[derive(Debug, Clone)]
 pub struct GlSurfaceId {
@@ -7,6 +6,7 @@ pub struct GlSurfaceId {
     pub height: u32,
     pub texture: glow::Texture,
     pub fbo: glow::Framebuffer,
+    pub rbo: Option<glow::Renderbuffer>,
 }
 
 impl SurfaceId for GlSurfaceId {}

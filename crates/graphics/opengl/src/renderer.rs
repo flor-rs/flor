@@ -76,6 +76,9 @@ pub struct GlRenderer {
     pub image_texture_cache: HashMap<(u64, usize), glow::Texture>,
     pub next_image_id: u64,
     pub current_surface: Option<GlSurfaceId>,
+    pub clip_stack_depth: u32,
+    pub saved_transform_stack: Vec<Transform2D>,
+    pub saved_clip_stack_depth: u32,
 }
 
 impl std::fmt::Debug for GlRenderer {
@@ -150,15 +153,6 @@ impl Render for GlRenderer {
             let stride = size_of::<Vertex>() as i32;
             gl_context.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride, 0);
             gl_context.enable_vertex_attrib_array(0);
-            gl_context.vertex_attrib_pointer_f32(
-                1,
-                4,
-                glow::FLOAT,
-                false,
-                stride,
-                2 * size_of::<f32>() as i32,
-            );
-            gl_context.enable_vertex_attrib_array(1);
             gl_context.bind_vertex_array(None);
         }
 
@@ -189,6 +183,9 @@ impl Render for GlRenderer {
             image_texture_cache: HashMap::new(),
             next_image_id: 1,
             current_surface: None,
+            clip_stack_depth: 0,
+            saved_transform_stack: vec![],
+            saved_clip_stack_depth: 0,
         };
 
         // 立即根据初始宽高构建 FBO
@@ -227,7 +224,9 @@ impl RenderContext for GlRenderer {
                 color.b as f32 / 255.0,
                 color.a as f32 / 255.0,
             );
-            self.gl_context.clear(glow::COLOR_BUFFER_BIT);
+            self.gl_context.clear_stencil(0);
+            self.gl_context
+                .clear(glow::COLOR_BUFFER_BIT | glow::STENCIL_BUFFER_BIT);
         }
         Ok(())
     }
@@ -279,6 +278,22 @@ impl RenderContext for GlRenderer {
                 0,
             );
 
+            // Add Depth/Stencil Renderbuffer
+            let rbo = gl.create_renderbuffer()?;
+            gl.bind_renderbuffer(glow::RENDERBUFFER, Some(rbo));
+            gl.renderbuffer_storage(
+                glow::RENDERBUFFER,
+                glow::DEPTH24_STENCIL8,
+                physical_w,
+                physical_h,
+            );
+            gl.framebuffer_renderbuffer(
+                glow::FRAMEBUFFER,
+                glow::DEPTH_STENCIL_ATTACHMENT,
+                glow::RENDERBUFFER,
+                Some(rbo),
+            );
+
             // 检查 FBO 状态
             if gl.check_framebuffer_status(glow::FRAMEBUFFER) != glow::FRAMEBUFFER_COMPLETE {
                 return Err(crate::error::GlError::CustomError(
@@ -295,6 +310,7 @@ impl RenderContext for GlRenderer {
                 height,
                 texture,
                 fbo,
+                rbo: Some(rbo),
             })
         }
     }
@@ -308,11 +324,13 @@ impl RenderContext for GlRenderer {
             self.gl_context
                 .bind_framebuffer(glow::FRAMEBUFFER, Some(surface_id.fbo));
             self.gl_context.viewport(0, 0, physical_w, physical_h);
-            // 切换到目标 surface 时，需要重新设置投影矩阵！
-            // 因为 surface 可能拥有与屏幕不同的尺寸
             self.proj_transform =
                 Transform2D::ortho(surface_id.width as f32, surface_id.height as f32);
         }
+
+        self.saved_transform_stack = std::mem::take(&mut self.transform_stack);
+        self.saved_clip_stack_depth = self.clip_stack_depth;
+        self.clip_stack_depth = 0;
 
         self.current_surface = Some(surface_id.clone());
         Ok(())
@@ -323,8 +341,23 @@ impl RenderContext for GlRenderer {
         unsafe {
             self.gl_context.bind_framebuffer(glow::FRAMEBUFFER, None);
             self.gl_context.viewport(0, 0, win_w as i32, win_h as i32);
-            // 恢复到窗口的正交投影
             self.proj_transform = Transform2D::ortho(win_w as f32, win_h as f32);
+        }
+
+        self.transform_stack = std::mem::take(&mut self.saved_transform_stack);
+        self.clip_stack_depth = self.saved_clip_stack_depth;
+
+        // Restore stencil state
+        unsafe {
+            if self.clip_stack_depth == 0 {
+                self.gl_context.disable(glow::STENCIL_TEST);
+            } else {
+                self.gl_context.enable(glow::STENCIL_TEST);
+                self.gl_context
+                    .stencil_func(glow::LEQUAL, self.clip_stack_depth as i32, 0xFF);
+                self.gl_context
+                    .stencil_op(glow::KEEP, glow::KEEP, glow::KEEP);
+            }
         }
 
         self.current_surface = None;
@@ -1121,12 +1154,24 @@ impl RenderContext for GlRenderer {
             self.render_arrays(&fullscreen_vertices, glow::TRIANGLES, 6)?;
 
             // ================= Pass 2: Vertical Blur to Final Shape =================
-            // 切回默认帧缓冲 (也就是输出到屏幕) 并开回混合
-            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            // 切回目标帧缓冲并开回混合
+            if let Some(surface) = &self.current_surface {
+                gl.bind_framebuffer(glow::FRAMEBUFFER, Some(surface.fbo));
+            } else {
+                gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            }
             gl.enable(glow::BLEND);
 
-            self.blur_program
-                .bind_transform(gl, self.get_final_transform());
+            let (sx, sy) = self.dpi_scale;
+            let current = self
+                .transform_stack
+                .last()
+                .copied()
+                .unwrap_or(Transform2D::IDENTITY);
+            let transform = current.multiply(options_transform.unwrap_or(&Transform2D::IDENTITY));
+            let final_transform = transform.then_scale(sx, sy).multiply(&self.proj_transform);
+
+            self.blur_program.bind_transform(gl, final_transform);
             self.blur_program.bind_direction(gl, 0.0, 1.0); // 垂直
 
             // 输入纹理变为从 FBO 生成的刚刚只经历横向模糊的 Pingpong
@@ -1147,41 +1192,137 @@ impl RenderContext for GlRenderer {
         Ok(())
     }
 
-    fn push_clip(&mut self, _rect: (f32, f32, f32, f32)) -> Result<(), Self::Error> {
-        // We will increment the stencil mask value inside the clip region later
-        Ok(())
+    fn push_clip(&mut self, rect: (f32, f32, f32, f32)) -> Result<(), Self::Error> {
+        let path = Path::from_rect(rect.0, rect.1, rect.2, rect.3);
+        self.push_path_clip(&path)
     }
 
     fn push_rounded_clip(
         &mut self,
-        _rect: (f32, f32, f32, f32),
-        _radius: f32,
+        rect: (f32, f32, f32, f32),
+        radius: f32,
     ) -> Result<(), Self::Error> {
-        Ok(())
+        let path = Path::from_rounded_rect(rect.0, rect.1, rect.2, rect.3, radius);
+        self.push_path_clip(&path)
     }
 
-    fn push_path_clip(&mut self, _path: &Path) -> Result<(), Self::Error> {
+    fn push_path_clip(&mut self, path: &Path) -> Result<(), Self::Error> {
+        time_it!("push_path_clip");
+        let brush = self.create_solid_color_brush(Color::rgba(0, 0, 0, 0), None)?;
+
+        unsafe {
+            if self.clip_stack_depth == 0 {
+                self.gl_context.enable(glow::STENCIL_TEST);
+            }
+
+            self.gl_context.color_mask(false, false, false, false);
+            self.gl_context.depth_mask(false);
+
+            self.gl_context
+                .stencil_func(glow::LEQUAL, self.clip_stack_depth as i32, 0xFF);
+            self.gl_context
+                .stencil_op(glow::KEEP, glow::KEEP, glow::INCR);
+
+            self.fill_path(path, &brush, None)?;
+
+            self.clip_stack_depth += 1;
+
+            self.gl_context.color_mask(true, true, true, true);
+            self.gl_context.depth_mask(true);
+            self.gl_context
+                .stencil_func(glow::LEQUAL, self.clip_stack_depth as i32, 0xFF);
+            self.gl_context
+                .stencil_op(glow::KEEP, glow::KEEP, glow::KEEP);
+        }
+
         Ok(())
     }
 
     fn pop_clip(&mut self, target_depth: Option<u32>) -> Result<(), Self::Error> {
+        time_it!("pop_clip");
+        let target = target_depth.unwrap_or_else(|| self.clip_stack_depth.saturating_sub(1));
+
+        if self.clip_stack_depth <= target {
+            return Ok(());
+        }
+
+        let brush = self.create_solid_color_brush(Color::rgba(0, 0, 0, 0), None)?;
+        let brush_data = brush.to_shader_data();
+
+        unsafe {
+            self.gl_context.color_mask(false, false, false, false);
+            self.gl_context.depth_mask(false);
+
+            let gl = &self.gl_context;
+            self.color_program.use_program(gl);
+            self.color_program.bind_transform(gl, Transform2D::IDENTITY);
+            self.color_program.bind_brush_data(gl, &brush_data, 0);
+
+            let fullscreen_vertices: [f32; 12] = [
+                -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0,
+            ];
+
+            while self.clip_stack_depth > target {
+                self.gl_context
+                    .stencil_func(glow::LEQUAL, self.clip_stack_depth as i32, 0xFF);
+                self.gl_context
+                    .stencil_op(glow::KEEP, glow::KEEP, glow::DECR);
+
+                self.render_arrays(&fullscreen_vertices, glow::TRIANGLES, 6)?;
+
+                self.clip_stack_depth -= 1;
+            }
+
+            self.color_program.unbind(gl);
+
+            self.gl_context.color_mask(true, true, true, true);
+            self.gl_context.depth_mask(true);
+
+            if self.clip_stack_depth == 0 {
+                self.gl_context.disable(glow::STENCIL_TEST);
+            } else {
+                self.gl_context
+                    .stencil_func(glow::LEQUAL, self.clip_stack_depth as i32, 0xFF);
+                self.gl_context
+                    .stencil_op(glow::KEEP, glow::KEEP, glow::KEEP);
+            }
+        }
+
         Ok(())
     }
 
     fn get_clip_depth(&mut self) -> Result<u32, Self::Error> {
-        todo!()
+        Ok(self.clip_stack_depth)
     }
 
     fn suspend_clip(&mut self) -> Result<(), Self::Error> {
+        unsafe {
+            self.gl_context.disable(glow::STENCIL_TEST);
+        }
         Ok(())
     }
 
     fn resume_clip(&mut self) -> Result<(), Self::Error> {
+        if self.clip_stack_depth > 0 {
+            unsafe {
+                self.gl_context.enable(glow::STENCIL_TEST);
+                self.gl_context
+                    .stencil_func(glow::LEQUAL, self.clip_stack_depth as i32, 0xFF);
+                self.gl_context
+                    .stencil_op(glow::KEEP, glow::KEEP, glow::KEEP);
+            }
+        }
         Ok(())
     }
 
     fn push_transform(&mut self, transform: &Transform2D) -> Result<(), Self::Error> {
         time_it!("push_transform");
+        let current = self
+            .transform_stack
+            .last()
+            .copied()
+            .unwrap_or(Transform2D::IDENTITY);
+        self.transform_stack.push(current.multiply(transform));
         Ok(())
     }
 
@@ -1191,7 +1332,7 @@ impl RenderContext for GlRenderer {
             if depth < self.transform_stack.len() as u32 {
                 self.transform_stack.truncate(depth as usize);
             }
-        } else if self.transform_stack.len() > 1 {
+        } else if !self.transform_stack.is_empty() {
             self.transform_stack.pop();
         }
         Ok(())
