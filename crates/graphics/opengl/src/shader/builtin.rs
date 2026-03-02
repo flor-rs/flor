@@ -110,10 +110,16 @@ out vec4 FragColor;
 
 uniform sampler2D u_texture;
 uniform float u_opacity;
+uniform int u_use_tint;
+uniform vec4 u_tint_color;
 
 void main() {
     vec4 texColor = texture(u_texture, v_texCoord);
-    FragColor = texColor * vec4(1.0, 1.0, 1.0, u_opacity);
+    if (u_use_tint != 0) {
+        FragColor = vec4(u_tint_color.rgb, texColor.a * u_tint_color.a * u_opacity);
+    } else {
+        FragColor = texColor * vec4(1.0, 1.0, 1.0, u_opacity);
+    }
 }
 "#;
 
@@ -203,13 +209,13 @@ void main() {
     }
 
     // Two-Pass 线性高斯近似
-    // 对标准的高分辨率 UI 模糊，sigma 大概是 radius / 3.0，
-    // 我们强制限制单 Pass 的采样数量在一个常量内，比如 11 个或更大的定值。
-    // 但是要修复边缘发黑现象，我们要处理纹理采样的 clamp 特性，但在 shader 内手动处理较好
-    float sigma = max(u_blurRadius * 0.4, 1.0);
-    int window = int(ceil(u_blurRadius));
-    // 出于性能考虑，单轴的上限也卡住在最高 32 个 sample
-    if (window > 32) window = 32;
+    // 根据 CSS 规范，blur_radius 通常对应于 sigma = blur_radius / 2.0
+    float sigma = max(u_blurRadius * 0.5, 0.5);
+    
+    // 为了让高斯模糊平滑衰减，采样窗口至少应覆盖 2.5 ~ 3 个 sigma
+    int window = int(ceil(sigma * 2.5));
+    // 单轴采样最高 64 个，防止过度影响性能
+    if (window > 64) window = 64;
 
     vec4 color = vec4(0.0);
     float totalWeight = 0.0;

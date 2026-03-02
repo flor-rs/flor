@@ -101,6 +101,25 @@ impl ShaderProgram {
         }
     }
 
+    pub fn bind_tint(&self, gl: &glow::Context, tint: Option<flor_base::types::Color>) {
+        unsafe {
+            if let Some(loc) = gl.get_uniform_location(self.id, "u_use_tint") {
+                gl.uniform_1_i32(Some(&loc), if tint.is_some() { 1 } else { 0 });
+            }
+            if let Some(color) = tint {
+                if let Some(loc) = gl.get_uniform_location(self.id, "u_tint_color") {
+                    gl.uniform_4_f32(
+                        Some(&loc),
+                        color.r as f32 / 255.0,
+                        color.g as f32 / 255.0,
+                        color.b as f32 / 255.0,
+                        color.a as f32 / 255.0,
+                    );
+                }
+            }
+        }
+    }
+
     pub fn bind_text_color(&self, gl: &glow::Context, color: [f32; 4]) {
         unsafe {
             if let Some(loc) = gl.get_uniform_location(self.id, "u_textColor") {

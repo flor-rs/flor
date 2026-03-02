@@ -2,15 +2,14 @@ use crate::error::GlError;
 use crate::handle::GlImageHandle;
 use crate::handle::GlSurfaceId;
 use crate::handle::{GlBrushHandle, GlTextFormatHandle};
-use cosmic_text::{CacheKey, FontSystem, Placement, SwashCache, SwashContent};
+use cosmic_text::{CacheKey, FontSystem, Placement, SwashCache};
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
-    ScaleMode, SurfaceDrawOptions, TextDrawOptions,
+    ScaleMode, Shadow, SurfaceDrawOptions, TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
 use glow::{HasContext, NativeTexture, PixelUnpackData};
 use parking_lot::Mutex;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::slice;
 use std::sync::{Arc, OnceLock};
@@ -110,7 +109,12 @@ impl Render for GlRenderer {
             gl_context.viewport(0, 0, width as i32, height as i32);
 
             gl_context.enable(glow::BLEND);
-            gl_context.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+            gl_context.blend_func_separate(
+                glow::SRC_ALPHA,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+            );
         }
 
         let text_program =
@@ -626,6 +630,8 @@ impl RenderContext for GlRenderer {
         options: Option<&ImageDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("draw_image");
+        let local_transform = options.and_then(|o| o.transform.as_ref());
+
         let target_w = width.unwrap_or(handle.width as f32);
         let target_h = height.unwrap_or(handle.height as f32);
 
@@ -635,7 +641,7 @@ impl RenderContext for GlRenderer {
 
         let scale_mode = options
             .and_then(|o| o.scale_mode)
-            .unwrap_or(ScaleMode::Stretch);
+            .unwrap_or(ScaleMode::None);
 
         let img_w = handle.width as f32;
         let img_h = handle.height as f32;
@@ -651,7 +657,6 @@ impl RenderContext for GlRenderer {
         let texture = {
             let mut cache = handle.cache.textures.lock();
             if cache.is_empty() {
-                // 初次渲染时，一次性把图片的所有帧加载到显存里！
                 for frame_data in handle.frames.iter() {
                     let tex = self.gl_context.create_texture_tex_image_2d(
                         img_w as i32,
@@ -665,7 +670,29 @@ impl RenderContext for GlRenderer {
         };
 
         let opacity = options.and_then(|o| o.opacity);
-        self.draw_texture(draw_x, draw_y, draw_w, draw_h, texture, opacity);
+        let shadow = options.and_then(|o| o.shadow.as_ref());
+
+        let need_clip = matches!(scale_mode, ScaleMode::Cover);
+        if need_clip {
+            self.push_clip((x, y, target_w, target_h))?;
+        }
+
+        self.draw_texture(
+            draw_x,
+            draw_y,
+            draw_w,
+            draw_h,
+            texture,
+            opacity,
+            None,
+            local_transform,
+            shadow,
+        )?;
+
+        if need_clip {
+            self.pop_clip(None)?;
+        }
+
         Ok(())
     }
 
@@ -680,9 +707,11 @@ impl RenderContext for GlRenderer {
         options: Option<&SvgDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("draw_svg");
+        let local_transform = options.and_then(|o| o.transform.as_ref());
+
         let scale_mode = options
             .and_then(|o| o.scale_mode)
-            .unwrap_or(ScaleMode::Stretch);
+            .unwrap_or(ScaleMode::None);
 
         // 分辨率无关适配，实际的像素尺寸映射
         let img_w = handle.tree.size().width();
@@ -737,7 +766,29 @@ impl RenderContext for GlRenderer {
         };
 
         let opacity = options.and_then(|o| o.opacity);
-        self.draw_texture(draw_x, draw_y, draw_w, draw_h, texture, opacity);
+        let shadow = options.and_then(|o| o.shadow.as_ref());
+
+        let need_clip = matches!(scale_mode, ScaleMode::Cover);
+        if need_clip {
+            self.push_clip((x, y, target_w, target_h))?;
+        }
+
+        self.draw_texture(
+            draw_x,
+            draw_y,
+            draw_w,
+            draw_h,
+            texture,
+            opacity,
+            None,
+            local_transform,
+            shadow,
+        )?;
+
+        if need_clip {
+            self.pop_clip(None)?;
+        }
+
         Ok(())
     }
 
@@ -751,6 +802,8 @@ impl RenderContext for GlRenderer {
         options: Option<&SurfaceDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("draw_surface");
+        let local_transform = options.and_then(|o| o.transform.as_ref());
+
         let target_w = width.unwrap_or(handle.width as f32);
         let target_h = height.unwrap_or(handle.height as f32);
 
@@ -760,7 +813,7 @@ impl RenderContext for GlRenderer {
 
         let scale_mode = options
             .and_then(|o| o.scale_mode)
-            .unwrap_or(ScaleMode::Stretch);
+            .unwrap_or(ScaleMode::None);
 
         let img_w = handle.width as f32;
         let img_h = handle.height as f32;
@@ -769,6 +822,13 @@ impl RenderContext for GlRenderer {
             scale_mode.calc_draw_rect(x, y, target_w, target_h, img_w, img_h);
 
         let opacity = options.and_then(|o| o.opacity);
+        let shadow = options.and_then(|o| o.shadow.as_ref());
+
+        let need_clip = matches!(scale_mode, ScaleMode::Cover);
+        if need_clip {
+            self.push_clip((x, y, target_w, target_h))?;
+        }
+
         self.draw_texture(
             draw_x,
             draw_y,
@@ -776,7 +836,15 @@ impl RenderContext for GlRenderer {
             draw_h,
             handle.inner.texture,
             opacity,
-        );
+            None,
+            local_transform,
+            shadow,
+        )?;
+
+        if need_clip {
+            self.pop_clip(None)?;
+        }
+
         Ok(())
     }
 
@@ -789,9 +857,11 @@ impl RenderContext for GlRenderer {
         width: f32,
         height: f32,
         brush: &Self::BrushHandle,
-        _options: Option<&TextDrawOptions>,
+        options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("draw_text");
+        let local_transform = options.and_then(|o| o.transform.as_ref());
+
         let (dpi_x, dpi_y) = self.dpi_scale;
         let phys_height = height * dpi_y;
 
@@ -813,15 +883,14 @@ impl RenderContext for GlRenderer {
         let brush_data = brush.to_shader_data();
 
         let mut glyphs_to_draw = Vec::new();
-
         for run in buffer.layout_runs() {
             for glyph in run.glyphs.iter() {
                 let physical_glyph =
                     glyph.physical((left * dpi_x, top * dpi_y + offset_y + run.line_y), 1.0);
 
                 let (texture, placement) = match self.glyph_cache.entry(physical_glyph.cache_key) {
-                    Entry::Occupied(o) => o.get().clone(),
-                    Entry::Vacant(v) => {
+                    std::collections::hash_map::Entry::Occupied(o) => o.get().clone(),
+                    std::collections::hash_map::Entry::Vacant(v) => {
                         if let Some(image) = self
                             .swash_cache
                             .get_image(&mut font_system_lock, physical_glyph.cache_key)
@@ -834,7 +903,7 @@ impl RenderContext for GlRenderer {
 
                             let mut rgba_data = Vec::with_capacity((w * h * 4) as usize);
                             match image.content {
-                                SwashContent::Mask => {
+                                cosmic_text::SwashContent::Mask => {
                                     for &a in &image.data {
                                         rgba_data.push(255);
                                         rgba_data.push(255);
@@ -842,7 +911,7 @@ impl RenderContext for GlRenderer {
                                         rgba_data.push(a);
                                     }
                                 }
-                                SwashContent::SubpixelMask => {
+                                cosmic_text::SwashContent::SubpixelMask => {
                                     for chunk in image.data.chunks_exact(3) {
                                         let a =
                                             ((chunk[0] as u32 + chunk[1] as u32 + chunk[2] as u32)
@@ -854,7 +923,7 @@ impl RenderContext for GlRenderer {
                                         rgba_data.push(a);
                                     }
                                 }
-                                SwashContent::Color => {
+                                cosmic_text::SwashContent::Color => {
                                     rgba_data.extend_from_slice(&image.data);
                                 }
                             }
@@ -862,8 +931,9 @@ impl RenderContext for GlRenderer {
                             let texture = self.gl_context.create_texture_tex_image_2d(
                                 w as i32,
                                 h as i32,
-                                PixelUnpackData::Slice(Some(&rgba_data[..])),
+                                glow::PixelUnpackData::Slice(Some(&rgba_data[..])),
                             )?;
+
                             v.insert((texture, image.placement));
                             (texture, image.placement)
                         } else {
@@ -874,99 +944,25 @@ impl RenderContext for GlRenderer {
 
                 let w = placement.width as f32 / dpi_x;
                 let h = placement.height as f32 / dpi_y;
-
                 let gx = (physical_glyph.x as f32 + placement.left as f32) / dpi_x;
                 let gy = (physical_glyph.y as f32 - placement.top as f32) / dpi_y;
                 glyphs_to_draw.push((texture, gx, gy, w, h));
             }
         }
 
-        if glyphs_to_draw.is_empty() {
-            return Ok(());
-        }
-
-        glyphs_to_draw.sort_by_key(|&(tex, ..)| tex.0);
+        let shadow = options.and_then(|o| o.shadow.as_ref());
+        let bounds = (left, top, width, height);
 
         unsafe {
-            let gl = &self.gl_context;
-            self.text_program.use_program(gl);
-
-            let tex = self.create_gradient_texture(&brush_data).unwrap_or(None);
-
-            self.text_program
-                .bind_transform(gl, self.get_final_transform());
-
-            if let Some(t_id) = tex {
-                // 如果启用了超大渐变，bind_brush_data里把 u_stop_data 绑定到了 TEXTURE1
-                self.text_program.bind_brush_data(gl, &brush_data, 1);
-                gl.active_texture(glow::TEXTURE1);
-                gl.bind_texture(glow::TEXTURE_2D, Some(t_id));
-            } else {
-                self.text_program.bind_brush_data(gl, &brush_data, 0);
-            }
-            // 字体图集永远绑定在 TEXTURE0
-            self.text_program.bind_texture(gl, 0);
-            gl.active_texture(glow::TEXTURE0);
-
-            gl.bind_vertex_array(Some(self.text_vao));
-
-            let mut batch_vertices = Vec::new();
-
-            for chunk in glyphs_to_draw.chunk_by(|a, b| a.0 == b.0) {
-                let (tex, _, _, _, _) = chunk[0];
-
-                // 确保有足够的预分配容量 (每个字符占用 24 个 float)
-                batch_vertices.clear();
-                batch_vertices.reserve(chunk.len() * 24);
-
-                // 内层紧凑的循环，全速压入所有同属该贴图的顶点，没有多余的状态机逻辑
-                for &(_, gx, gy, w, h) in chunk {
-                    batch_vertices.extend_from_slice(&[
-                        gx,
-                        gy,
-                        0.0,
-                        0.0,
-                        gx + w,
-                        gy,
-                        1.0,
-                        0.0,
-                        gx + w,
-                        gy + h,
-                        1.0,
-                        1.0,
-                        gx,
-                        gy,
-                        0.0,
-                        0.0,
-                        gx + w,
-                        gy + h,
-                        1.0,
-                        1.0,
-                        gx,
-                        gy + h,
-                        0.0,
-                        1.0,
-                    ]);
-                }
-
-                // 这个 Chunk 里的字符组装完毕，一次性发往显卡！
-                gl.bind_texture(glow::TEXTURE_2D, Some(tex));
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.text_vbo));
-
-                let vertex_bytes = slice::from_raw_parts(
-                    batch_vertices.as_ptr() as *const u8,
-                    batch_vertices.len() * size_of::<f32>(),
-                );
-
-                gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, vertex_bytes, glow::DYNAMIC_DRAW);
-                gl.draw_arrays(glow::TRIANGLES, 0, (batch_vertices.len() / 4) as i32);
-            }
-
-            if let Some(t_id) = tex {
-                gl.delete_texture(t_id);
-            }
-            self.text_program.unbind(gl);
+            self.render_text_glyphs(
+                &mut glyphs_to_draw,
+                &brush_data,
+                local_transform,
+                shadow,
+                bounds,
+            )?;
         }
+
         Ok(())
     }
 
@@ -975,9 +971,11 @@ impl RenderContext for GlRenderer {
         path: &Path,
         brush: &Self::BrushHandle,
         stroke_width: f32,
-        _options: Option<&PathDrawOptions>,
+        options: Option<&PathDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("draw_path");
+        let local_transform = options.and_then(|o| o.transform.as_ref());
+
         let brush_data = brush.to_shader_data();
         let geometry = self.tessellator.tessellate_stroke(
             path,
@@ -986,9 +984,21 @@ impl RenderContext for GlRenderer {
             self.dpi_scale.1,
         )?;
 
+        let shadow = options.and_then(|o| o.shadow.as_ref());
+        let (min_x, min_y, max_x, max_y) = path.get_bounds();
+        let bounds = (min_x, min_y, max_x - min_x, max_y - min_y);
+
         unsafe {
-            self.render_tessellated_geometry(&geometry, &brush_data)?;
+            self.render_tessellated_geometry(
+                &geometry,
+                &brush_data,
+                local_transform,
+                shadow,
+                Some(path),
+                bounds,
+            )?;
         }
+
         Ok(())
     }
 
@@ -996,17 +1006,31 @@ impl RenderContext for GlRenderer {
         &mut self,
         path: &Path,
         brush: &Self::BrushHandle,
-        _options: Option<&PathDrawOptions>,
+        options: Option<&PathDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("fill_path");
+        let local_transform = options.and_then(|o| o.transform.as_ref());
+
         let brush_data = brush.to_shader_data();
         let geometry =
             self.tessellator
                 .tessellate_fill(path, self.dpi_scale.0, self.dpi_scale.1)?;
 
+        let shadow = options.and_then(|o| o.shadow.as_ref());
+        let (min_x, min_y, max_x, max_y) = path.get_bounds();
+        let bounds = (min_x, min_y, max_x - min_x, max_y - min_y);
+
         unsafe {
-            self.render_tessellated_geometry(&geometry, &brush_data)?;
+            self.render_tessellated_geometry(
+                &geometry,
+                &brush_data,
+                local_transform,
+                shadow,
+                Some(path),
+                bounds,
+            )?;
         }
+
         Ok(())
     }
 
@@ -1084,8 +1108,17 @@ impl RenderContext for GlRenderer {
             return Ok(());
         }
 
-        let (win_w, win_h) = self.window_size;
-        if win_w == 0 || win_h == 0 {
+        let (fbo_w, fbo_h) = if let Some(surface) = &self.current_surface {
+            let (dpi_x, dpi_y) = self.dpi_scale;
+            (
+                (surface.width as f32 * dpi_x).ceil() as i32,
+                (surface.height as f32 * dpi_y).ceil() as i32,
+            )
+        } else {
+            (self.window_size.0 as i32, self.window_size.1 as i32)
+        };
+
+        if fbo_w <= 0 || fbo_h <= 0 {
             return Ok(());
         }
 
@@ -1096,44 +1129,12 @@ impl RenderContext for GlRenderer {
             let screen_texture = gl.create_texture()?;
             gl.bind_texture(glow::TEXTURE_2D, Some(screen_texture));
             // 将整个屏幕当前的画面 Copy 下来作为底层模糊输入 (系统可能无 Alpha 通道，使用 RGB 默认 Alpha = 1.0)
-            gl.copy_tex_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                glow::RGB,
-                0,
-                0,
-                win_w as i32,
-                win_h as i32,
-                0,
-            );
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_MIN_FILTER,
-                glow::LINEAR as i32,
-            );
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_MAG_FILTER,
-                glow::LINEAR as i32,
-            );
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_WRAP_S,
-                glow::CLAMP_TO_EDGE as i32,
-            );
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_WRAP_T,
-                glow::CLAMP_TO_EDGE as i32,
-            );
+            gl.copy_tex_image_2d(glow::TEXTURE_2D, 0, glow::RGB, 0, 0, fbo_w, fbo_h, 0);
 
             // 创建用于存放横向模糊结果的中间纹理和 FBO
             let pingpong_fbo = gl.create_framebuffer()?;
-            let pingpong_texture = gl.create_texture_tex_image_2d(
-                win_w as i32,
-                win_h as i32,
-                PixelUnpackData::Slice(None),
-            )?;
+            let pingpong_texture =
+                gl.create_texture_tex_image_2d(fbo_w, fbo_h, PixelUnpackData::Slice(None))?;
 
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(pingpong_fbo));
             gl.framebuffer_texture_2d(
@@ -1155,7 +1156,7 @@ impl RenderContext for GlRenderer {
             self.blur_program.bind_transform(gl, Transform2D::IDENTITY);
             self.blur_program.bind_texture(gl, 0);
             self.blur_program
-                .bind_resolution(gl, win_w as f32, win_h as f32);
+                .bind_resolution(gl, fbo_w as f32, fbo_h as f32);
             self.blur_program.bind_blur_radius(gl, scaled_radius);
             self.blur_program.bind_direction(gl, 1.0, 0.0); // 水平
 
@@ -1178,16 +1179,8 @@ impl RenderContext for GlRenderer {
             }
             gl.enable(glow::BLEND);
 
-            let (sx, sy) = self.dpi_scale;
-            let current = self
-                .transform_stack
-                .last()
-                .copied()
-                .unwrap_or(Transform2D::IDENTITY);
-            let transform = current.multiply(options_transform.unwrap_or(&Transform2D::IDENTITY));
-            let final_transform = transform.then_scale(sx, sy).multiply(&self.proj_transform);
-
-            self.blur_program.bind_transform(gl, final_transform);
+            self.blur_program
+                .bind_transform(gl, self.get_final_transform(options_transform));
             self.blur_program.bind_direction(gl, 0.0, 1.0); // 垂直
 
             // 输入纹理变为从 FBO 生成的刚刚只经历横向模糊的 Pingpong
@@ -1393,6 +1386,312 @@ mod utils {
 }
 
 impl GlRenderer {
+    unsafe fn render_shadow<F>(
+        &mut self,
+        shadow: &Shadow,
+        bounds: (f32, f32, f32, f32), // x, y, w, h
+        clip_path: Option<&Path>,     // for clipping inset
+        base_transform: Option<&Transform2D>,
+        draw_mask: F,
+    ) -> Result<(), GlError>
+    where
+        F: FnOnce(&mut Self, Option<&Transform2D>) -> Result<(), GlError>,
+    {
+        let (x, y, w, h) = bounds;
+
+        // 1. Calculate transforms
+        let spread = shadow.spread;
+        let sx = if w > 0.0 { (w + 2.0 * spread) / w } else { 1.0 };
+        let sy = if h > 0.0 { (h + 2.0 * spread) / h } else { 1.0 };
+        let cx = x + w / 2.0;
+        let cy = y + h / 2.0;
+
+        let spread_transform = Transform2D::scale_at(sx, sy, cx, cy);
+        let offset_transform = Transform2D::translation(shadow.offset_x, shadow.offset_y);
+        let shadow_transform = spread_transform.multiply(&offset_transform);
+
+        let combined_transform = if let Some(base) = base_transform {
+            base.multiply(&shadow_transform)
+        } else {
+            shadow_transform
+        };
+
+        if shadow.blur_radius <= 0.0 {
+            if shadow.inset {
+                if let Some(p) = clip_path {
+                    self.push_path_clip(p)?;
+                } else if w > 0.0 && h > 0.0 {
+                    self.push_clip((x, y, w, h))?;
+                }
+            }
+
+            draw_mask(self, Some(&combined_transform))?;
+
+            if shadow.inset {
+                self.gl_context.blend_func_separate(
+                    glow::SRC_ALPHA,
+                    glow::ONE_MINUS_SRC_ALPHA,
+                    glow::ONE,
+                    glow::ONE_MINUS_SRC_ALPHA,
+                );
+            }
+            return Ok(());
+        }
+
+        let (fbo_w, fbo_h) = if let Some(surface) = &self.current_surface {
+            let (dpi_x, dpi_y) = self.dpi_scale;
+            (
+                (surface.width as f32 * dpi_x).ceil() as i32,
+                (surface.height as f32 * dpi_y).ceil() as i32,
+            )
+        } else {
+            (self.window_size.0 as i32, self.window_size.1 as i32)
+        };
+
+        // --- FBO Blur Path ---
+        let mask_texture = self.gl_context.create_texture_tex_image_2d(
+            fbo_w,
+            fbo_h,
+            glow::PixelUnpackData::Slice(None),
+        )?;
+        let mask_fbo = self.gl_context.create_framebuffer()?;
+        self.gl_context
+            .bind_framebuffer(glow::FRAMEBUFFER, Some(mask_fbo));
+        self.gl_context.framebuffer_texture_2d(
+            glow::FRAMEBUFFER,
+            glow::COLOR_ATTACHMENT0,
+            glow::TEXTURE_2D,
+            Some(mask_texture),
+            0,
+        );
+        self.gl_context.clear_color(0.0, 0.0, 0.0, 0.0);
+        self.gl_context.clear(glow::COLOR_BUFFER_BIT);
+
+        if shadow.inset {
+            self.gl_context.clear_color(
+                shadow.color.r as f32 / 255.0,
+                shadow.color.g as f32 / 255.0,
+                shadow.color.b as f32 / 255.0,
+                shadow.color.a as f32 / 255.0,
+            );
+            self.gl_context.clear(glow::COLOR_BUFFER_BIT);
+            self.gl_context.blend_func_separate(
+                glow::ZERO,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ZERO,
+                glow::ONE_MINUS_SRC_ALPHA,
+            );
+        }
+
+        draw_mask(self, Some(&combined_transform))?;
+
+        if shadow.inset {
+            self.gl_context.blend_func_separate(
+                glow::SRC_ALPHA,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+            );
+        }
+
+        let pingpong_texture = self.gl_context.create_texture_tex_image_2d(
+            fbo_w,
+            fbo_h,
+            glow::PixelUnpackData::Slice(None),
+        )?;
+        let pingpong_fbo = self.gl_context.create_framebuffer()?;
+        self.gl_context
+            .bind_framebuffer(glow::FRAMEBUFFER, Some(pingpong_fbo));
+        self.gl_context.framebuffer_texture_2d(
+            glow::FRAMEBUFFER,
+            glow::COLOR_ATTACHMENT0,
+            glow::TEXTURE_2D,
+            Some(pingpong_texture),
+            0,
+        );
+
+        let scaled_radius = shadow.blur_radius * self.dpi_scale.0;
+
+        self.gl_context.disable(glow::BLEND);
+        self.blur_program.use_program(&self.gl_context);
+        self.blur_program
+            .bind_transform(&self.gl_context, Transform2D::IDENTITY);
+        self.blur_program
+            .bind_resolution(&self.gl_context, fbo_w as f32, fbo_h as f32);
+        self.blur_program
+            .bind_blur_radius(&self.gl_context, scaled_radius);
+        self.blur_program.bind_texture(&self.gl_context, 0);
+
+        self.blur_program.bind_direction(&self.gl_context, 1.0, 0.0);
+        self.gl_context.active_texture(glow::TEXTURE0);
+        self.gl_context
+            .bind_texture(glow::TEXTURE_2D, Some(mask_texture));
+        let fullscreen_vertices: [f32; 12] = [
+            -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0,
+        ];
+        self.render_arrays(&fullscreen_vertices, glow::TRIANGLES, 6)?;
+
+        if let Some(surface) = &self.current_surface {
+            self.gl_context
+                .bind_framebuffer(glow::FRAMEBUFFER, Some(surface.inner.fbo));
+        } else {
+            self.gl_context.bind_framebuffer(glow::FRAMEBUFFER, None);
+        }
+        self.gl_context.enable(glow::BLEND);
+        // Pingpong texture has premultiplied alpha, so we must use ONE for source color
+        self.gl_context.blend_func_separate(
+            glow::ONE,
+            glow::ONE_MINUS_SRC_ALPHA,
+            glow::ONE,
+            glow::ONE_MINUS_SRC_ALPHA,
+        );
+
+        if shadow.inset {
+            if let Some(p) = clip_path {
+                self.push_path_clip(p)?;
+            } else if w > 0.0 && h > 0.0 {
+                self.push_clip((x, y, w, h))?;
+            }
+        }
+
+        self.blur_program.bind_direction(&self.gl_context, 0.0, 1.0);
+        self.gl_context
+            .bind_texture(glow::TEXTURE_2D, Some(pingpong_texture));
+        self.render_arrays(&fullscreen_vertices, glow::TRIANGLES, 6)?;
+
+        // Restore normal blend func
+        self.gl_context.blend_func_separate(
+            glow::SRC_ALPHA,
+            glow::ONE_MINUS_SRC_ALPHA,
+            glow::ONE,
+            glow::ONE_MINUS_SRC_ALPHA,
+        );
+
+        if shadow.inset {
+            self.pop_clip(None)?;
+        }
+
+        self.gl_context.delete_texture(mask_texture);
+        self.gl_context.delete_framebuffer(mask_fbo);
+        self.gl_context.delete_texture(pingpong_texture);
+        self.gl_context.delete_framebuffer(pingpong_fbo);
+        self.blur_program.unbind(&self.gl_context);
+
+        Ok(())
+    }
+
+    unsafe fn render_text_glyphs(
+        &mut self,
+        glyphs_to_draw: &mut Vec<(glow::Texture, f32, f32, f32, f32)>,
+        brush_data: &crate::handle::GlGradientData,
+        local_transform: Option<&Transform2D>,
+        shadow: Option<&Shadow>,
+        bounds: (f32, f32, f32, f32),
+    ) -> Result<(), GlError> {
+        if glyphs_to_draw.is_empty() {
+            return Ok(());
+        }
+
+        if let Some(shadow) = shadow {
+            self.render_shadow(shadow, bounds, None, local_transform, |this, shadow_t| {
+                let shadow_brush = this.create_solid_color_brush(shadow.color, None)?;
+                let shadow_brush_data = shadow_brush.to_shader_data();
+                this.render_text_glyphs_inner(glyphs_to_draw, &shadow_brush_data, shadow_t)
+            })?;
+        }
+
+        self.render_text_glyphs_inner(glyphs_to_draw, brush_data, local_transform)
+    }
+
+    unsafe fn render_text_glyphs_inner(
+        &self,
+        glyphs_to_draw: &mut Vec<(glow::Texture, f32, f32, f32, f32)>,
+        brush_data: &crate::handle::GlGradientData,
+        local_transform: Option<&Transform2D>,
+    ) -> Result<(), GlError> {
+        if glyphs_to_draw.is_empty() {
+            return Ok(());
+        }
+
+        glyphs_to_draw.sort_by_key(|&(tex, ..)| tex);
+
+        let gl = &self.gl_context;
+        self.text_program.use_program(gl);
+
+        let tex = self.create_gradient_texture(brush_data).unwrap_or(None);
+
+        self.text_program
+            .bind_transform(gl, self.get_final_transform(local_transform));
+
+        if let Some(t_id) = tex {
+            self.text_program.bind_brush_data(gl, brush_data, 1);
+            gl.active_texture(glow::TEXTURE1);
+            gl.bind_texture(glow::TEXTURE_2D, Some(t_id));
+        } else {
+            self.text_program.bind_brush_data(gl, brush_data, 0);
+        }
+
+        self.text_program.bind_texture(gl, 0);
+        gl.active_texture(glow::TEXTURE0);
+
+        gl.bind_vertex_array(Some(self.text_vao));
+
+        let mut batch_vertices = Vec::new();
+
+        for chunk in glyphs_to_draw.chunk_by(|a, b| a.0 == b.0) {
+            let (tex, _, _, _, _) = chunk[0];
+
+            batch_vertices.clear();
+            batch_vertices.reserve(chunk.len() * 24);
+
+            for &(_, gx, gy, w, h) in chunk {
+                batch_vertices.extend_from_slice(&[
+                    gx,
+                    gy,
+                    0.0,
+                    0.0,
+                    gx + w,
+                    gy,
+                    1.0,
+                    0.0,
+                    gx + w,
+                    gy + h,
+                    1.0,
+                    1.0,
+                    gx,
+                    gy,
+                    0.0,
+                    0.0,
+                    gx + w,
+                    gy + h,
+                    1.0,
+                    1.0,
+                    gx,
+                    gy + h,
+                    0.0,
+                    1.0,
+                ]);
+            }
+
+            gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.text_vbo));
+
+            let vertex_bytes = std::slice::from_raw_parts(
+                batch_vertices.as_ptr() as *const u8,
+                batch_vertices.len() * std::mem::size_of::<f32>(),
+            );
+
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, vertex_bytes, glow::DYNAMIC_DRAW);
+            gl.draw_arrays(glow::TRIANGLES, 0, (batch_vertices.len() / 4) as i32);
+        }
+
+        if let Some(t_id) = tex {
+            gl.delete_texture(t_id);
+        }
+        self.text_program.unbind(gl);
+
+        Ok(())
+    }
     unsafe fn create_gradient_texture(
         &self,
         brush_data: &crate::handle::GlGradientData,
@@ -1404,6 +1703,7 @@ impl GlRenderer {
         }
         let gl = &self.gl_context;
         let tex = gl.create_texture()?;
+        gl.bind_texture(glow::TEXTURE_2D, Some(tex));
         gl.tex_image_2d(
             glow::TEXTURE_2D,
             0,
@@ -1422,30 +1722,63 @@ impl GlRenderer {
     }
 
     #[inline]
-    fn get_final_transform(&self) -> Transform2D {
+    fn get_final_transform(&self, local_transform: Option<&Transform2D>) -> Transform2D {
         let (sx, sy) = self.dpi_scale;
         let current = self
             .transform_stack
             .last()
             .copied()
             .unwrap_or(Transform2D::IDENTITY);
-        current.then_scale(sx, sy).multiply(&self.proj_transform)
+        let transform = if let Some(t) = local_transform {
+            current.multiply(t)
+        } else {
+            current
+        };
+        transform.then_scale(sx, sy).multiply(&self.proj_transform)
     }
 
     #[inline]
     unsafe fn render_tessellated_geometry(
-        &self,
+        &mut self,
         geometry: &lyon_tessellation::VertexBuffers<Vertex, u32>,
         brush_data: &crate::handle::GlGradientData,
+        local_transform: Option<&Transform2D>,
+        shadow: Option<&Shadow>,
+        clip_path: Option<&Path>,
+        bounds: (f32, f32, f32, f32),
     ) -> Result<(), GlError> {
         if geometry.vertices.is_empty() || geometry.indices.is_empty() {
             return Ok(());
         }
 
+        if let Some(shadow) = shadow {
+            self.render_shadow(
+                shadow,
+                bounds,
+                clip_path,
+                local_transform,
+                |this, shadow_t| {
+                    let shadow_brush = this.create_solid_color_brush(shadow.color, None)?;
+                    let shadow_brush_data = shadow_brush.to_shader_data();
+                    this.render_tessellated_geometry_inner(geometry, &shadow_brush_data, shadow_t)
+                },
+            )?;
+        }
+
+        self.render_tessellated_geometry_inner(geometry, brush_data, local_transform)
+    }
+
+    #[inline]
+    unsafe fn render_tessellated_geometry_inner(
+        &self,
+        geometry: &lyon_tessellation::VertexBuffers<Vertex, u32>,
+        brush_data: &crate::handle::GlGradientData,
+        local_transform: Option<&Transform2D>,
+    ) -> Result<(), GlError> {
         let gl = &self.gl_context;
         self.color_program.use_program(gl);
         self.color_program
-            .bind_transform(gl, self.get_final_transform());
+            .bind_transform(gl, self.get_final_transform(local_transform));
 
         let tex_opt = self.create_gradient_texture(brush_data)?;
         if let Some(tex) = tex_opt {
@@ -1525,6 +1858,7 @@ impl GlRenderer {
         dpi_x: f32,
         dpi_y: f32,
     ) -> cosmic_text::Buffer {
+        // Here dpi_x and dpi_y could contain the extra scaling factor from local_transform
         let font_size = text_format.font_size * dpi_y;
         let phys_width = width * dpi_x;
         let phys_height = height * dpi_y;
@@ -1555,6 +1889,55 @@ impl GlRenderer {
     }
 
     pub fn draw_texture(
+        &mut self,
+        draw_x: f32,
+        draw_y: f32,
+        draw_w: f32,
+        draw_h: f32,
+        texture: NativeTexture,
+        opacity: Option<f32>,
+        tint: Option<Color>,
+        local_transform: Option<&Transform2D>,
+        shadow: Option<&Shadow>,
+    ) -> Result<(), GlError> {
+        if let Some(shadow) = shadow {
+            unsafe {
+                self.render_shadow(
+                    shadow,
+                    (draw_x, draw_y, draw_w, draw_h),
+                    None,
+                    local_transform,
+                    |this, shadow_t| {
+                        this.draw_texture_inner(
+                            draw_x,
+                            draw_y,
+                            draw_w,
+                            draw_h,
+                            texture,
+                            opacity,
+                            Some(shadow.color),
+                            shadow_t,
+                        );
+                        Ok(())
+                    },
+                )?;
+            }
+        }
+        self.draw_texture_inner(
+            draw_x,
+            draw_y,
+            draw_w,
+            draw_h,
+            texture,
+            opacity,
+            tint,
+            local_transform,
+        );
+        Ok(())
+    }
+
+    #[inline]
+    fn draw_texture_inner(
         &self,
         draw_x: f32,
         draw_y: f32,
@@ -1562,6 +1945,8 @@ impl GlRenderer {
         draw_h: f32,
         texture: NativeTexture,
         opacity: Option<f32>,
+        tint: Option<Color>,
+        local_transform: Option<&Transform2D>,
     ) {
         let vertices: [f32; 24] = [
             draw_x,
@@ -1595,9 +1980,10 @@ impl GlRenderer {
 
             self.texture_program.use_program(gl);
             self.texture_program
-                .bind_transform(gl, self.get_final_transform());
+                .bind_transform(gl, self.get_final_transform(local_transform));
             self.texture_program.bind_texture(gl, 0);
             self.texture_program.bind_opacity(gl, opacity);
+            self.texture_program.bind_tint(gl, tint);
 
             gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(glow::TEXTURE_2D, Some(texture));
