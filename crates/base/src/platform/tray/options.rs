@@ -1,4 +1,4 @@
-use crate::IconSource;
+use crate::platform::IconSource;
 
 /// 托盘图标定义
 pub struct TrayOptions {

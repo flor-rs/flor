@@ -1,6 +1,6 @@
-use crate::tray::event::TrayEvent;
-use crate::tray::id::TrayId;
-use crate::tray::options::TrayOptions;
+use crate::platform::tray::event::TrayEvent;
+use crate::platform::tray::id::TrayId;
+use crate::platform::tray::options::TrayOptions;
 
 pub trait TrayManagerEntry {
     type TrayId: TrayId;

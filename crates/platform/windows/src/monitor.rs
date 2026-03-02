@@ -45,8 +45,11 @@ impl MonitorApi for Monitor {
         unsafe {
             let pt = POINT { x, y };
             let h_monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-            Monitor::from_handle(h_monitor)
-                .ok_or_else(|| Error::from(windows::core::Error::from_win32()))
+            Monitor::from_handle(h_monitor).ok_or_else(|| {
+                Error::from(windows::core::Error::from_hresult(
+                    windows::core::HRESULT::from_thread(),
+                ))
+            })
         }
     }
 
@@ -54,8 +57,11 @@ impl MonitorApi for Monitor {
         unsafe {
             let hwnd = window_id.hwnd();
             let h_monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-            Monitor::from_handle(h_monitor)
-                .ok_or_else(|| Error::from(windows::core::Error::from_win32()))
+            Monitor::from_handle(h_monitor).ok_or_else(|| {
+                Error::from(windows::core::Error::from_hresult(
+                    windows::core::HRESULT::from_thread(),
+                ))
+            })
         }
     }
 

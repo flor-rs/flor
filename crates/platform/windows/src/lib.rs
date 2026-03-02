@@ -107,7 +107,9 @@ pub fn init() -> Result<(), Error> {
     #[cfg(feature = "hi-dpi")]
     unsafe {
         #[cfg(not(feature = "win7-compat"))]
-        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)?;
+        let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
+            windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        );
         #[cfg(feature = "win7-compat")]
         {
             use windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware;
