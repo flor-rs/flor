@@ -18,7 +18,7 @@ use crate::render::{FlorBrushHandle, FlorRendererError};
 use flor_base::graphics::SvgDrawOptions;
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
-    TextDrawOptions,
+    SurfaceDrawOptions, TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
 use platform::WindowId;
@@ -426,6 +426,34 @@ impl RenderContext for FlorRenderer {
             FlorRenderer::CPU(c) => {
                 if let FlorSvgHandle::CPU(inner) = handle {
                     c.draw_svg(inner, x, y, width, height, options)?;
+                    return Ok(());
+                }
+            }
+        };
+        Err(FlorRendererError::RenderNotFound)
+    }
+
+    fn draw_surface(
+        &mut self,
+        handle: &Self::SurfaceId,
+        x: f32,
+        y: f32,
+        width: Option<f32>,
+        height: Option<f32>,
+        options: Option<&SurfaceDrawOptions>,
+    ) -> Result<(), Self::Error> {
+        match self {
+            #[cfg(feature = "gpu-render-backend")]
+            FlorRenderer::GPU(g) => {
+                if let FlorSurfaceId::GPU(inner) = handle {
+                    g.draw_surface(inner, x, y, width, height, options)?;
+                    return Ok(());
+                }
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            FlorRenderer::CPU(c) => {
+                if let FlorSurfaceId::CPU(inner) = handle {
+                    c.draw_surface(inner, x, y, width, height, options)?;
                     return Ok(());
                 }
             }

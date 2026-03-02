@@ -70,14 +70,19 @@ impl Tessellator {
     pub fn tessellate_fill(
         &mut self,
         path: &flor_base::graphics::Path,
+        dpi_scale_x: f32,
+        dpi_scale_y: f32,
     ) -> Result<VertexBuffers<Vertex, u32>, String> {
         let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let lyon_path = Self::build_lyon_path(path);
 
+        // 取 x 和 y 缩放的较大值来作为容差基准，确保在任何方向上都不会出现锯齿
+        let max_scale = dpi_scale_x.max(dpi_scale_y).max(1.0);
+
         self.fill_tess
             .tessellate_path(
                 &lyon_path,
-                &FillOptions::default().with_tolerance(0.01),
+                &FillOptions::default().with_tolerance(0.01 / max_scale),
                 &mut BuffersBuilder::new(&mut geometry, |vertex: lyon_tessellation::FillVertex| {
                     Vertex {
                         position: vertex.position().to_array(),
@@ -93,14 +98,19 @@ impl Tessellator {
         &mut self,
         path: &flor_base::graphics::Path,
         stroke_width: f32,
+        dpi_scale_x: f32,
+        dpi_scale_y: f32,
     ) -> Result<VertexBuffers<Vertex, u32>, String> {
         let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let lyon_path = Self::build_lyon_path(path);
 
+        // 取 x 和 y 缩放的较大值来作为容差基准
+        let max_scale = dpi_scale_x.max(dpi_scale_y).max(1.0);
+
         // Setup stroke options, handling line width and curve smoothness
         let options = StrokeOptions::default()
             .with_line_width(stroke_width)
-            .with_tolerance(0.01);
+            .with_tolerance(0.01 / max_scale);
 
         self.stroke_tess
             .tessellate_path(

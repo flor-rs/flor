@@ -6,8 +6,8 @@ use crate::renderer::clip_type::ClipType;
 use crate::to_d2d::{AsD2dColor, IntoD2DTransform};
 use flor_base::graphics::{
     Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
-    PathDrawOptions, Render, RenderContext, ScaleMode, TextAlignment, TextDrawOptions,
-    TextFormatHandle, TextTrimming, WordWrapping,
+    PathDrawOptions, Render, RenderContext, ScaleMode, SurfaceDrawOptions, TextAlignment,
+    TextDrawOptions, TextFormatHandle, TextTrimming, WordWrapping,
 };
 use flor_base::types::{Color, Transform2D};
 use log::debug;
@@ -927,40 +927,30 @@ impl RenderContext for D2DRenderer {
         options: Option<&SvgDrawOptions>,
     ) -> Result<(), Self::Error> {
         unsafe {
-            // 1. 获取资源
-            // 注意：这里需确保 handle 对应的 SVG 存在
             let svg_doc = handle.raw();
-
-            // 获取 DeviceContext5
             let dc5: ID2D1DeviceContext5 = self.current_render.cast()?;
 
-            // 2. 获取 SVG 原始尺寸
-            // get_svg_size 需要是你之前实现的那个能正确读取 viewBox 或 width/height 的版本
             let (src_w, src_h) = get_svg_size(svg_doc).unwrap_or((100.0, 100.0));
 
-            // 确定目标尺寸
             let target_w = width.unwrap_or(src_w);
             let target_h = height.unwrap_or(src_h);
 
-            // 3. 解析 Options
-            let (scale_mode, user_transform, shadow) = match options {
+            // 解析 Options，新增 global_opacity 的获取
+            let (scale_mode, user_transform, shadow, global_opacity) = match options {
                 Some(opt) => (
                     opt.scale_mode.unwrap_or(ScaleMode::None),
                     opt.transform,
                     opt.shadow,
+                    opt.opacity.unwrap_or(1.0),
                 ),
-                None => (ScaleMode::None, None, None),
+                None => (ScaleMode::None, None, None, 1.0),
             };
 
-            // 4. 计算 布局矩阵 (Layout Matrix)
-            // 这里的逻辑只负责计算 "如何把 SVG 放到目标框里"
-            // 不做具体的坐标加减，只生成 Scale 和 Translation 矩阵
             let (scale_x, scale_y, offset_x, offset_y) = match scale_mode {
-                ScaleMode::None => (1.0, 1.0, x, y), // 保持原样，只移动到 x,y
-                ScaleMode::Stretch => (target_w / src_w, target_h / src_h, x, y), // 同 Fill
+                ScaleMode::None => (1.0, 1.0, x, y),
+                ScaleMode::Stretch => (target_w / src_w, target_h / src_h, x, y),
                 ScaleMode::Fit => {
                     let ratio = (target_w / src_w).min(target_h / src_h);
-                    // 居中偏移量
                     let dx = x + (target_w - src_w * ratio) / 2.0;
                     let dy = y + (target_h - src_h * ratio) / 2.0;
                     (ratio, ratio, dx, dy)
@@ -971,126 +961,90 @@ impl RenderContext for D2DRenderer {
                     let dy = y + (target_h - src_h * ratio) / 2.0;
                     (ratio, ratio, dx, dy)
                 }
-                // 如果有 ScaleMode::Center，逻辑类似 Fit 但 scale 为 1.0
                 _ => (1.0, 1.0, x, y),
             };
 
-            // 布局矩阵：先缩放 SVG，再移动到目标位置 (注意：Direct2D 矩阵是 Scale * Translate)
             let layout_matrix =
                 Matrix3x2::scale(scale_x, scale_y) * Matrix3x2::translation(offset_x, offset_y);
 
-            // 5. 获取 用户矩阵 (User Transform)
             let user_matrix = if let Some(t) = user_transform {
                 t.into_transform()
             } else {
                 Matrix3x2::identity()
             };
 
-            // 6. 获取 上下文矩阵 (Context Transform - 如父级滚动偏移)
             let mut old_transform = Matrix3x2::default();
             self.current_render.GetTransform(&mut old_transform);
 
-            // 7. 组合 最终矩阵 (Final Transform)
-            // 顺序至关重要：SVG Local -> Layout(摆放) -> User(旋转/缩放) -> World(屏幕)
             let final_transform = layout_matrix * user_matrix * old_transform;
 
-            // 8. 裁剪处理 (Cover 模式需要裁剪超出部分)
-            // 注意：裁剪框是基于 (x,y,w,h) 的，这是在 User Transform 之前的逻辑坐标
-            // 但如果 User Transform 做了旋转，轴对齐裁剪(AxisAlignedClip)可能就不够了。
-            // 为了简单起见，这里假设裁剪是在 Layout 之后，User 之前？
-            // 实际上，如果旋转了，通常希望裁剪框跟着旋转。
-            // 但 PushAxisAlignedClip 只能切矩形。
-            // 如果需要完美裁剪，应该用 PushLayer。这里暂保留原有逻辑，仅在 Cover 时裁剪目标区域。
             let need_clip = matches!(scale_mode, ScaleMode::Cover);
             if need_clip {
-                // 裁剪必须应用在 "User Transform 之后" 的空间吗？
-                // 不，PushAxisAlignedClip 受当前 Transform 影响。
-                // 这是一个复杂点。简单做法：先不裁剪，或者仅在无旋转时裁剪有效。
-                // 或者：使用 PushLayer 配合几何掩码（开销大）。
-
-                // 暂且使用简单的矩形裁剪，注意这在旋转时可能会切成奇怪的形状
                 let clip_rect = D2D_RECT_F {
                     left: x,
                     top: y,
                     right: x + target_w,
                     bottom: y + target_h,
                 };
-                // 这里的 clip_rect 是在 layout 空间定义的，所以我们需要把 Transform 设置为
-                // "不包含 Layout 偏移" 的状态吗？
-                // Direct2D 的 Clip 是受 SetTransform 影响的。
-                // 鉴于复杂性，如果只是为了 Cover 效果，通常是在 CommandList 内部做，或者接受旋转后裁剪框也旋转。
-                // 这里我们先应用最终矩阵，再 Clip，意味着 Clip 矩形也会被旋转。这是符合直觉的（相框带着照片转）。
-
-                // 为了让 Clip 生效位置正确，我们需要应用 old_transform * user_matrix ?
-                // 不，直接在最终状态下 PushClip 即可，只要 clip_rect 也是被变换过的逻辑坐标。
-                // 但是 clip_rect 是 (x,y)，这是在 Layout 之后 User 之前的坐标。
-                // 这块比较绕，如果遇到 Cover 裁剪位置不对，需要改用 Layer。
-
-                // 修正：为了让 clip_rect 正确对应到屏幕像素，我们暂时只在 options 为 None 时启用裁剪
-                // 或者忽略 transform。为了代码稳健，这里先注释掉 Clip，或者你只在无旋转时开启。
                 self.current_render
                     .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             }
 
-            // 应用最终矩阵
-            // 注意：这步放在 Clip 之前还是之后取决于 Clip 坐标系。
-            // 通常：SetTransform -> PushClip -> Draw
-            // 我们的 clip_rect 是 (x,y)，这是 Layout 后的坐标。
-            // 如果 final_transform 包含了 layout_matrix，那么 (0,0) 就变到了 (x,y)。
-            // 所以此时 PushClip 应该切 (0,0, target_w, target_h) 吗？
-            // 不，layout_matrix 包含了 translation。
-            // 如果我们 SetTransform(final)，那么原点 (0,0) 就被移到了 (x,y) 并缩放了。
-            // 此时如果 DrawSvg (它画在 0,0 到 src_w, src_h)，它会出现在正确位置。
-            // 如果我们要 Clip，应该在 SetTransform 之后，PushClip(0, 0, src_w, src_h) ?
-            // 不，Cover 模式下 src 被放大了。
-
-            //为了避免 Clip 的坐标系地狱，建议：绘制 SVG 不做系统级 Clip，除非使用 Layer。
-            // 或者简单点：不 SetTransform，而是用 Layer 做变换。
-
-            // 回到你的需求：只修复 Transform 跑偏的问题。
-            // 我们先只应用 SetTransform，Clip 暂时存疑（你可以根据实际效果决定是否开启）。
-
-            // 应用最终变换：此时画布坐标系已经到了目标位置、且应用了旋转
             self.current_render.SetTransform(&final_transform);
 
-            // 9. 绘制流程
+            // ================= 新增：处理透明度图层 =================
+            let is_transparent = global_opacity < 0.999;
+            let mut active_layer: Option<ID2D1Layer> = None;
+
+            if is_transparent {
+                let layer = self.get_layer()?;
+                let layer_params = D2D1_LAYER_PARAMETERS1 {
+                    contentBounds: D2D_RECT_F {
+                        left: -f32::INFINITY,
+                        top: -f32::INFINITY,
+                        right: f32::INFINITY,
+                        bottom: f32::INFINITY,
+                    },
+                    geometricMask: ManuallyDrop::new(None),
+                    maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                    maskTransform: Matrix3x2::identity(),
+                    opacity: global_opacity,
+                    opacityBrush: ManuallyDrop::new(None),
+                    layerOptions: D2D1_LAYER_OPTIONS1_NONE,
+                };
+                self.current_render.PushLayer(&layer_params, &layer);
+                active_layer = Some(layer);
+            }
+            // ========================================================
+
             match shadow {
                 Some(shadow_opts) => {
-                    // 获取缓存的可变借用
                     let mut cache_access = handle.shadow_cache.lock();
 
-                    // === 懒加载缓存 (Lazy Init) ===
                     if cache_access.is_none() {
-                        // A. 录制形状 (只做一次)
                         let command_list = dc5.CreateCommandList()?;
                         let old_target = dc5.GetTarget().ok();
 
                         dc5.SetTarget(&command_list);
-                        dc5.SetTransform(&Matrix3x2::identity()); // 归一化坐标
-                        dc5.DrawSvgDocument(handle.raw()); // 录制
+                        dc5.SetTransform(&Matrix3x2::identity());
+                        dc5.DrawSvgDocument(handle.raw());
                         command_list.Close()?;
                         dc5.SetTarget(old_target.as_ref());
 
-                        // B. 创建专用 Effect (只做一次)
-                        // 注意：必须创建一个新的 Effect 给这个 SVG 独享
                         let shadow_effect = self.current_render.CreateEffect(&CLSID_D2D1Shadow)?;
-                        shadow_effect.SetInput(0, &command_list, true); // 绑定录像带
+                        shadow_effect.SetInput(0, &command_list, true);
 
-                        // C. 存入缓存
                         *cache_access = Some(SvgShadowCache {
                             command_list,
                             shadow_effect,
-                            last_blur_radius: -1.0, // 强制更新
+                            last_blur_radius: -1.0,
                         });
                     }
 
-                    // === 渲染缓存 ===
-                    // 这里 unwrap 是安全的，因为上面刚刚保证了初始化
                     let Some(cache) = cache_access.as_mut() else {
                         unreachable!();
                     };
 
-                    // A. 更新参数
                     if (cache.last_blur_radius - shadow_opts.blur_radius).abs() > f32::EPSILON {
                         cache.shadow_effect.SetValue(
                             D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
@@ -1110,7 +1064,6 @@ impl RenderContext for D2DRenderer {
                         ),
                     )?;
 
-                    // B. 绘制阴影
                     let offset = Vector2 {
                         X: shadow_opts.offset_x,
                         Y: shadow_opts.offset_y,
@@ -1123,7 +1076,6 @@ impl RenderContext for D2DRenderer {
                         D2D1_COMPOSITE_MODE_SOURCE_OVER,
                     );
 
-                    // C. 绘制本体 (直接画 command_list 也是一样的，既然有了就用它)
                     dc5.DrawImage(
                         &cache.command_list.cast::<ID2D1Image>()?,
                         None,
@@ -1133,12 +1085,17 @@ impl RenderContext for D2DRenderer {
                     );
                 }
                 None => {
-                    // B. 无阴影：直接设置变换并绘制
                     dc5.DrawSvgDocument(svg_doc);
                 }
             }
 
-            // 10. 恢复
+            // ================= 新增：恢复透明度图层 =================
+            if let Some(layer) = active_layer {
+                self.current_render.PopLayer();
+                self.return_layer(layer);
+            }
+            // ========================================================
+
             if need_clip {
                 self.current_render.PopAxisAlignedClip();
             }
@@ -1146,6 +1103,193 @@ impl RenderContext for D2DRenderer {
 
             Ok(())
         }
+    }
+
+    fn draw_surface(
+        &mut self,
+        handle: &Self::SurfaceId,
+        x: f32,
+        y: f32,
+        width: Option<f32>,
+        height: Option<f32>,
+        options: Option<&SurfaceDrawOptions>,
+    ) -> Result<(), Self::Error> {
+        unsafe {
+            let bitmap = handle.raw().GetBitmap()?;
+
+            let (scale_mode, transform, global_opacity, shadow) = match options {
+                None => (ScaleMode::None, None, 1.0, None),
+                Some(opt) => (
+                    opt.scale_mode.unwrap_or(ScaleMode::None),
+                    opt.transform,
+                    opt.opacity.unwrap_or(1.0),
+                    opt.shadow,
+                ),
+            };
+
+            let size = bitmap.GetSize();
+            let target_w = width.unwrap_or(size.width);
+            let target_h = height.unwrap_or(size.height);
+
+            // ---- 1. 布局计算 (Layout Calculation) ----
+            let (mut final_w, mut final_h) = (size.width, size.height);
+            let (mut offset_x, mut offset_y) = (0.0, 0.0);
+            let mut need_clip = false;
+
+            match scale_mode {
+                ScaleMode::None => {}
+                ScaleMode::Fit => {
+                    let ratio = (target_w / size.width).min(target_h / size.height);
+                    final_w = size.width * ratio;
+                    final_h = size.height * ratio;
+                    offset_x = (target_w - final_w) / 2.0;
+                    offset_y = (target_h - final_h) / 2.0;
+                }
+                ScaleMode::Cover => {
+                    let ratio = (target_w / size.width).max(target_h / size.height);
+                    final_w = size.width * ratio;
+                    final_h = size.height * ratio;
+                    offset_x = (target_w - final_w) / 2.0;
+                    offset_y = (target_h - final_h) / 2.0;
+                    need_clip = true;
+                }
+                ScaleMode::Stretch => {
+                    final_w = target_w;
+                    final_h = target_h;
+                }
+                _ => {}
+            }
+
+            // ---- 2. 坐标系准备 ----
+            let mut old_transform = Matrix3x2::default();
+            self.current_render.GetTransform(&mut old_transform);
+
+            let user_matrix = if let Some(t) = transform {
+                t.into_transform()
+            } else {
+                Matrix3x2::identity()
+            };
+
+            let scale_x = final_w / size.width;
+            let scale_y = final_h / size.height;
+            let layout_matrix = Matrix3x2::scale(scale_x, scale_y)
+                * Matrix3x2::translation(x + offset_x, y + offset_y);
+
+            let pre_clip_transform = user_matrix * old_transform;
+            let final_transform = layout_matrix * pre_clip_transform;
+
+            // ---- 3. 定义核心绘制逻辑 ----
+            let draw_content = |render: &mut Self| -> Result<(), Self::Error> {
+                render.current_render.SetTransform(&final_transform);
+
+                let has_shadow = shadow.is_some();
+                let is_transparent = global_opacity < 0.999;
+                let use_transparency_layer = has_shadow && is_transparent;
+
+                let mut active_layer: Option<ID2D1Layer> = None;
+
+                if use_transparency_layer {
+                    let layer = render.get_layer()?;
+                    let layer_params = D2D1_LAYER_PARAMETERS1 {
+                        contentBounds: D2D_RECT_F {
+                            left: -f32::INFINITY,
+                            top: -f32::INFINITY,
+                            right: f32::INFINITY,
+                            bottom: f32::INFINITY,
+                        },
+                        geometricMask: ManuallyDrop::new(None),
+                        maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                        maskTransform: Matrix3x2::identity(),
+                        opacity: global_opacity,
+                        opacityBrush: ManuallyDrop::new(None),
+                        layerOptions: D2D1_LAYER_OPTIONS1_NONE,
+                    };
+                    render.current_render.PushLayer(&layer_params, &layer);
+                    active_layer = Some(layer);
+                }
+
+                if let Some(shadow_opts) = shadow {
+                    // Surface 动态更新，不进入 LRU 缓存，直接使用全局通用特效并强制更新数据 (invalidate=true)
+                    let shadow_effect = render.get_or_create_shadow_effect()?;
+                    shadow_effect.SetInput(0, &bitmap, true);
+
+                    shadow_effect.SetValue(
+                        D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
+                        D2D1_PROPERTY_TYPE_FLOAT,
+                        &(shadow_opts.blur_radius * 0.4).to_ne_bytes(),
+                    )?;
+
+                    let d2d_color = shadow_opts.color.as_d2d_color();
+                    shadow_effect.SetValue(
+                        D2D1_SHADOW_PROP_COLOR.0 as u32,
+                        D2D1_PROPERTY_TYPE_VECTOR4,
+                        slice::from_raw_parts(&d2d_color as *const _ as *const u8, 16),
+                    )?;
+
+                    let offset = Vector2 {
+                        X: shadow_opts.offset_x,
+                        Y: shadow_opts.offset_y,
+                    };
+
+                    render.current_render.DrawImage(
+                        &shadow_effect.cast::<ID2D1Image>()?,
+                        Some(&offset),
+                        None,
+                        D2D1_INTERPOLATION_MODE_LINEAR,
+                        D2D1_COMPOSITE_MODE_SOURCE_OVER,
+                    );
+                }
+
+                let draw_opacity = if use_transparency_layer {
+                    1.0
+                } else {
+                    global_opacity
+                };
+
+                let local_rect = D2D_RECT_F {
+                    left: 0.0,
+                    top: 0.0,
+                    right: size.width,
+                    bottom: size.height,
+                };
+
+                render.current_render.DrawBitmap(
+                    &bitmap,
+                    Some(&local_rect),
+                    draw_opacity,
+                    D2D1_INTERPOLATION_MODE_LINEAR,
+                    None,
+                    None,
+                );
+
+                if let Some(layer) = active_layer {
+                    render.current_render.PopLayer();
+                    render.return_layer(layer);
+                }
+
+                Ok(())
+            };
+
+            // ---- 4. 执行绘制与裁剪 ----
+            if need_clip {
+                let clip_rect = D2D_RECT_F {
+                    left: x,
+                    top: y,
+                    right: x + target_w,
+                    bottom: y + target_h,
+                };
+
+                self.current_render.SetTransform(&pre_clip_transform);
+                self.with_content_clip(&clip_rect, draw_content)?;
+            } else {
+                draw_content(self)?;
+            }
+
+            // ---- 5. 恢复矩阵 ----
+            self.current_render.SetTransform(&old_transform);
+        }
+
+        Ok(())
     }
 
     fn draw_text(

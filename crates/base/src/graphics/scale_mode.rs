@@ -79,6 +79,6 @@ impl ScaleMode {
             ScaleMode::Stretch => {}
         }
 
-        (draw_x, y, draw_w, draw_h)
+        (draw_x, draw_y, draw_w, draw_h)
     }
 }

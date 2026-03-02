@@ -5,7 +5,7 @@ use crate::handle::{
 };
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
-    RenderContext, TextAlignment, TextDrawOptions,
+    RenderContext, SurfaceDrawOptions, TextAlignment, TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
 use libblur::BlurError;
@@ -1313,6 +1313,99 @@ impl RenderContext for TinySkiaRenderer {
             paint.anti_alias = true;
 
             self.fill_rect_with_transform(x, y, tw as f32, th as f32, &paint, transform);
+        }
+
+        Ok(())
+    }
+
+    fn draw_surface(
+        &mut self,
+        handle: &Self::SurfaceId,
+        x: f32,
+        y: f32,
+        width: Option<f32>,
+        height: Option<f32>,
+        options: Option<&SurfaceDrawOptions>,
+    ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("draw_surface");
+
+        let (surface_width, surface_height) = match self.surface_pixmap.get(handle.id) {
+            Some(pm) => (pm.width() as f32, pm.height() as f32),
+            None => return Ok(()),
+        };
+
+        let target_width = width.unwrap_or(surface_width);
+        let target_height = height.unwrap_or(surface_height);
+
+        let mut shader_transform = tiny_skia::Transform::identity();
+        let scale_x = target_width / surface_width;
+        let scale_y = target_height / surface_height;
+        shader_transform = shader_transform
+            .pre_translate(x, y)
+            .pre_scale(scale_x, scale_y);
+
+        let mut alpha = 255;
+        if let Some(opts) = options {
+            if let Some(op) = opts.opacity {
+                alpha = (op * 255.0).clamp(0.0, 255.0) as u8;
+            }
+        }
+
+        let mut pb = tiny_skia::PathBuilder::new();
+        if let Some(rect) = tiny_skia::Rect::from_xywh(x, y, target_width, target_height) {
+            pb.push_rect(rect);
+        } else {
+            return Ok(());
+        }
+
+        let path = if let Some(p) = pb.finish() {
+            p
+        } else {
+            return Ok(());
+        };
+
+        let current_transform = self.transform_stack.last().copied().unwrap_or_default();
+
+        let mut paint = Paint::default();
+        paint.anti_alias = true;
+        paint.set_color_rgba8(255, 255, 255, alpha);
+
+        // 为了避免借用冲突，我们需要在内部直接拿
+        if let Some(surface_pixmap) = self.surface_pixmap.get(handle.id) {
+            // 这个操作不安全，因为如果 self.current_render_target == handle.id 并且我们要往自己上面画，会有别名问题
+            // 但如果不是，我们就只是在两张不同的图之间借用
+            // tiny_skia renderer 设计上无法同时可变借用 A 并且不可变借用 B（因为都在 self 上）。
+
+            // 为了简化，由于我们只能不可变借用一次或可变借用一次：
+            // 这个可以用一个小技巧：从 slotmap 里面拿出来，用完再放回去。或者把要画的表面暂时拿走。
+            // 但目前最好就是克隆一遍。由于是软渲染，性能损耗能接受。如果是同图绘制就更是必须的。
+        }
+
+        // Let's use drawing the image style
+        let pixmap_clone = self.surface_pixmap.get(handle.id).map(|p| {
+            let mut clone = Pixmap::new(p.width(), p.height()).unwrap();
+            clone.data_mut().copy_from_slice(p.data());
+            clone
+        });
+
+        if let Some(surface_pixmap) = pixmap_clone {
+            paint.shader = tiny_skia::Pattern::new(
+                surface_pixmap.as_ref(),
+                tiny_skia::SpreadMode::Pad,
+                tiny_skia::FilterQuality::Bicubic,
+                1.0,
+                shader_transform,
+            );
+
+            self.with_current_pixmap(|p, clip| {
+                p.fill_path(
+                    &path,
+                    &paint,
+                    tiny_skia::FillRule::Winding,
+                    current_transform,
+                    clip,
+                );
+            });
         }
 
         Ok(())

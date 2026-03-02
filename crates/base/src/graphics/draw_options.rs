@@ -14,6 +14,8 @@ pub struct ImageDrawOptions {
     pub opacity: Option<f32>,
 }
 
+pub type SurfaceDrawOptions = ImageDrawOptions;
+
 /// SVG 绘制可选参数
 #[cfg(feature = "svg")]
 #[derive(Clone, Debug, Default)]

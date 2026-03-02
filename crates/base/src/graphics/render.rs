@@ -1,6 +1,6 @@
 use crate::graphics::{
     BrushHandle, Gradient, HitTestResult, ImageDrawOptions, ImageHandle, Path, PathDrawOptions,
-    SurfaceId, TextDrawOptions, TextFormatHandle,
+    SurfaceDrawOptions, SurfaceId, TextDrawOptions, TextFormatHandle,
 };
 #[cfg(feature = "svg")]
 use crate::graphics::{SvgDrawOptions, SvgHandle};
@@ -143,6 +143,16 @@ pub trait RenderContext: Any {
         width: Option<f32>,
         height: Option<f32>,
         options: Option<&SvgDrawOptions>,
+    ) -> Result<(), Self::Error>;
+
+    fn draw_surface(
+        &mut self,
+        handle: &Self::SurfaceId,
+        x: f32,
+        y: f32,
+        width: Option<f32>,
+        height: Option<f32>,
+        options: Option<&SurfaceDrawOptions>,
     ) -> Result<(), Self::Error>;
 
     // ---- 文本 ----

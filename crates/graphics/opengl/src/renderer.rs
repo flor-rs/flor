@@ -5,7 +5,7 @@ use crate::handle::{GlBrushHandle, GlTextFormatHandle};
 use cosmic_text::{CacheKey, FontSystem, Placement, SwashCache, SwashContent};
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
-    ScaleMode, TextDrawOptions,
+    ScaleMode, SurfaceDrawOptions, TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
 use glow::{HasContext, NativeTexture, PixelUnpackData};
@@ -41,9 +41,6 @@ macro_rules! time_it {
     };
 }
 
-// 无缩放时的dpi倍率
-const NO_SCALE_DPI: (f32, f32) = (1.0, 1.0);
-
 // #[derive(Debug)] removed for manual implementation
 pub struct GlRenderer {
     display_context: NativeDisplayContext,
@@ -57,8 +54,6 @@ pub struct GlRenderer {
     pub proj_transform: Transform2D,
     // Transform Stack
     pub transform_stack: Vec<Transform2D>,
-    // 负责dpi全局缩放的矩阵，GlRenderer.dpi_scale == NO_SCALE_DPI 时，应该为None
-    pub scale_transform: Option<Transform2D>,
 
     // Text rendering caches
     pub swash_cache: SwashCache,
@@ -80,6 +75,7 @@ pub struct GlRenderer {
 
     pub image_texture_cache: HashMap<(u64, usize), glow::Texture>,
     pub next_image_id: u64,
+    pub current_surface: Option<GlSurfaceId>,
 }
 
 impl std::fmt::Debug for GlRenderer {
@@ -177,7 +173,6 @@ impl Render for GlRenderer {
             window_size: (width, height),
             proj_transform,
             transform_stack: vec![],
-            scale_transform: None,
             swash_cache: SwashCache::new(),
             glyph_cache: HashMap::new(),
             text_program,
@@ -193,6 +188,7 @@ impl Render for GlRenderer {
 
             image_texture_cache: HashMap::new(),
             next_image_id: 1,
+            current_surface: None,
         };
 
         // 立即根据初始宽高构建 FBO
@@ -254,19 +250,84 @@ impl RenderContext for GlRenderer {
 
     fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
         self.dpi_scale = (dpi_x, dpi_y);
-
         Ok(())
     }
 
     fn create_surface(&mut self, width: u32, height: u32) -> Result<Self::SurfaceId, Self::Error> {
-        Ok(GlSurfaceId {})
+        let (dpi_x, dpi_y) = self.dpi_scale;
+        let physical_w = (width as f32 * dpi_x).ceil() as i32;
+        let physical_h = (height as f32 * dpi_y).ceil() as i32;
+
+        unsafe {
+            let gl = &self.gl_context;
+
+            // 使用封装好的上下文方法创建纹理，它已包含了 tex_image_2d 和 filter 配置
+            let texture = gl.create_texture_tex_image_2d(
+                physical_w,
+                physical_h,
+                glow::PixelUnpackData::Slice(None),
+            )?;
+
+            // 创建 FBO
+            let fbo = gl.create_framebuffer()?;
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(texture),
+                0,
+            );
+
+            // 检查 FBO 状态
+            if gl.check_framebuffer_status(glow::FRAMEBUFFER) != glow::FRAMEBUFFER_COMPLETE {
+                return Err(crate::error::GlError::CustomError(
+                    "Framebuffer is not complete".to_string(),
+                ));
+            }
+
+            // 恢复默认状态
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+
+            Ok(GlSurfaceId {
+                width,
+                height,
+                texture,
+                fbo,
+            })
+        }
     }
 
     fn set_render_target(&mut self, surface_id: &Self::SurfaceId) -> Result<(), Self::Error> {
+        let (dpi_x, dpi_y) = self.dpi_scale;
+        let physical_w = (surface_id.width as f32 * dpi_x).ceil() as i32;
+        let physical_h = (surface_id.height as f32 * dpi_y).ceil() as i32;
+
+        unsafe {
+            self.gl_context
+                .bind_framebuffer(glow::FRAMEBUFFER, Some(surface_id.fbo));
+            self.gl_context.viewport(0, 0, physical_w, physical_h);
+            // 切换到目标 surface 时，需要重新设置投影矩阵！
+            // 因为 surface 可能拥有与屏幕不同的尺寸
+            self.proj_transform =
+                Transform2D::ortho(surface_id.width as f32, surface_id.height as f32);
+        }
+
+        self.current_surface = Some(surface_id.clone());
         Ok(())
     }
 
     fn reset_render_target(&mut self) -> Result<(), Self::Error> {
+        let (win_w, win_h) = self.window_size;
+        unsafe {
+            self.gl_context.bind_framebuffer(glow::FRAMEBUFFER, None);
+            self.gl_context.viewport(0, 0, win_w as i32, win_h as i32);
+            // 恢复到窗口的正交投影
+            self.proj_transform = Transform2D::ortho(win_w as f32, win_h as f32);
+        }
+
+        self.current_surface = None;
         Ok(())
     }
 
@@ -595,8 +656,8 @@ impl RenderContext for GlRenderer {
         let (draw_x, draw_y, draw_w, draw_h) =
             scale_mode.calc_draw_rect(x, y, target_w, target_h, img_w, img_h);
 
-        let physical_w = draw_w.ceil() as u32;
-        let physical_h = draw_h.ceil() as u32;
+        let physical_w = (draw_w * self.dpi_scale.0).ceil() as u32;
+        let physical_h = (draw_h * self.dpi_scale.1).ceil() as u32;
 
         let texture = {
             let mut option_texture = handle.cache.lock();
@@ -635,6 +696,38 @@ impl RenderContext for GlRenderer {
 
         let opacity = options.and_then(|o| o.opacity);
         self.draw_texture(draw_x, draw_y, draw_w, draw_h, texture, opacity);
+        Ok(())
+    }
+
+    fn draw_surface(
+        &mut self,
+        handle: &Self::SurfaceId,
+        x: f32,
+        y: f32,
+        width: Option<f32>,
+        height: Option<f32>,
+        options: Option<&SurfaceDrawOptions>,
+    ) -> Result<(), Self::Error> {
+        time_it!("draw_surface");
+        let target_w = width.unwrap_or(handle.width as f32);
+        let target_h = height.unwrap_or(handle.height as f32);
+
+        if target_w <= 0.0 || target_h <= 0.0 || handle.width == 0 || handle.height == 0 {
+            return Ok(());
+        }
+
+        let scale_mode = options
+            .and_then(|o| o.scale_mode)
+            .unwrap_or(ScaleMode::Stretch);
+
+        let img_w = handle.width as f32;
+        let img_h = handle.height as f32;
+
+        let (draw_x, draw_y, draw_w, draw_h) =
+            scale_mode.calc_draw_rect(x, y, target_w, target_h, img_w, img_h);
+
+        let opacity = options.and_then(|o| o.opacity);
+        self.draw_texture(draw_x, draw_y, draw_w, draw_h, handle.texture, opacity);
         Ok(())
     }
 
@@ -730,11 +823,11 @@ impl RenderContext for GlRenderer {
                     }
                 };
 
-                let w = placement.width as f32;
-                let h = placement.height as f32;
+                let w = placement.width as f32 / dpi_x;
+                let h = placement.height as f32 / dpi_y;
 
-                let gx = physical_glyph.x as f32 + placement.left as f32;
-                let gy = physical_glyph.y as f32 - placement.top as f32;
+                let gx = (physical_glyph.x as f32 + placement.left as f32) / dpi_x;
+                let gy = (physical_glyph.y as f32 - placement.top as f32) / dpi_y;
                 glyphs_to_draw.push((texture, gx, gy, w, h));
             }
         }
@@ -751,7 +844,8 @@ impl RenderContext for GlRenderer {
 
             let tex = self.create_gradient_texture(&brush_data).unwrap_or(None);
 
-            self.text_program.bind_transform(gl, self.proj_transform);
+            self.text_program
+                .bind_transform(gl, self.get_final_transform());
 
             if let Some(t_id) = tex {
                 // 如果启用了超大渐变，bind_brush_data里把 u_stop_data 绑定到了 TEXTURE1
@@ -836,7 +930,12 @@ impl RenderContext for GlRenderer {
     ) -> Result<(), Self::Error> {
         time_it!("draw_path");
         let brush_data = brush.to_shader_data();
-        let geometry = self.tessellator.tessellate_stroke(path, stroke_width)?;
+        let geometry = self.tessellator.tessellate_stroke(
+            path,
+            stroke_width,
+            self.dpi_scale.0,
+            self.dpi_scale.1,
+        )?;
 
         unsafe {
             self.render_tessellated_geometry(&geometry, &brush_data)?;
@@ -852,7 +951,9 @@ impl RenderContext for GlRenderer {
     ) -> Result<(), Self::Error> {
         time_it!("fill_path");
         let brush_data = brush.to_shader_data();
-        let geometry = self.tessellator.tessellate_fill(path)?;
+        let geometry =
+            self.tessellator
+                .tessellate_fill(path, self.dpi_scale.0, self.dpi_scale.1)?;
 
         unsafe {
             self.render_tessellated_geometry(&geometry, &brush_data)?;
@@ -926,7 +1027,9 @@ impl RenderContext for GlRenderer {
             return Ok(());
         }
 
-        let geometry = self.tessellator.tessellate_fill(path)?;
+        let geometry =
+            self.tessellator
+                .tessellate_fill(path, self.dpi_scale.0, self.dpi_scale.1)?;
 
         if geometry.vertices.is_empty() || geometry.indices.is_empty() {
             return Ok(());
@@ -1022,7 +1125,8 @@ impl RenderContext for GlRenderer {
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             gl.enable(glow::BLEND);
 
-            self.blur_program.bind_transform(gl, self.proj_transform);
+            self.blur_program
+                .bind_transform(gl, self.get_final_transform());
             self.blur_program.bind_direction(gl, 0.0, 1.0); // 垂直
 
             // 输入纹理变为从 FBO 生成的刚刚只经历横向模糊的 Pingpong
@@ -1161,6 +1265,17 @@ impl GlRenderer {
     }
 
     #[inline]
+    fn get_final_transform(&self) -> Transform2D {
+        let (sx, sy) = self.dpi_scale;
+        let current = self
+            .transform_stack
+            .last()
+            .copied()
+            .unwrap_or(Transform2D::IDENTITY);
+        current.then_scale(sx, sy).multiply(&self.proj_transform)
+    }
+
+    #[inline]
     unsafe fn render_tessellated_geometry(
         &self,
         geometry: &lyon_tessellation::VertexBuffers<Vertex, u32>,
@@ -1172,7 +1287,8 @@ impl GlRenderer {
 
         let gl = &self.gl_context;
         self.color_program.use_program(gl);
-        self.color_program.bind_transform(gl, self.proj_transform);
+        self.color_program
+            .bind_transform(gl, self.get_final_transform());
 
         let tex_opt = self.create_gradient_texture(brush_data)?;
         if let Some(tex) = tex_opt {
@@ -1321,7 +1437,8 @@ impl GlRenderer {
             let gl = &self.gl_context;
 
             self.texture_program.use_program(gl);
-            self.texture_program.bind_transform(gl, self.proj_transform);
+            self.texture_program
+                .bind_transform(gl, self.get_final_transform());
             self.texture_program.bind_texture(gl, 0);
             self.texture_program.bind_opacity(gl, opacity);
 
