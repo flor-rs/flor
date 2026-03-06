@@ -90,9 +90,4 @@ pub trait TextFormatHandle {
     fn set_text_trimming(&mut self, trimming: TextTrimming) -> &mut Self;
     /// 获取文本溢出时的截断方式
     fn text_trimming(&self) -> TextTrimming;
-    /// 藏检测标识
-    fn dirty(&self) -> bool;
-
-    /// 重建
-    fn clear_dirty(&mut self);
 }

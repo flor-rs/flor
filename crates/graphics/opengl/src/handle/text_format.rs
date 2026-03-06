@@ -17,7 +17,6 @@ pub struct GlTextFormatHandle {
     pub word_wrapping: WordWrapping,
     pub line_height_factor: f32,
     pub text_trimming: TextTrimming,
-    pub dirty: bool,
     pub custom_font_id: Option<ID>,
 }
 
@@ -34,7 +33,6 @@ impl GlTextFormatHandle {
             word_wrapping: WordWrapping::NoWrap,
             line_height_factor: 1.0,
             text_trimming: TextTrimming::None,
-            dirty: true,
             custom_font_id: None,
         }
     }
@@ -53,7 +51,6 @@ impl Drop for GlTextFormatHandle {
 impl TextFormatHandle for GlTextFormatHandle {
     fn set_font_size(&mut self, size: f32) -> &mut Self {
         self.font_size = size;
-        self.dirty = true;
         self
     }
 
@@ -63,7 +60,6 @@ impl TextFormatHandle for GlTextFormatHandle {
 
     fn set_font_weight(&mut self, weight: FontWeight) -> &mut Self {
         self.font_weight = weight;
-        self.dirty = true;
         self
     }
 
@@ -73,7 +69,6 @@ impl TextFormatHandle for GlTextFormatHandle {
 
     fn set_font_style(&mut self, style: FontStyle) -> &mut Self {
         self.font_style = style;
-        self.dirty = true;
         self
     }
 
@@ -83,7 +78,6 @@ impl TextFormatHandle for GlTextFormatHandle {
 
     fn set_font_stretch(&mut self, stretch: FontStretch) -> &mut Self {
         self.font_stretch = stretch;
-        self.dirty = true;
         self
     }
 
@@ -97,7 +91,6 @@ impl TextFormatHandle for GlTextFormatHandle {
 
     fn set_text_alignment(&mut self, align: TextAlignment) -> &mut Self {
         self.text_alignment = align;
-        self.dirty = true;
         self
     }
 
@@ -107,7 +100,6 @@ impl TextFormatHandle for GlTextFormatHandle {
 
     fn set_paragraph_alignment(&mut self, align: ParagraphAlignment) -> &mut Self {
         self.paragraph_alignment = align;
-        self.dirty = true;
         self
     }
 
@@ -117,7 +109,6 @@ impl TextFormatHandle for GlTextFormatHandle {
 
     fn set_word_wrapping(&mut self, wrapping: WordWrapping) -> &mut Self {
         self.word_wrapping = wrapping;
-        self.dirty = true;
         self
     }
 
@@ -127,7 +118,6 @@ impl TextFormatHandle for GlTextFormatHandle {
 
     fn set_line_height(&mut self, line_height_factor: f32) -> &mut Self {
         self.line_height_factor = line_height_factor;
-        self.dirty = true;
         self
     }
 
@@ -137,20 +127,11 @@ impl TextFormatHandle for GlTextFormatHandle {
 
     fn set_text_trimming(&mut self, trimming: TextTrimming) -> &mut Self {
         self.text_trimming = trimming;
-        self.dirty = true;
         self
     }
 
     fn text_trimming(&self) -> TextTrimming {
         self.text_trimming
-    }
-
-    fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn clear_dirty(&mut self) {
-        self.dirty = false;
     }
 }
 

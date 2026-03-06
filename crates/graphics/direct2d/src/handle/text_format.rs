@@ -192,12 +192,14 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn text_trimming(&self) -> TextTrimming {
         self.trimming
     }
+}
 
-    fn dirty(&self) -> bool {
+impl D2DTextFormatHandle {
+    pub fn dirty(&self) -> bool {
         self.dirty
     }
 
-    fn clear_dirty(&mut self) {
+    pub fn clear_dirty(&mut self) {
         self.dirty = false;
     }
 }

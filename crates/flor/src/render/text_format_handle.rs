@@ -244,22 +244,4 @@ impl TextFormatHandle for FlorTextFormatHandle {
             Self::CPU(h) => h.text_trimming(),
         }
     }
-
-    fn dirty(&self) -> bool {
-        match self {
-            #[cfg(feature = "gpu-render-backend")]
-            Self::GPU(h) => h.dirty(),
-            #[cfg(feature = "cpu-render-backend")]
-            Self::CPU(h) => h.dirty(),
-        }
-    }
-
-    fn clear_dirty(&mut self) {
-        match self {
-            #[cfg(feature = "gpu-render-backend")]
-            Self::GPU(h) => h.clear_dirty(),
-            #[cfg(feature = "cpu-render-backend")]
-            Self::CPU(h) => h.clear_dirty(),
-        }
-    }
 }

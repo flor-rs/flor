@@ -122,12 +122,6 @@ impl TextFormatHandle for TinySkiaTextFormatHandle {
     fn text_trimming(&self) -> TextTrimming {
         self.text_trimming
     }
-
-    fn dirty(&self) -> bool {
-        false
-    }
-
-    fn clear_dirty(&mut self) {}
 }
 
 impl TinySkiaTextFormatHandle {
