@@ -72,6 +72,11 @@ pub struct GlRenderer {
     // Rendering State
     pub wait_v_sync: bool,
 
+    // MSAA States
+    pub msaa_fbo: Option<glow::Framebuffer>,
+    pub msaa_color: Option<glow::Renderbuffer>,
+    pub msaa_depth_stencil: Option<glow::Renderbuffer>,
+
     pub image_texture_cache: HashMap<(u64, usize), glow::Texture>,
     pub next_image_id: u64,
     pub current_surface: Option<GlSurfaceId>,
@@ -184,6 +189,10 @@ impl Render for GlRenderer {
             tessellator: Tessellator::new(),
             wait_v_sync,
 
+            msaa_fbo: None,
+            msaa_color: None,
+            msaa_depth_stencil: None,
+
             image_texture_cache: HashMap::new(),
             next_image_id: 1,
             current_surface: None,
@@ -215,6 +224,30 @@ impl RenderContext for GlRenderer {
 
     fn end(&mut self) -> Result<(), Self::Error> {
         time_it!("end");
+        let gl = &self.gl_context;
+        unsafe {
+            let (dpi_x, dpi_y) = self.dpi_scale;
+            let phys_w = (self.window_size.0 as f32 * dpi_x).ceil() as i32;
+            let phys_h = (self.window_size.1 as f32 * dpi_y).ceil() as i32;
+
+            if phys_w > 0 && phys_h > 0 && self.msaa_fbo.is_some() {
+                // 1. Resolve MSAA directly to screen
+                gl.bind_framebuffer(glow::READ_FRAMEBUFFER, self.msaa_fbo);
+                gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+                gl.blit_framebuffer(
+                    0,
+                    0,
+                    phys_w,
+                    phys_h,
+                    0,
+                    0,
+                    phys_w,
+                    phys_h,
+                    glow::COLOR_BUFFER_BIT,
+                    glow::NEAREST,
+                );
+            }
+        }
         self.display_context.present();
         Ok(())
     }
@@ -222,6 +255,11 @@ impl RenderContext for GlRenderer {
     fn clear(&mut self, color: Color) -> Result<(), Self::Error> {
         time_it!("clear");
         unsafe {
+            // Ensure we are targeting the msaa_fbo if no surface is bound
+            if self.current_surface.is_none() {
+                self.gl_context
+                    .bind_framebuffer(glow::FRAMEBUFFER, self.msaa_fbo);
+            }
             self.gl_context.clear_color(
                 color.r as f32 / 255.0,
                 color.g as f32 / 255.0,
@@ -244,15 +282,84 @@ impl RenderContext for GlRenderer {
         time_it!("update_window_size");
         self.window_size = (width, height);
         unsafe {
+            let gl = &self.gl_context;
             let proj_transform = Transform2D::ortho(width as f32, height as f32);
             self.proj_transform = proj_transform;
-            self.gl_context.viewport(0, 0, width as i32, height as i32);
+
+            let (dpi_x, dpi_y) = self.dpi_scale;
+            let phys_w = (width as f32 * dpi_x).ceil() as i32;
+            let phys_h = (height as f32 * dpi_y).ceil() as i32;
+
+            gl.viewport(0, 0, phys_w, phys_h);
+
+            // 1. Release old resources
+            if let Some(fbo) = self.msaa_fbo.take() {
+                gl.delete_framebuffer(fbo);
+            }
+            if let Some(rbo) = self.msaa_color.take() {
+                gl.delete_renderbuffer(rbo);
+            }
+            if let Some(rbo) = self.msaa_depth_stencil.take() {
+                gl.delete_renderbuffer(rbo);
+            }
+
+            if phys_w > 0 && phys_h > 0 {
+                let samples = 4;
+
+                // --- MSAA FBO ---
+                let msaa_fbo = gl.create_framebuffer()?;
+                gl.bind_framebuffer(glow::FRAMEBUFFER, Some(msaa_fbo));
+
+                let msaa_color = gl.create_renderbuffer()?;
+                gl.bind_renderbuffer(glow::RENDERBUFFER, Some(msaa_color));
+                gl.renderbuffer_storage_multisample(
+                    glow::RENDERBUFFER,
+                    samples,
+                    glow::RGBA8,
+                    phys_w,
+                    phys_h,
+                );
+                gl.framebuffer_renderbuffer(
+                    glow::FRAMEBUFFER,
+                    glow::COLOR_ATTACHMENT0,
+                    glow::RENDERBUFFER,
+                    Some(msaa_color),
+                );
+
+                let msaa_depth_stencil = gl.create_renderbuffer()?;
+                gl.bind_renderbuffer(glow::RENDERBUFFER, Some(msaa_depth_stencil));
+                gl.renderbuffer_storage_multisample(
+                    glow::RENDERBUFFER,
+                    samples,
+                    glow::DEPTH24_STENCIL8,
+                    phys_w,
+                    phys_h,
+                );
+                gl.framebuffer_renderbuffer(
+                    glow::FRAMEBUFFER,
+                    glow::DEPTH_STENCIL_ATTACHMENT,
+                    glow::RENDERBUFFER,
+                    Some(msaa_depth_stencil),
+                );
+
+                if gl.check_framebuffer_status(glow::FRAMEBUFFER) != glow::FRAMEBUFFER_COMPLETE {
+                    log::warn!("MSAA Framebuffer is not complete!");
+                }
+
+                self.msaa_fbo = Some(msaa_fbo);
+                self.msaa_color = Some(msaa_color);
+                self.msaa_depth_stencil = Some(msaa_depth_stencil);
+
+                gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            }
         }
         Ok(())
     }
 
     fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
         self.dpi_scale = (dpi_x, dpi_y);
+        let (w, h) = self.window_size;
+        self.update_window_size(w, h)?;
         Ok(())
     }
 
@@ -346,8 +453,13 @@ impl RenderContext for GlRenderer {
     fn reset_render_target(&mut self) -> Result<(), Self::Error> {
         let (win_w, win_h) = self.window_size;
         unsafe {
-            self.gl_context.bind_framebuffer(glow::FRAMEBUFFER, None);
-            self.gl_context.viewport(0, 0, win_w as i32, win_h as i32);
+            let (dpi_x, dpi_y) = self.dpi_scale;
+            let phys_w = (win_w as f32 * dpi_x).ceil() as i32;
+            let phys_h = (win_h as f32 * dpi_y).ceil() as i32;
+
+            self.gl_context
+                .bind_framebuffer(glow::FRAMEBUFFER, self.msaa_fbo);
+            self.gl_context.viewport(0, 0, phys_w, phys_h);
             self.proj_transform = Transform2D::ortho(win_w as f32, win_h as f32);
         }
 
@@ -1157,7 +1269,7 @@ impl RenderContext for GlRenderer {
             if let Some(surface) = &self.current_surface {
                 gl.bind_framebuffer(glow::FRAMEBUFFER, Some(surface.inner.fbo));
             } else {
-                gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                gl.bind_framebuffer(glow::FRAMEBUFFER, self.msaa_fbo);
             }
             gl.enable(glow::BLEND);
 
@@ -1534,7 +1646,8 @@ impl GlRenderer {
             self.gl_context
                 .bind_framebuffer(glow::FRAMEBUFFER, Some(surface.inner.fbo));
         } else {
-            self.gl_context.bind_framebuffer(glow::FRAMEBUFFER, None);
+            self.gl_context
+                .bind_framebuffer(glow::FRAMEBUFFER, self.msaa_fbo);
         }
         self.gl_context.enable(glow::BLEND);
         // Pingpong texture has premultiplied alpha, so we must use ONE for source color

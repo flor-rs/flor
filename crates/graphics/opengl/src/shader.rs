@@ -144,6 +144,14 @@ impl ShaderProgram {
         }
     }
 
+    pub fn bind_texel_size(&self, gl: &glow::Context, x: f32, y: f32) {
+        unsafe {
+            if let Some(loc) = gl.get_uniform_location(self.id, "u_texelSize") {
+                gl.uniform_2_f32(Some(&loc), x, y);
+            }
+        }
+    }
+
     pub fn bind_direction(&self, gl: &glow::Context, x: f32, y: f32) {
         unsafe {
             if let Some(loc) = gl.get_uniform_location(self.id, "u_direction") {
