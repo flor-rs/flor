@@ -422,6 +422,12 @@ impl TinySkiaRenderer {
         }
     }
 
+    fn apply_opacity(paint: &mut Paint, opacity: Option<f32>) {
+        if let Some(op) = opacity {
+            paint.set_color_rgba8(255, 255, 255, (op * 255.0).clamp(0.0, 255.0) as u8);
+        }
+    }
+
     #[cfg(feature = "svg")]
     fn clone_pixmap(pixmap: &Pixmap) -> Option<Pixmap> {
         let mut clone = Pixmap::new(pixmap.width(), pixmap.height())?;
@@ -776,11 +782,7 @@ impl RenderContext for TinySkiaRenderer {
             .pre_translate(x, y)
             .pre_scale(scale_x, scale_y);
 
-        if let Some(opts) = options {
-            if let Some(op) = opts.opacity {
-                paint.set_color_rgba8(255, 255, 255, (op * 255.0).clamp(0.0, 255.0) as u8);
-            }
-        }
+        Self::apply_opacity(&mut paint, options.and_then(|o| o.opacity));
 
         let mut pb = tiny_skia::PathBuilder::new();
         if let Some(rect) = tiny_skia::Rect::from_xywh(x, y, target_width, target_height) {
@@ -883,12 +885,6 @@ impl RenderContext for TinySkiaRenderer {
                 }
             }
         }
-
-        let transform = self.get_options_transform(options);
-
-        let frame_index = options.and_then(|o| o.frame_index).unwrap_or(0);
-        let frames = &handle.frames;
-        let pixmap = frames.get(frame_index).unwrap_or_else(|| &frames[0]);
 
         let pattern = tiny_skia::Pattern::new(
             pixmap.as_ref(),
@@ -1100,6 +1096,8 @@ impl RenderContext for TinySkiaRenderer {
             paint.shader = pattern;
             paint.anti_alias = true;
 
+            Self::apply_opacity(&mut paint, options.and_then(|o| o.opacity));
+
             self.fill_rect_with_transform(x, y, tw as f32, th as f32, &paint, transform);
         }
 
@@ -1132,13 +1130,6 @@ impl RenderContext for TinySkiaRenderer {
             .pre_translate(x, y)
             .pre_scale(scale_x, scale_y);
 
-        let mut alpha = 255;
-        if let Some(opts) = options {
-            if let Some(op) = opts.opacity {
-                alpha = (op * 255.0).clamp(0.0, 255.0) as u8;
-            }
-        }
-
         let mut pb = tiny_skia::PathBuilder::new();
         if let Some(rect) = tiny_skia::Rect::from_xywh(x, y, target_width, target_height) {
             pb.push_rect(rect);
@@ -1156,20 +1147,9 @@ impl RenderContext for TinySkiaRenderer {
 
         let mut paint = Paint::default();
         paint.anti_alias = true;
-        paint.set_color_rgba8(255, 255, 255, alpha);
+        Self::apply_opacity(&mut paint, options.and_then(|o| o.opacity));
 
-        // 为了避免借用冲突，我们需要在内部直接拿
-        if let Some(surface_pixmap) = self.surface_pixmap.get(handle.id) {
-            // 这个操作不安全，因为如果 self.current_render_target == handle.id 并且我们要往自己上面画，会有别名问题
-            // 但如果不是，我们就只是在两张不同的图之间借用
-            // tiny_skia renderer 设计上无法同时可变借用 A 并且不可变借用 B（因为都在 self 上）。
-
-            // 为了简化，由于我们只能不可变借用一次或可变借用一次：
-            // 这个可以用一个小技巧：从 slotmap 里面拿出来，用完再放回去。或者把要画的表面暂时拿走。
-            // 但目前最好就是克隆一遍。由于是软渲染，性能损耗能接受。如果是同图绘制就更是必须的。
-        }
-
-        // Let's use drawing the image style
+        // 克隆 pixmap 以避免借用冲突（self 上同时需要可变和不可变借用）
         let pixmap_clone = self.surface_pixmap.get(handle.id).map(|p| {
             let mut clone = Pixmap::new(p.width(), p.height()).unwrap();
             clone.data_mut().copy_from_slice(p.data());
@@ -1282,7 +1262,7 @@ impl RenderContext for TinySkiaRenderer {
 
                             // Build a tiny_skia::Path from the outline commands.
                             // The commands are in glyph-local space (origin at
-                            // the glyph's rasterisation position).  We translate
+                            // the glyph's rasterization position).  We translate
                             // them to pixel coordinates.
                             let mut pb = tiny_skia::PathBuilder::new();
                             for cmd in commands {
