@@ -11,13 +11,6 @@ pub struct Vertex {
     pub position: [f32; 2],
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct TexVertex {
-    pub position: [f32; 2],
-    pub tex_coord: [f32; 2],
-}
-
 pub struct Tessellator {
     fill_tess: FillTessellator,
     stroke_tess: StrokeTessellator,

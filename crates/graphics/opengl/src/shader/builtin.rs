@@ -239,10 +239,3 @@ void main() {
     FragColor = vec4(color.rgb / max(totalWeight, 0.0001), color.a / max(totalWeight, 0.0001));
 }
 "#;
-
-// ==================== FXAA 后处理管线 ====================
-
-/// 全屏三角形顶点着色器 (无需 VBO，用 gl_VertexID 生成)
-pub const FULLSCREEN_VERTEX_SHADER: &str = r#"#version 330 core
-
-"#;
