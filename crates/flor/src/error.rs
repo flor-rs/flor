@@ -22,7 +22,7 @@ pub enum Error {
     WindowError(#[from] platform::Error),
     #[cfg(feature = "clipboard")]
     #[error("clipboard error: `{0}`")]
-    ClipboardError(#[from] arboard::Error),
+    ClipboardError(#[from] platform::clipboard::Error),
 }
 
 unsafe impl Send for Error {}

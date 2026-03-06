@@ -20,6 +20,7 @@ drag-drop = ["rustc-hash", "windows/Win32_System_DataExchange", "windows/Win32_S
 tray = ["flor-base/tray", "slotmap", "windows/Win32_UI_Shell", "windows/Win32_UI_WindowsAndMessaging"]
 hi-dpi = []
 win7-compat = ["windows/Win32_System_LibraryLoader"]
+clipboard = ["windows/Win32_System_DataExchange", "windows/Win32_System_Memory", "flor-base/clipboard"]
 cross-thread-window-creation = []
 [dependencies]
 once_cell = { workspace = true }
@@ -32,6 +33,7 @@ windows = { workspace = true, features = [
     "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemServices", "Win32_System_Com", "Win32_System_Ole", "System_Implementation", "Win32_System_Com_StructuredStorage"
     , "Win32_System_Threading"
 ] }
+thiserror = { workspace = true }
 parking_lot = "0.12"
 #windows-sys = { version = "0.61.2", features = ["Win32_System", "Win32_System_SystemServices"] }
 slotmap = { workspace = true, optional = true }

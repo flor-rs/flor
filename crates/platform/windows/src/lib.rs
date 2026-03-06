@@ -13,7 +13,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostQuitMessage, TranslateMessage,
     MSG, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
 };
-
+#[cfg(feature = "clipboard")]
+pub mod clipboard;
 mod conversions;
 mod cursor;
 #[cfg(feature = "drag-drop")]

@@ -33,7 +33,7 @@ svg = ["flor-base/svg", "flor-graphics-direct2d?/svg", "flor-graphics-opengl?/sv
 
 theme-change = ["flor-platform/theme-change"]
 
-clipboard = ["arboard"]
+clipboard = ["flor-platform/clipboard"]
 
 drag-drop = ["flor-platform/drag-drop"]
 tray = ["flor-platform/tray"]
@@ -61,7 +61,6 @@ taffy = { workspace = true }
 parking_lot = "0.12"
 slotmap = { workspace = true }
 dashmap = { workspace = true }
-arboard = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 flor-platform = { version = "0.1.0", path = "../platform/windows", package = "flor-platform-windows" }

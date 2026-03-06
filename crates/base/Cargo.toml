@@ -23,6 +23,7 @@ theme-change = ["platform"]
 monitor = ["platform"]
 drag-drop = ["platform"]
 tray = ["platform"]
+clipboard = ["platform"]
 
 [dependencies]
 cosmic-text = { workspace = true, optional = true }

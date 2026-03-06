@@ -35,8 +35,6 @@ use crate::signal::effect::updater_effect::create_updater;
 use crate::windows::bus::RENDERS;
 use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
 use crate::windows::entry::WINDOW_ENTRY_MAP;
-#[cfg(feature = "clipboard")]
-pub use arboard;
 pub use flor_base::types;
 use log::{debug, info, trace};
 use once_cell::sync::Lazy;
@@ -45,8 +43,6 @@ use platform::set_proc_handler;
 use platform::{base::TrayEvent, base::TrayManagerEntry, base::TrayOptions, Tray, TrayId};
 pub use slotmap;
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(feature = "clipboard")]
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 pub use taffy;
 
@@ -54,8 +50,6 @@ static ALLOW_NO_WINDOWS_LOOP: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(fa
 static EXIT: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 
 pub static CONFIG: Lazy<bool> = Lazy::new(|| false);
-#[cfg(feature = "clipboard")]
-static CLIPBOARD: OnceLock<arboard::Clipboard> = OnceLock::new();
 
 #[cfg(feature = "cross-thread-window-creation")]
 use crate::windows::window_creation_queue::WindowCreationQueue;
@@ -68,16 +62,9 @@ impl FlorGui {
     #[inline]
     pub fn init(&self) -> Result<(), Error> {
         set_proc_handler(Box::new(WindowsProcHandler::default()));
-        #[cfg(feature = "clipboard")]
-        let _ = CLIPBOARD.set(arboard::Clipboard::new()?);
         #[cfg(feature = "tray")]
         Tray::init()?;
         Ok(())
-    }
-
-    #[cfg(feature = "clipboard")]
-    pub fn clipboard<'a>(&self) -> &'a arboard::Clipboard {
-        CLIPBOARD.get().expect("Clipboard not initialized")
     }
 
     #[cfg(feature = "tray")]

@@ -13,6 +13,9 @@ mod tray;
 mod window_operations;
 mod window_state;
 
+#[cfg(feature = "clipboard")]
+mod clipboard;
+
 pub use {
     cursor::*, events::*, handle_result::*, key_code::*, key_state::*, mouse_position::*,
     window_operations::*, window_state::*,
@@ -26,3 +29,6 @@ pub use drag_drop::*;
 
 #[cfg(feature = "tray")]
 pub use tray::*;
+
+#[cfg(feature = "clipboard")]
+pub use clipboard::*;
