@@ -31,7 +31,7 @@ thiserror = { workspace = true }
 rustc-hash = { workspace = true }
 slotmap = { workspace = true }
 once_cell = { workspace = true }
-flor-base = { workspace = true, features = ["graphics"] }
+flor-base = { workspace = true, features = ["graphics", "text-layout"] }
 windows = { workspace = true, features = [
     "Win32_Graphics_Gdi",
     "Win32_Graphics_OpenGL",

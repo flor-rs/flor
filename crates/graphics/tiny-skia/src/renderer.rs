@@ -5,7 +5,7 @@ use crate::handle::{
 };
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
-    RenderContext, SurfaceDrawOptions, TextAlignment, TextDrawOptions,
+    RenderContext, SurfaceDrawOptions, TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
 use libblur::BlurError;
@@ -429,152 +429,6 @@ impl TinySkiaRenderer {
         Some(clone)
     }
 
-    /// Check whether the laid-out text overflows the given physical dimensions.
-    /// Returns `true` if any layout run is wider than `phys_width` or if the
-    /// accumulated line height exceeds `phys_height` (when height > 0).
-    fn check_layout_overflow(
-        buffer: &cosmic_text::Buffer,
-        phys_width: f32,
-        phys_height: f32,
-        height: f32,
-    ) -> bool {
-        let mut total_h = 0.0f32;
-        for run in buffer.layout_runs() {
-            if run.line_w > phys_width {
-                return true;
-            }
-            if height > 0.0 && total_h + run.line_height > phys_height {
-                return true;
-            }
-            total_h += run.line_height;
-        }
-        false
-    }
-
-    fn prepare_text_buffer(
-        font_system: &mut cosmic_text::FontSystem,
-        text: &str,
-        text_format: &TinySkiaTextFormatHandle,
-        width: f32,
-        height: f32,
-        dpi_x: f32,
-        dpi_y: f32,
-    ) -> cosmic_text::Buffer {
-        let font_size = text_format.font_size * dpi_y;
-        let phys_width = width * dpi_x;
-        let phys_height = height * dpi_y;
-
-        let mut buffer = cosmic_text::Buffer::new(
-            font_system,
-            cosmic_text::Metrics::new(font_size, font_size * text_format.line_height_factor),
-        );
-        buffer.set_size(
-            font_system,
-            if width > 0.0 { Some(phys_width) } else { None },
-            if height > 0.0 {
-                Some(phys_height)
-            } else {
-                None
-            },
-        );
-        // Justified alignment requires word wrapping — cosmic_text only
-        // expands inter-word spaces on non-last lines, so without wrapping
-        // the single line is treated as "last" and never justified.
-        let wrap = if text_format.text_alignment == TextAlignment::Justified
-            && text_format.to_cosmic_wrap() == cosmic_text::Wrap::None
-        {
-            cosmic_text::Wrap::Word
-        } else {
-            text_format.to_cosmic_wrap()
-        };
-        buffer.set_wrap(font_system, wrap);
-
-        let trimming = text_format.text_trimming;
-        let mut final_text = text.to_string();
-
-        if width > 0.0 && trimming != flor_base::graphics::TextTrimming::None {
-            buffer.set_text(
-                font_system,
-                text,
-                &text_format.to_cosmic_attrs(),
-                cosmic_text::Shaping::Advanced,
-                text_format.to_cosmic_align(),
-            );
-            buffer.shape_until_scroll(font_system, false);
-
-            let do_trim = Self::check_layout_overflow(&buffer, phys_width, phys_height, height);
-
-            if do_trim {
-                let is_word = trimming == flor_base::graphics::TextTrimming::EllipsisWord;
-                let has_ellipsis =
-                    trimming == flor_base::graphics::TextTrimming::EllipsisChar || is_word;
-                let chars: Vec<(usize, char)> = text.char_indices().collect();
-
-                let mut l = 0;
-                let mut r = chars.len();
-                let mut best_text = String::new();
-
-                while l <= r && r < usize::MAX {
-                    let m = l + (r - l) / 2;
-                    if m > chars.len() {
-                        break;
-                    }
-                    let mut test_text = if m < chars.len() {
-                        text[..chars[m].0].to_string()
-                    } else {
-                        text.to_string()
-                    };
-
-                    if is_word && m < chars.len() {
-                        if let Some(idx) = test_text.rfind(char::is_whitespace) {
-                            test_text.truncate(idx);
-                        }
-                    }
-
-                    if has_ellipsis {
-                        test_text.push_str("...");
-                    }
-
-                    buffer.set_text(
-                        font_system,
-                        &test_text,
-                        &text_format.to_cosmic_attrs(),
-                        cosmic_text::Shaping::Advanced,
-                        text_format.to_cosmic_align(),
-                    );
-                    buffer.shape_until_scroll(font_system, false);
-
-                    let overflow =
-                        Self::check_layout_overflow(&buffer, phys_width, phys_height, height);
-
-                    if overflow {
-                        if m == 0 {
-                            break;
-                        }
-                        r = m - 1;
-                    } else {
-                        best_text = test_text;
-                        if l == usize::MAX || m == usize::MAX {
-                            break;
-                        }
-                        l = m + 1;
-                    }
-                }
-                final_text = best_text;
-            }
-        }
-
-        buffer.set_text(
-            font_system,
-            &final_text,
-            &text_format.to_cosmic_attrs(),
-            cosmic_text::Shaping::Advanced,
-            text_format.to_cosmic_align(),
-        );
-        buffer.shape_until_scroll(font_system, false);
-        buffer
-    }
-
     fn get_glyph_pixel(
         glyph_color: Option<tiny_skia::Color>,
         a: f32,
@@ -788,7 +642,7 @@ impl RenderContext for TinySkiaRenderer {
     ) -> Result<Self::TextFormatHandle, Self::Error> {
         let _timer = FuncTimer::new("create_text_format");
         let mut handle = TinySkiaTextFormatHandle::new(self.font_system.clone());
-        handle.font_family_name = font_family_name.to_string();
+        handle.config.font_family_name = font_family_name.to_string();
         Ok(handle)
     }
 
@@ -815,24 +669,15 @@ impl RenderContext for TinySkiaRenderer {
         let _timer = FuncTimer::new("measure_text");
         let (dpi_x, dpi_y) = self.dpi_scale;
         let mut temp_system = text_format.font_system.write();
-        let buffer = Self::prepare_text_buffer(
+        Ok(flor_base::graphics::text_layout::measure_text(
             &mut temp_system,
             text,
-            text_format,
+            &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-        );
-
-        let mut max_w = 0.0f32;
-        let mut total_h = 0.0f32;
-        for run in buffer.layout_runs() {
-            max_w = max_w.max(run.line_w);
-            total_h += run.line_height;
-        }
-
-        Ok((max_w / dpi_x, total_h / dpi_y))
+        ))
     }
 
     fn hit_test_point(
@@ -846,47 +691,18 @@ impl RenderContext for TinySkiaRenderer {
     ) -> Result<HitTestResult, Self::Error> {
         let _timer = FuncTimer::new("hit_test_point");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let phys_height = height * dpi_y;
-
         let mut temp_system = text_format.font_system.write();
-        let buffer = Self::prepare_text_buffer(
+        Ok(flor_base::graphics::text_layout::hit_test_point(
             &mut temp_system,
             text,
-            text_format,
+            &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-        );
-
-        let mut total_h = 0.0f32;
-        for run in buffer.layout_runs() {
-            total_h += run.line_height;
-        }
-
-        let offset_y = match text_format.paragraph_alignment {
-            ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
-            ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
-            _ => 0.0,
-        };
-
-        if let Some(cursor) = buffer.hit(x * dpi_x, y * dpi_y - offset_y) {
-            Ok(HitTestResult {
-                is_inside: true,
-                text_index: cursor.index,
-                is_trailing: false,
-                is_trimmed: false,
-                rect: (0.0, 0.0, 0.0, 0.0),
-            })
-        } else {
-            Ok(HitTestResult {
-                is_inside: false,
-                text_index: text.len(),
-                is_trailing: true,
-                is_trimmed: false,
-                rect: (0.0, 0.0, 0.0, 0.0),
-            })
-        }
+            x,
+            y,
+        ))
     }
 
     fn hit_test_text_position(
@@ -900,46 +716,18 @@ impl RenderContext for TinySkiaRenderer {
     ) -> Result<(f32, f32), Self::Error> {
         let _timer = FuncTimer::new("hit_test_text_position");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let phys_height = height * dpi_y;
-
         let mut temp_system = text_format.font_system.write();
-        let buffer = Self::prepare_text_buffer(
+        Ok(flor_base::graphics::text_layout::hit_test_text_position(
             &mut temp_system,
             text,
-            text_format,
+            &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-        );
-
-        let mut total_h = 0.0f32;
-        for run in buffer.layout_runs() {
-            total_h += run.line_height;
-        }
-
-        let offset_y = match text_format.paragraph_alignment {
-            ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
-            ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
-            _ => 0.0,
-        };
-
-        for run in buffer.layout_runs() {
-            for glyph in run.glyphs {
-                if glyph.start <= text_index && glyph.end > text_index {
-                    let mut x = glyph.x;
-                    if trailing {
-                        x += glyph.w;
-                    }
-                    return Ok((
-                        x / dpi_x,
-                        (run.line_y - run.line_height + glyph.y + offset_y) / dpi_y,
-                    ));
-                }
-            }
-        }
-
-        Ok((0.0, offset_y / dpi_y))
+            text_index,
+            trailing,
+        ))
     }
 
     fn create_solid_color_brush(
@@ -1429,10 +1217,10 @@ impl RenderContext for TinySkiaRenderer {
         // draw_text itself only needs phys_height for paragraph alignment.
 
         let mut temp_system = text_format.font_system.write();
-        let buffer = Self::prepare_text_buffer(
+        let buffer = flor_base::graphics::text_layout::prepare_text_buffer(
             &mut temp_system,
             text,
-            text_format,
+            &text_format.config,
             width,
             height,
             dpi_x,
@@ -1444,7 +1232,7 @@ impl RenderContext for TinySkiaRenderer {
             total_h += run.line_height;
         }
 
-        let offset_y = match text_format.paragraph_alignment {
+        let offset_y = match text_format.config.paragraph_alignment {
             ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
             ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
             _ => 0.0,

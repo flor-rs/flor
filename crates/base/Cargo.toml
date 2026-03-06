@@ -10,6 +10,7 @@ license.workspace = true
 repository.workspace = true
 
 [features]
+text-layout = ["dep:cosmic-text"]
 platform = ["rustc-hash", "once_cell", "log"]
 graphics = ["parking_lot"]
 
@@ -24,6 +25,7 @@ drag-drop = ["platform"]
 tray = ["platform"]
 
 [dependencies]
+cosmic-text = { workspace = true, optional = true }
 rustc-hash = { workspace = true, optional = true }
 once_cell = { workspace = true, optional = true }
 log = { workspace = true, optional = true }

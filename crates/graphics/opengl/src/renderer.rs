@@ -537,7 +537,7 @@ impl RenderContext for GlRenderer {
         font_family_name: &str,
     ) -> Result<Self::TextFormatHandle, Self::Error> {
         let mut handle = GlTextFormatHandle::new();
-        handle.font_family_name = font_family_name.to_string();
+        handle.config.font_family_name = font_family_name.to_string();
         Ok(handle)
     }
 
@@ -570,24 +570,15 @@ impl RenderContext for GlRenderer {
         let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) else {
             return Ok((0.0, 0.0));
         };
-        let buffer = Self::prepare_text_buffer(
+        Ok(flor_base::graphics::text_layout::measure_text(
             &mut font_system_lock,
             text,
-            text_format,
+            &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-        );
-
-        let mut max_w = 0.0f32;
-        let mut total_h = 0.0f32;
-        for run in buffer.layout_runs() {
-            max_w = max_w.max(run.line_w);
-            total_h += run.line_height;
-        }
-
-        Ok((max_w / dpi_x, total_h / dpi_y))
+        ))
     }
 
     fn hit_test_point(
@@ -601,7 +592,6 @@ impl RenderContext for GlRenderer {
     ) -> Result<HitTestResult, Self::Error> {
         time_it!("hit_test_point");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let phys_height = height * dpi_y;
 
         let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) else {
             return Ok(HitTestResult {
@@ -612,44 +602,17 @@ impl RenderContext for GlRenderer {
                 rect: (0.0, 0.0, 0.0, 0.0),
             });
         };
-        let buffer = Self::prepare_text_buffer(
+        Ok(flor_base::graphics::text_layout::hit_test_point(
             &mut font_system_lock,
             text,
-            text_format,
+            &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-        );
-
-        let mut total_h = 0.0f32;
-        for run in buffer.layout_runs() {
-            total_h += run.line_height;
-        }
-
-        let offset_y = match text_format.paragraph_alignment {
-            ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
-            ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
-            _ => 0.0,
-        };
-
-        if let Some(cursor) = buffer.hit(x * dpi_x, y * dpi_y - offset_y) {
-            Ok(HitTestResult {
-                is_inside: true,
-                text_index: cursor.index,
-                is_trailing: false,
-                is_trimmed: false,
-                rect: (0.0, 0.0, 0.0, 0.0),
-            })
-        } else {
-            Ok(HitTestResult {
-                is_inside: false,
-                text_index: text.len(),
-                is_trailing: true,
-                is_trimmed: false,
-                rect: (0.0, 0.0, 0.0, 0.0),
-            })
-        }
+            x,
+            y,
+        ))
     }
 
     fn hit_test_text_position(
@@ -663,48 +626,21 @@ impl RenderContext for GlRenderer {
     ) -> Result<(f32, f32), Self::Error> {
         time_it!("hit_test_text_position");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let phys_height = height * dpi_y;
 
         let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) else {
             return Ok((0.0, 0.0));
         };
-        let buffer = Self::prepare_text_buffer(
+        Ok(flor_base::graphics::text_layout::hit_test_text_position(
             &mut font_system_lock,
             text,
-            text_format,
+            &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-        );
-
-        let mut total_h = 0.0f32;
-        for run in buffer.layout_runs() {
-            total_h += run.line_height;
-        }
-
-        let offset_y = match text_format.paragraph_alignment {
-            ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
-            ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
-            _ => 0.0,
-        };
-
-        for run in buffer.layout_runs() {
-            for glyph in run.glyphs {
-                if glyph.start <= text_index && glyph.end > text_index {
-                    let mut x = glyph.x;
-                    if trailing {
-                        x += glyph.w;
-                    }
-                    return Ok((
-                        x / dpi_x,
-                        (run.line_y - run.line_height + glyph.y + offset_y) / dpi_y,
-                    ));
-                }
-            }
-        }
-
-        Ok((0.0, offset_y / dpi_y))
+            text_index,
+            trailing,
+        ))
     }
 
     fn create_solid_color_brush(
@@ -970,17 +906,26 @@ impl RenderContext for GlRenderer {
         let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) else {
             return Ok(());
         };
-        let buffer = Self::prepare_text_buffer(
+        let buffer = flor_base::graphics::text_layout::prepare_text_buffer(
             &mut font_system_lock,
             text,
-            text_format,
+            &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
         );
 
-        let offset_y = text_format.calc_offset_y(&buffer, phys_height);
+        let mut total_h = 0.0f32;
+        for run in buffer.layout_runs() {
+            total_h += run.line_height;
+        }
+
+        let offset_y = match text_format.config.paragraph_alignment {
+            ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
+            ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
+            _ => 0.0,
+        };
 
         let brush_data = brush.to_shader_data();
 
@@ -1959,45 +1904,6 @@ impl GlRenderer {
 
         gl.bind_vertex_array(None);
         Ok(())
-    }
-
-    fn prepare_text_buffer(
-        font_system: &mut FontSystem,
-        text: &str,
-        text_format: &GlTextFormatHandle,
-        width: f32,
-        height: f32,
-        dpi_x: f32,
-        dpi_y: f32,
-    ) -> cosmic_text::Buffer {
-        // Here dpi_x and dpi_y could contain the extra scaling factor from local_transform
-        let font_size = text_format.font_size * dpi_y;
-        let phys_width = width * dpi_x;
-        let phys_height = height * dpi_y;
-
-        let mut buffer = text_format.create_buffer(font_system, font_size);
-        buffer.set_size(
-            font_system,
-            if width > 0.0 { Some(phys_width) } else { None },
-            if height > 0.0 {
-                Some(phys_height)
-            } else {
-                None
-            },
-        );
-
-        text_format.apply_wrap(font_system, &mut buffer);
-        text_format.apply_text_with_trimming(
-            font_system,
-            &mut buffer,
-            text,
-            width,
-            height,
-            phys_width,
-            phys_height,
-        );
-
-        buffer
     }
 
     pub fn draw_texture(

@@ -24,6 +24,7 @@ repository = ""
 arc-swap = "1.8.0"
 atomic_float = "1.1.0"
 flor = { version = "0.1.0", path = "crates/flor" }
+cosmic-text = "0.18"
 flor-base = { version = "0.1.0", path = "crates/base" }
 flor-graphics-opengl = { version = "0.1.0", path = "./crates/graphics/opengl" }
 flor-graphics-direct2d = { version = "0.1.0", path = "./crates/graphics/direct2d" }
