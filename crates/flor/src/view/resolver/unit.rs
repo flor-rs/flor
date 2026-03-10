@@ -84,10 +84,10 @@ impl UnitResolver {
         }
     }
 
-    pub fn sync_unit(&self) {
+    pub fn sync_unit(&self) -> bool {
         // 使用 Acquire 语义确保后续读取能看到最新的内存状态
         if self.is_sync.load(Ordering::Acquire) {
-            return;
+            return false;
         }
 
         if let Some(window_id) = VIEW_STORAGE.window_ids.read().get(self.view_id) {
@@ -96,8 +96,10 @@ impl UnitResolver {
 
                 // 使用 Release 语义确保之前的 store 操作对其他线程可见
                 self.is_sync.store(true, Ordering::Release);
+                return true;
             }
         }
+        false
     }
 
     // ========================================================================
@@ -213,7 +215,7 @@ impl UnitResolver {
         if value == "auto" {
             return Some(LengthPercentageAuto::Auto);
         }
-        if value == "full" || value == "screen" {
+        if value == "full" {
             return Some(LengthPercentageAuto::Percent(100.0));
         }
         if let Some(pct) = Self::parse_percent(value) {
@@ -235,7 +237,7 @@ impl UnitResolver {
         if value == "auto" || value == "fit" || value == "min" || value == "max" {
             return Some(Dimension::Auto);
         }
-        if value == "full" || value == "screen" {
+        if value == "full" {
             return Some(Dimension::Percent(100.0));
         }
         if let Some(pct) = Self::parse_percent(value) {

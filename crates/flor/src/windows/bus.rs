@@ -16,6 +16,7 @@ use parking_lot::RwLock;
 use platform::base::HandleResult;
 use platform::base::Message;
 use platform::WindowId;
+use std::sync::atomic::Ordering;
 
 pub static RENDERS: Lazy<DashMap<WindowId, RwLock<FlorRenderer>>> =
     Lazy::new(|| Default::default());
@@ -74,6 +75,25 @@ pub fn event(window_id: WindowId, message: Message) -> Result<HandleResult, Erro
             HandleResult::Handled
         }
         Message::Resize { width, height } => {
+            if let Some(entry) = window_id.entry() {
+                entry
+                    .unit
+                    .load()
+                    .viewport_width
+                    .store(width as f32, Ordering::Relaxed);
+                entry
+                    .unit
+                    .load()
+                    .viewport_height
+                    .store(height as f32, Ordering::Relaxed);
+            }
+            #[cfg(feature = "class")]
+            {
+                let mut class = VIEW_STORAGE.class.write();
+                for class in class.values_mut() {
+                    class.set_update();
+                }
+            }
             window_id.bus_refresh_layout_entry()?;
             {
                 let bus = render(window_id);

@@ -1,4 +1,3 @@
-pub mod class;
 pub mod control_state;
 pub mod focus_manager;
 pub mod frame_policy;

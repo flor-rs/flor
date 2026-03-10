@@ -44,6 +44,12 @@ pub(crate) struct LayoutAccumulator {
     it: Option<LengthPercentageAuto>,
     ib: Option<LengthPercentageAuto>,
 
+    // Border
+    bd_l: Option<LengthPercentage>,
+    bd_r: Option<LengthPercentage>,
+    bd_t: Option<LengthPercentage>,
+    bd_b: Option<LengthPercentage>,
+
     // Size
     w: Option<Dimension>,
     h: Option<Dimension>,
@@ -232,44 +238,129 @@ impl LayoutAccumulator {
             }
         }
 
+        // === Border ===
+        if let Some(suffix) = class.strip_prefix("border-l-") {
+            if let Some(v) = cfg.resolve_lp(suffix) {
+                self.bd_l = Some(v);
+                return;
+            }
+        }
+        if let Some(suffix) = class.strip_prefix("border-r-") {
+            if let Some(v) = cfg.resolve_lp(suffix) {
+                self.bd_r = Some(v);
+                return;
+            }
+        }
+        if let Some(suffix) = class.strip_prefix("border-t-") {
+            if let Some(v) = cfg.resolve_lp(suffix) {
+                self.bd_t = Some(v);
+                return;
+            }
+        }
+        if let Some(suffix) = class.strip_prefix("border-b-") {
+            if let Some(v) = cfg.resolve_lp(suffix) {
+                self.bd_b = Some(v);
+                return;
+            }
+        }
+        if let Some(suffix) = class.strip_prefix("border-x-") {
+            if let Some(v) = cfg.resolve_lp(suffix) {
+                self.bd_l = Some(v);
+                self.bd_r = Some(v);
+                return;
+            }
+        }
+        if let Some(suffix) = class.strip_prefix("border-y-") {
+            if let Some(v) = cfg.resolve_lp(suffix) {
+                self.bd_t = Some(v);
+                self.bd_b = Some(v);
+                return;
+            }
+        }
+        if let Some(suffix) = class.strip_prefix("border-") {
+            if let Some(v) = cfg.resolve_lp(suffix) {
+                self.bd_l = Some(v);
+                self.bd_r = Some(v);
+                self.bd_t = Some(v);
+                self.bd_b = Some(v);
+                return;
+            }
+        }
+        if class == "border" {
+            self.bd_l = Some(LengthPercentage::Length(1.0));
+            self.bd_r = Some(LengthPercentage::Length(1.0));
+            self.bd_t = Some(LengthPercentage::Length(1.0));
+            self.bd_b = Some(LengthPercentage::Length(1.0));
+            return;
+        }
+
         // === Sizing ===
         if let Some(suffix) = class.strip_prefix("w-") {
+            if suffix == "screen" {
+                self.w = Some(Dimension::Length(cfg.vw_to_px(100.0)));
+                return;
+            }
             if let Some(v) = cfg.resolve_dim(suffix) {
                 self.w = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("h-") {
+            if suffix == "screen" {
+                self.h = Some(Dimension::Length(cfg.vh_to_px(100.0)));
+                return;
+            }
             if let Some(v) = cfg.resolve_dim(suffix) {
                 self.h = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("min-w-") {
+            if suffix == "screen" {
+                self.min_w = Some(Dimension::Length(cfg.vw_to_px(100.0)));
+                return;
+            }
             if let Some(v) = cfg.resolve_dim(suffix) {
                 self.min_w = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("min-h-") {
+            if suffix == "screen" {
+                self.min_h = Some(Dimension::Length(cfg.vh_to_px(100.0)));
+                return;
+            }
             if let Some(v) = cfg.resolve_dim(suffix) {
                 self.min_h = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("max-w-") {
+            if suffix == "screen" {
+                self.max_w = Some(Dimension::Length(cfg.vw_to_px(100.0)));
+                return;
+            }
             if let Some(v) = cfg.resolve_dim(suffix) {
                 self.max_w = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("max-h-") {
+            if suffix == "screen" {
+                self.max_h = Some(Dimension::Length(cfg.vh_to_px(100.0)));
+                return;
+            }
             if let Some(v) = cfg.resolve_dim(suffix) {
                 self.max_h = Some(v);
                 return;
             }
         }
         if let Some(suffix) = class.strip_prefix("size-") {
+            if suffix == "screen" {
+                self.w = Some(Dimension::Length(cfg.vw_to_px(100.0)));
+                self.h = Some(Dimension::Length(cfg.vh_to_px(100.0)));
+                return;
+            }
             if let Some(v) = cfg.resolve_dim(suffix) {
                 self.w = Some(v);
                 self.h = Some(v);
@@ -563,6 +654,44 @@ impl LayoutAccumulator {
             "flex-nowrap" => self
                 .updates
                 .push((LayoutKey::FlexWrap, Layout::FlexWrap(FlexWrap::NoWrap))),
+            #[cfg(feature = "layout-flex")]
+            "flex-1" => {
+                self.updates
+                    .push((LayoutKey::FlexGrow, Layout::FlexGrow(1.0)));
+                self.updates
+                    .push((LayoutKey::FlexShrink, Layout::FlexShrink(1.0)));
+                self.updates.push((
+                    LayoutKey::FlexBasis,
+                    Layout::FlexBasis(Dimension::Percent(0.0)),
+                ));
+            }
+            #[cfg(feature = "layout-flex")]
+            "flex-auto" => {
+                self.updates
+                    .push((LayoutKey::FlexGrow, Layout::FlexGrow(1.0)));
+                self.updates
+                    .push((LayoutKey::FlexShrink, Layout::FlexShrink(1.0)));
+                self.updates
+                    .push((LayoutKey::FlexBasis, Layout::FlexBasis(Dimension::Auto)));
+            }
+            #[cfg(feature = "layout-flex")]
+            "flex-initial" => {
+                self.updates
+                    .push((LayoutKey::FlexGrow, Layout::FlexGrow(0.0)));
+                self.updates
+                    .push((LayoutKey::FlexShrink, Layout::FlexShrink(1.0)));
+                self.updates
+                    .push((LayoutKey::FlexBasis, Layout::FlexBasis(Dimension::Auto)));
+            }
+            #[cfg(feature = "layout-flex")]
+            "flex-none" => {
+                self.updates
+                    .push((LayoutKey::FlexGrow, Layout::FlexGrow(0.0)));
+                self.updates
+                    .push((LayoutKey::FlexShrink, Layout::FlexShrink(0.0)));
+                self.updates
+                    .push((LayoutKey::FlexBasis, Layout::FlexBasis(Dimension::Auto)));
+            }
             #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
             "items-start" => self
                 .updates
@@ -770,11 +899,11 @@ impl LayoutAccumulator {
 
     pub(crate) fn apply(self, selector: &mut LayoutResolver, state: ControlState) {
         for (key, layout) in self.updates {
-            selector.update(state, key, layout);
+            selector.class_update(state, key, layout);
         }
 
         if self.pl.is_some() || self.pr.is_some() || self.pt.is_some() || self.pb.is_some() {
-            selector.update(
+            selector.class_update(
                 state,
                 LayoutKey::Padding,
                 Layout::Padding(Rect {
@@ -787,7 +916,7 @@ impl LayoutAccumulator {
         }
 
         if self.ml.is_some() || self.mr.is_some() || self.mt.is_some() || self.mb.is_some() {
-            selector.update(
+            selector.class_update(
                 state,
                 LayoutKey::Margin,
                 Layout::Margin(Rect {
@@ -800,7 +929,7 @@ impl LayoutAccumulator {
         }
 
         if self.il.is_some() || self.ir.is_some() || self.it.is_some() || self.ib.is_some() {
-            selector.update(
+            selector.class_update(
                 state,
                 LayoutKey::Inset,
                 Layout::Inset(Rect {
@@ -812,8 +941,22 @@ impl LayoutAccumulator {
             );
         }
 
+        if self.bd_l.is_some() || self.bd_r.is_some() || self.bd_t.is_some() || self.bd_b.is_some()
+        {
+            selector.class_update(
+                state,
+                LayoutKey::Border,
+                Layout::Border(Rect {
+                    left: self.bd_l.unwrap_or(LengthPercentage::Length(0.0)),
+                    right: self.bd_r.unwrap_or(LengthPercentage::Length(0.0)),
+                    top: self.bd_t.unwrap_or(LengthPercentage::Length(0.0)),
+                    bottom: self.bd_b.unwrap_or(LengthPercentage::Length(0.0)),
+                }),
+            );
+        }
+
         if self.w.is_some() || self.h.is_some() {
-            selector.update(
+            selector.class_update(
                 state,
                 LayoutKey::Size,
                 Layout::Size(Size {
@@ -823,7 +966,7 @@ impl LayoutAccumulator {
             );
         }
         if self.min_w.is_some() || self.min_h.is_some() {
-            selector.update(
+            selector.class_update(
                 state,
                 LayoutKey::MinSize,
                 Layout::MinSize(Size {
@@ -833,7 +976,7 @@ impl LayoutAccumulator {
             );
         }
         if self.max_w.is_some() || self.max_h.is_some() {
-            selector.update(
+            selector.class_update(
                 state,
                 LayoutKey::MaxSize,
                 Layout::MaxSize(Size {
@@ -845,7 +988,7 @@ impl LayoutAccumulator {
 
         #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
         if self.gap_w.is_some() || self.gap_h.is_some() {
-            selector.update(
+            selector.class_update(
                 state,
                 LayoutKey::Gap,
                 Layout::Gap(Size {
@@ -856,7 +999,7 @@ impl LayoutAccumulator {
         }
 
         if self.of_x.is_some() || self.of_y.is_some() {
-            selector.update(
+            selector.class_update(
                 state,
                 LayoutKey::Overflow,
                 Layout::Overflow(Point {
@@ -869,7 +1012,7 @@ impl LayoutAccumulator {
         #[cfg(feature = "layout-grid")]
         {
             if self.row_start.is_some() || self.row_end.is_some() {
-                selector.update(
+                selector.class_update(
                     state,
                     LayoutKey::GridRow,
                     Layout::GridRow(Line {
@@ -879,7 +1022,7 @@ impl LayoutAccumulator {
                 );
             }
             if self.col_start.is_some() || self.col_end.is_some() {
-                selector.update(
+                selector.class_update(
                     state,
                     LayoutKey::GridColumn,
                     Layout::GridColumn(Line {

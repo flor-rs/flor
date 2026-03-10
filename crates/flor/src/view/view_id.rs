@@ -1,13 +1,13 @@
 use crate::error::Error;
-use crate::log_error::ResultLogExt;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRendererError, LoadRenderResource};
 use crate::signal::id::EffectId;
-use crate::view::class::ClassLoader;
 use crate::view::control_state::ControlState;
 use crate::view::handler::ViewHandler;
-use crate::view::resolver::{parse_state_prefix, LayoutResolver};
+#[cfg(feature = "class")]
+use crate::view::resolver::Class;
+use crate::view::resolver::LayoutResolver;
 use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
@@ -50,7 +50,7 @@ impl ViewId {
     #[inline]
     pub fn new_with_layout(layout_style_fn: impl FnOnce(ViewId) -> LayoutResolver) -> ViewId {
         let view_id = VIEW_STORAGE.view_ids.lock().insert(());
-        let layout_style = layout_style_fn(view_id);
+        let layout_style = layout_style_fn(view_id).normal_layer();
         VIEW_STORAGE.states.write().insert(
             view_id,
             RwLock::new(ViewState {
@@ -123,39 +123,68 @@ impl ViewId {
         }
     }
 
+    #[cfg(feature = "class")]
     pub fn update_class(self, class_str: String) {
-        let classes = class_str.split_whitespace().collect::<Vec<_>>();
+        let mut classes = class_str
+            .split_whitespace()
+            .map(String::from)
+            .collect::<Vec<_>>();
 
-        // 更新布局样式
-        let _ = self.with_state_mut(|state| {
-            state.layout_style.load_classes(classes.as_slice());
+        // 解析并且移除 z-index 相关类
+        let mut explicit_z_index = None;
+        classes.retain(|class| {
+            if let Some(suffix) = class.strip_prefix("z-") {
+                if suffix == "auto" {
+                    explicit_z_index = Some(0);
+                    return false;
+                } else if let Ok(z) = suffix.parse::<i32>() {
+                    explicit_z_index = Some(z);
+                    return false;
+                }
+            }
+            true
         });
 
-        // 通知 View 更新各个 class
+        if let Some(z) = explicit_z_index {
+            self.set_z_index(z);
+        }
+
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             let mut view = view.write();
-            for class in classes {
+
+            use crate::log_error::ResultLogExt;
+            use crate::view::resolver::parse_state_prefix;
+            for class in &classes {
                 // 解析状态前缀: "hover:class_name" -> (Hover, "class_name")
                 let (control_state, actual_class) = parse_state_prefix(class);
                 view.on_update_class(control_state, actual_class)
                     .error_on_err(format!("on_update_class {{ view_id:{} }}", self));
             }
         }
+
+        let mut view_class = VIEW_STORAGE.class.write();
+        if !view_class.contains_key(self) {
+            view_class.insert(self, Class::new(self));
+        }
+
+        let Some(class) = view_class.get_mut(self) else {
+            unreachable!()
+        };
+        class.load_classes(classes);
+
+        let states = VIEW_STORAGE.states.read();
+        let Some(view_state) = states.get(self) else {
+            unreachable!()
+        };
+        let mut view_state = view_state.write();
+
+        class.apply_layout(&mut view_state.layout_style);
+
         if let Some(window_id) = self.window_id() {
             window_id.entry().map(|e| e.mark_layout_dirty());
         }
         self.request_redraw();
     }
-
-    //     pub child_ids: RwLock<SecondaryMap<ViewId, Vec<ViewId>>>,
-    // pub fn push_child_ids(self, child_ids: impl IntoIterator<Item = ViewId>) {
-    //     let mut child_ids_read = VIEW_STORAGE.child_ids.write();
-    //     if let Some(view_ids) = child_ids_read.get_mut(self) {
-    //         view_ids.extend(child_ids);
-    //     } else {
-    //         child_ids_read.insert(self, child_ids.into_iter().collect());
-    //     }
-    // }
 
     #[inline]
     pub fn push_view(self, view: Box<dyn View + Send + Sync + 'static>) {
@@ -163,21 +192,6 @@ impl ViewId {
         VIEW_STORAGE.reinit_child_view(self);
     }
 
-    // pub fn set_view<State>(&self, fn_view: FnView<State>, state: Arc<State>) {
-    //     let root_dyn_view = create_updater(
-    //         {
-    //             let state = state.clone(); // 闭包捕获 Arc
-    //             move || {
-    //                 // 临时借用 &T
-    //                 let r = state.as_ref();
-    //                 fn_view(window_id, AppRef { arc: r }) // 仅闭包内部使用
-    //             }
-    //         },
-    //         move |view| {
-    //             fn_view.update_state(Box::new(view));
-    //         },
-    //     );
-    // }
     pub fn window_id(self) -> Option<WindowId> {
         VIEW_STORAGE.window_ids.read().get(self).copied()
     }

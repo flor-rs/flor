@@ -28,6 +28,8 @@ layout-flex = ["taffy/flexbox"]
 layout-grid = ["taffy/grid"]
 layout-block = ["taffy/block_layout"]
 
+class = []
+
 # 顶层 SVG 虚拟特性（用户只需要启用这个）
 svg = ["flor-base/svg", "flor-graphics-direct2d?/svg", "flor-graphics-opengl?/svg", "flor-graphics-tiny-skia?/svg"]
 

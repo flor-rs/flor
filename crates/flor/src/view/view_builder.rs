@@ -1,4 +1,5 @@
 pub mod builder;
+#[cfg(feature = "class")]
 pub mod class_builder;
 pub mod event_builder;
 pub mod focus_index_builder;

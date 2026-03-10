@@ -1,5 +1,9 @@
-pub(crate) mod accumulators;
+#[cfg(feature = "class")]
+pub mod accumulators;
+#[cfg(feature = "class")]
 mod class;
+#[cfg(feature = "class")]
+pub use class::*;
 
 use crate::view::control_state::ControlState;
 use crate::view::resolver::UnitResolver;

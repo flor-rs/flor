@@ -30,8 +30,8 @@ impl<T: View> LayoutBuilder for T {
                         .read();
                     view_state.layout_style.clone()
                 };
-                let current_base = base_style.clone();
-                (style_fn)(current_base)
+                let current_base = base_style.clone().normal_layer();
+                (style_fn)(current_base).normal_layer()
             },
             move |new_style| {
                 {

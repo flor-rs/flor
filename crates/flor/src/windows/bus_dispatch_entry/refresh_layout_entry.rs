@@ -1,14 +1,17 @@
 use crate::error::Error;
 use crate::view::control_state::ControlState;
 use crate::view::view_id::ViewId;
+use crate::view::view_state::ViewState;
 use crate::view::view_storage::VIEW_STORAGE;
 use crate::windows::bus::render;
 use crate::windows::entry::WindowEntryVisit;
 use flor_base::platform::WindowApi;
 use flor_base::types::{Rect, Transform2D};
 use log::{debug, trace, warn};
+use parking_lot::RwLock;
 use platform::WindowId;
-use std::ops::DerefMut;
+use slotmap::SecondaryMap;
+use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 use taffy::{AvailableSpace, NodeId, Size, Style, TaffyTree, TraversePartialTree};
 
@@ -45,6 +48,9 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
         return Ok(());
     };
 
+    #[cfg(feature = "class")]
+    update_view_class(states.deref());
+
     let view_state = view_state_cell.read();
     let old_node_id = view_state.node_id;
 
@@ -56,7 +62,7 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
 
     let instant = Instant::now();
 
-    let children = collect_layout_children(view_id, layout_tree)?;
+    let children = collect_layout_children(view_id, states.deref(), layout_tree)?;
 
     debug!("collect_layout_children: {:?}", instant.elapsed());
 
@@ -157,7 +163,7 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
     bus_update_layout_iterative(view_id, layout_tree, (0.0, 0.0))?;
 
     // 计算累积变换：从根控件遍历，累加 transform 到 accumulated_transform
-    compute_accumulated_transforms(view_id);
+    compute_accumulated_transforms(view_id, states.deref());
 
     // 计算并缓存所有视图的 visual_rect，用于绘制时的快速剔除
     compute_visual_rects(view_id);
@@ -170,6 +176,17 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(feature = "class")]
+fn update_view_class(states: &SecondaryMap<ViewId, RwLock<ViewState>>) {
+    let class = VIEW_STORAGE.class.write();
+    for (view_id, class) in class.iter() {
+        if let Some(view_state) = states.get(view_id) {
+            let mut view_state = view_state.write();
+            class.apply_layout(&mut view_state.layout_style);
+        }
+    }
+}
+
 /// 计算累积变换矩阵
 ///
 /// accumulated_transform 代表：控件局部坐标(0,0) → 窗口坐标 的完整变换
@@ -179,9 +196,11 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
 ///     * translation(layout.location.x, layout.location.y)  // 平移到当前控件位置
 ///     * local_transform                                     // 控件自身变换
 ///     * translation(-scroll_x, -scroll_y)                   // scroll 偏移
-fn compute_accumulated_transforms(start_view_id: ViewId) {
+fn compute_accumulated_transforms(
+    start_view_id: ViewId,
+    states: &SecondaryMap<ViewId, RwLock<ViewState>>,
+) {
     let child_ids = VIEW_STORAGE.child_ids.read();
-    let states = VIEW_STORAGE.states.read();
     let transform_map = VIEW_STORAGE.transform.read();
     let scroll_map = VIEW_STORAGE.scroll.read();
     let mut accumulated_map = VIEW_STORAGE.accumulated_transform.write();
@@ -259,11 +278,11 @@ struct LayoutFrame {
 
 pub fn collect_layout_children(
     parent_id: ViewId,
+    states: &SecondaryMap<ViewId, RwLock<ViewState>>,
     taffy: &mut TaffyTree<ViewId>,
 ) -> Result<Vec<NodeId>, Error> {
     // 一次性读取所有需要的全局锁，避免循环中重复加锁
     let child_ids_map = VIEW_STORAGE.child_ids.read();
-    let states = VIEW_STORAGE.states.read();
     let pressed = VIEW_STORAGE.pressed.read();
 
     // 获取 window_entry（用于 focus 和 hover 状态）
