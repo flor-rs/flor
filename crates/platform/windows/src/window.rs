@@ -303,7 +303,10 @@ impl WindowApi for WindowId {
             let mut rect = RECT::default();
             GetClientRect(self.hwnd(), &mut rect)?;
             // GetClientRect 的 left/top 永远是 0
-            Ok((rect.right as u32, rect.bottom as u32))
+            Ok((
+                (rect.right - rect.left) as u32,
+                (rect.bottom - rect.top) as u32,
+            ))
         }
     }
 
