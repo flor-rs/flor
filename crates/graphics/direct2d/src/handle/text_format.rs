@@ -2,10 +2,13 @@ use flor_base::graphics::{
     FontStretch, FontStyle, FontWeight, ParagraphAlignment, TextAlignment, TextFormatHandle,
     TextTrimming, WordWrapping,
 };
+use parking_lot::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use windows::Win32::Graphics::DirectWrite::*;
 #[derive(Debug, Clone)]
 pub struct D2DTextFormatHandle {
-    raw: IDWriteTextFormat,
+    raw: Arc<Mutex<IDWriteTextFormat>>,
 
     family_name: String,
     size: f32,
@@ -20,13 +23,13 @@ pub struct D2DTextFormatHandle {
     trimming: TextTrimming,
 
     // 脏标记：一旦为 true，下次 rebuild 时需要重建底层对象
-    dirty: bool,
+    dirty: Arc<AtomicBool>,
 }
 
 impl D2DTextFormatHandle {
     pub fn new(raw: IDWriteTextFormat, family_name: impl Into<String>) -> Self {
         Self {
-            raw,
+            raw: Arc::new(Mutex::new(raw)),
             family_name: family_name.into(),
             size: 16.0,
             weight: FontWeight::Normal,
@@ -37,7 +40,7 @@ impl D2DTextFormatHandle {
             wrapping: WordWrapping::NoWrap,
             line_height: 1.0,
             trimming: TextTrimming::None,
-            dirty: true, // 初始状态为脏，确保第一次会创建
+            dirty: Arc::new(AtomicBool::new(true)), // 初始状态为脏，确保第一次会创建
         }
     }
 
@@ -75,12 +78,12 @@ impl D2DTextFormatHandle {
         (w, s, str)
     }
 
-    pub fn raw(&self) -> &IDWriteTextFormat {
-        &self.raw
+    pub fn raw(&self) -> IDWriteTextFormat {
+        self.raw.lock().clone()
     }
 
-    pub fn set_raw(&mut self, raw: IDWriteTextFormat) {
-        self.raw = raw;
+    pub fn set_raw(&self, raw: IDWriteTextFormat) {
+        *self.raw.lock() = raw;
     }
 }
 
@@ -93,7 +96,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_font_size(&mut self, size: f32) -> &mut Self {
         if (self.size - size).abs() > f32::EPSILON {
             self.size = size;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -104,7 +107,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_font_weight(&mut self, weight: FontWeight) -> &mut Self {
         if self.weight != weight {
             self.weight = weight;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -115,7 +118,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_font_style(&mut self, style: FontStyle) -> &mut Self {
         if self.style != style {
             self.style = style;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -126,7 +129,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_font_stretch(&mut self, stretch: FontStretch) -> &mut Self {
         if self.stretch != stretch {
             self.stretch = stretch;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -141,7 +144,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_text_alignment(&mut self, align: TextAlignment) -> &mut Self {
         if self.text_align != align {
             self.text_align = align;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -152,7 +155,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_paragraph_alignment(&mut self, align: ParagraphAlignment) -> &mut Self {
         if self.para_align != align {
             self.para_align = align;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -163,7 +166,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_word_wrapping(&mut self, wrapping: WordWrapping) -> &mut Self {
         if self.wrapping != wrapping {
             self.wrapping = wrapping;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -174,7 +177,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_line_height(&mut self, line_height_factor: f32) -> &mut Self {
         if (self.line_height - line_height_factor).abs() > f32::EPSILON {
             self.line_height = line_height_factor;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -185,7 +188,7 @@ impl TextFormatHandle for D2DTextFormatHandle {
     fn set_text_trimming(&mut self, trimming: TextTrimming) -> &mut Self {
         if self.trimming != trimming {
             self.trimming = trimming;
-            self.dirty = true;
+            self.make_dirty();
         }
         self
     }
@@ -195,11 +198,15 @@ impl TextFormatHandle for D2DTextFormatHandle {
 }
 
 impl D2DTextFormatHandle {
+    #[inline]
+    pub fn make_dirty(&self) {
+        self.dirty.store(true, Ordering::Release);
+    }
     pub fn dirty(&self) -> bool {
-        self.dirty
+        self.dirty.load(Ordering::Acquire)
     }
 
-    pub fn clear_dirty(&mut self) {
-        self.dirty = false;
+    pub fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::Release);
     }
 }

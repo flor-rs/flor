@@ -159,7 +159,7 @@ pub trait RenderContext: Any {
     fn draw_text(
         &mut self,
         text: &str,
-        text_format: &mut Self::TextFormatHandle,
+        text_format: &Self::TextFormatHandle,
         left: f32,
         top: f32,
         width: f32,

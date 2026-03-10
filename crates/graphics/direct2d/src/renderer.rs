@@ -455,10 +455,11 @@ impl RenderContext for D2DRenderer {
         width: f32,
         height: f32,
     ) -> Result<(f32, f32), Self::Error> {
+        self.rebuild_text_format(text_format)?;
         unsafe {
             let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
                 &encode_unicode(text),
-                text_format.raw(),
+                &text_format.raw(),
                 width,
                 height,
             )?;
@@ -487,10 +488,11 @@ impl RenderContext for D2DRenderer {
         x: f32,
         y: f32,
     ) -> Result<HitTestResult, Self::Error> {
+        self.rebuild_text_format(text_format)?;
         unsafe {
             let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
                 &encode_unicode(text),
-                text_format.raw(),
+                &text_format.raw(),
                 width,
                 height,
             )?;
@@ -530,10 +532,11 @@ impl RenderContext for D2DRenderer {
         text_index: usize,
         trailing: bool,
     ) -> Result<(f32, f32), Self::Error> {
+        self.rebuild_text_format(text_format)?;
         unsafe {
             let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
                 &encode_unicode(text),
-                text_format.raw(),
+                &text_format.raw(),
                 width,
                 height,
             )?;
@@ -1295,7 +1298,7 @@ impl RenderContext for D2DRenderer {
     fn draw_text(
         &mut self,
         text: &str,
-        text_format: &mut Self::TextFormatHandle,
+        text_format: &Self::TextFormatHandle,
         left: f32,
         top: f32,
         width: f32,
@@ -1373,7 +1376,7 @@ impl RenderContext for D2DRenderer {
 
                             dc5.DrawText(
                                 &text_utf16,
-                                d2d_format,
+                                &d2d_format,
                                 &layout_rect,
                                 &self.scratch_brush,
                                 &svg_glyph_style, // svgglyphstyle
@@ -1435,7 +1438,7 @@ impl RenderContext for D2DRenderer {
                         // 直接使用 DrawText 绘制偏移后的文本
                         self.current_render.DrawText(
                             &text_utf16,
-                            d2d_format,
+                            &d2d_format,
                             &shadow_rect,
                             &self.scratch_brush,
                             D2D1_DRAW_TEXT_OPTIONS_NONE,
@@ -1448,7 +1451,7 @@ impl RenderContext for D2DRenderer {
             // 5. 绘制 主文本 (Main Text)
             self.current_render.DrawText(
                 &text_utf16,
-                d2d_format,
+                &d2d_format,
                 &layout_rect,
                 main_brush,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
@@ -2614,10 +2617,7 @@ impl D2DRenderer {
         Ok(effect)
     }
 
-    fn rebuild_text_format(
-        &mut self,
-        text_format: &mut D2DTextFormatHandle,
-    ) -> Result<(), D2DError> {
+    fn rebuild_text_format(&self, text_format: &D2DTextFormatHandle) -> Result<(), D2DError> {
         // 1. 极速路径 (Fast Path)
         // 只要没脏，直接返回。不锁 Map，不查 Key，不做任何多余操作。
         // 这让每一帧调用 rebuild 的开销几乎为 0。
