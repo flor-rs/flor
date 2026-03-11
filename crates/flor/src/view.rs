@@ -26,7 +26,7 @@ use crate::ComputedLayout;
 use flor_base::graphics::RenderContext;
 #[cfg(feature = "drag-drop")]
 use flor_base::platform::{DragData, DragFormat, DropEffect};
-use flor_base::platform::{InputEvent, KeyCode, KeyState, MousePosition, ScrollAxis};
+use flor_base::platform::{HandleResult, InputEvent, KeyCode, KeyState, MousePosition, ScrollAxis};
 use std::any::Any;
 use std::time::{Duration, Instant};
 use taffy::{AvailableSpace, Display, Size, Style};
@@ -604,23 +604,51 @@ pub trait View {
         is_alt: bool,
         is_ctrl: bool,
         is_shift: bool,
-    ) -> Result<(), Error> {
-        Ok(())
+    ) -> Result<HandleResult, Error> {
+        Ok(HandleResult::Default)
     }
 
-    fn call_key_down(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
-        self.on_key_down(code, is_alt, is_ctrl, is_shift)
-            .error_on_err(format!(
-                "on_key_down {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
-                code, is_alt, is_ctrl, is_shift
-            ));
-        let handler = VIEW_STORAGE
+    fn call_key_down(
+        &mut self,
+        code: KeyCode,
+        is_alt: bool,
+        is_ctrl: bool,
+        is_shift: bool,
+    ) -> HandleResult {
+        // 1. 内部处理：仅在 Err 时执行 format! 以保留堆栈信息
+        let res_internal = {
+            let raw_res = self.on_key_down(code, is_alt, is_ctrl, is_shift);
+            if let Err(e) = raw_res {
+                // 只有进入此分支才会发生字符串分配
+                Err(e)
+                    .log_err(format!(
+                        "on_key_down {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+                        code, is_alt, is_ctrl, is_shift
+                    ))
+                    .unwrap_or(HandleResult::Default)
+            } else {
+                raw_res.unwrap_or(HandleResult::Default)
+            }
+        };
+
+        // 2. 外部 Handler：使用 as_ref 避免对 Handler 的 clone
+        let res_external = VIEW_STORAGE
             .handlers
             .read()
             .get(self.view_id())
-            .and_then(|h| h.read().on_key_down_handler.clone());
-        if let Some(h) = handler {
-            h.0(self.view_id(), code, is_alt, is_ctrl, is_shift);
+            .and_then(|h| {
+                h.read()
+                    .on_key_down_handler
+                    .as_ref()
+                    .map(|h_ptr| h_ptr.0(self.view_id(), code, is_alt, is_ctrl, is_shift))
+            })
+            .unwrap_or(HandleResult::Default);
+
+        // 3. 结果合并：任一返回 Handled，最终结果即为 Handled
+        if res_internal == HandleResult::Handled || res_external == HandleResult::Handled {
+            HandleResult::Handled
+        } else {
+            HandleResult::Default
         }
     }
 
@@ -631,23 +659,50 @@ pub trait View {
         is_alt: bool,
         is_ctrl: bool,
         is_shift: bool,
-    ) -> Result<(), Error> {
-        Ok(())
+    ) -> Result<HandleResult, Error> {
+        Ok(HandleResult::Default)
     }
 
-    fn call_key_up(&mut self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
-        self.on_key_up(code, is_alt, is_ctrl, is_shift)
-            .error_on_err(format!(
-                "on_key_up {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
-                code, is_alt, is_ctrl, is_shift
-            ));
-        let handler = VIEW_STORAGE
+    fn call_key_up(
+        &mut self,
+        code: KeyCode,
+        is_alt: bool,
+        is_ctrl: bool,
+        is_shift: bool,
+    ) -> HandleResult {
+        // 1. 内部处理
+        let res_internal = self.on_key_up(code, is_alt, is_ctrl, is_shift);
+
+        // 只有在真的报错时才执行 format!，正常流程下这里只是一个简单的匹配
+        let res_internal = if let Err(e) = res_internal {
+            Err(e)
+                .log_err(format!(
+                    "on_key_up {{ code: {:?}, is_alt: {:?}, is_ctrl: {:?}, is_shift: {:?} }}",
+                    code, is_alt, is_ctrl, is_shift
+                ))
+                .unwrap_or(HandleResult::Default)
+        } else {
+            res_internal.unwrap_or(HandleResult::Default)
+        };
+
+        // 2. 外部 Handler
+        let res_external = VIEW_STORAGE
             .handlers
             .read()
             .get(self.view_id())
-            .and_then(|h| h.read().on_key_up_handler.clone());
-        if let Some(h) = handler {
-            h.0(self.view_id(), code, is_alt, is_ctrl, is_shift);
+            .and_then(|h| {
+                h.read()
+                    .on_key_up_handler
+                    .as_ref()
+                    .map(|h| h.0(self.view_id(), code, is_alt, is_ctrl, is_shift))
+            })
+            .unwrap_or(HandleResult::Default);
+
+        // 3. 结果合并
+        if res_internal == HandleResult::Handled || res_external == HandleResult::Handled {
+            HandleResult::Handled
+        } else {
+            HandleResult::Default
         }
     }
 

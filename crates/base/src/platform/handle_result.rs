@@ -1,4 +1,4 @@
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq, Debug, Copy, Clone)]
 pub enum HandleResult {
     /// 使用系统默认处理函数
     #[default]

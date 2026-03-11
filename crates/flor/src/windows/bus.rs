@@ -233,8 +233,7 @@ pub fn event(window_id: WindowId, message: Message) -> Result<HandleResult, Erro
                     }
                 }
             }
-            window_id.bus_key_down_entry(code, is_alt, is_ctrl, is_shift);
-            HandleResult::Handled
+            window_id.bus_key_down_entry(code, is_alt, is_ctrl, is_shift)
         }
         Message::KeyUp {
             code,

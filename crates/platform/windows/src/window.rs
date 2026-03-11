@@ -7,8 +7,8 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{ClientToScreen, InvalidateRect, UpdateWindow};
 use windows::Win32::System::SystemServices::IMAGE_DOS_HEADER;
 use windows::Win32::UI::Input::Ime::{
-    ImmAssociateContext, ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow,
-    ImmSetOpenStatus, CFS_POINT, COMPOSITIONFORM, HIMC,
+    ImmAssociateContext, ImmAssociateContextEx, ImmGetContext, ImmReleaseContext,
+    ImmSetCompositionWindow, ImmSetOpenStatus, CFS_POINT, COMPOSITIONFORM, HIMC, IACE_DEFAULT,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -399,10 +399,7 @@ impl WindowApi for WindowId {
     fn set_ime_allowed(&self, allow: bool) -> Result<(), Self::Error> {
         unsafe {
             if allow {
-                let h_imc = ImmGetContext(self.hwnd());
-                dbg!(h_imc.is_invalid());
-                dbg!(h_imc.0);
-                ImmAssociateContext(self.hwnd(), h_imc);
+                let _ = ImmAssociateContextEx(self.hwnd(), HIMC::default(), IACE_DEFAULT);
             } else {
                 ImmAssociateContext(self.hwnd(), HIMC::default());
             }

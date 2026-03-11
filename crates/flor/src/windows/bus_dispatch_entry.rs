@@ -53,7 +53,7 @@ use crate::windows::bus_dispatch_entry::tooltip_check_entry::tooltip_check_entry
 use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_scroll_lines_changed_entry;
 use crate::windows::entry::WindowEntryVisit;
 use flor_base::graphics::RenderContext;
-use flor_base::platform::{InputEvent, KeyCode, KeyState};
+use flor_base::platform::{HandleResult, InputEvent, KeyCode, KeyState};
 use flor_base::platform::{MousePosition, ScrollAxis};
 #[cfg(feature = "theme-change")]
 use flor_platform_base::ThemeMode;
@@ -141,9 +141,21 @@ pub trait WindowBusDispatchEntry {
     );
 
     // 5. 键盘事件 (Keyboard Events)
-    fn bus_key_down_entry(self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool);
+    fn bus_key_down_entry(
+        self,
+        code: KeyCode,
+        is_alt: bool,
+        is_ctrl: bool,
+        is_shift: bool,
+    ) -> HandleResult;
 
-    fn bus_key_up_entry(self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool);
+    fn bus_key_up_entry(
+        self,
+        code: KeyCode,
+        is_alt: bool,
+        is_ctrl: bool,
+        is_shift: bool,
+    ) -> HandleResult;
 
     // 6. 输入法事件 (IME Events) [New]
     fn bus_ime_start_entry(self);
@@ -304,11 +316,23 @@ impl WindowBusDispatchEntry for WindowId {
         middle_button_double_click_entry(self, key_state, mouse_position)
     }
 
-    fn bus_key_down_entry(self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
+    fn bus_key_down_entry(
+        self,
+        code: KeyCode,
+        is_alt: bool,
+        is_ctrl: bool,
+        is_shift: bool,
+    ) -> HandleResult {
         key_down_entry(self, code, is_alt, is_ctrl, is_shift)
     }
 
-    fn bus_key_up_entry(self, code: KeyCode, is_alt: bool, is_ctrl: bool, is_shift: bool) {
+    fn bus_key_up_entry(
+        self,
+        code: KeyCode,
+        is_alt: bool,
+        is_ctrl: bool,
+        is_shift: bool,
+    ) -> HandleResult {
         key_up_entry(self, code, is_alt, is_ctrl, is_shift)
     }
 
