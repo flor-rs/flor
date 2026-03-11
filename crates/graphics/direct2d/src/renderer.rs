@@ -2253,8 +2253,8 @@ impl RenderContext for D2DRenderer {
                 let d2d_rect = D2D_RECT_F {
                     left: rect.0,
                     top: rect.1,
-                    right: rect.2,
-                    bottom: rect.3,
+                    right: rect.0 + rect.2,
+                    bottom: rect.1 + rect.3,
                 };
                 self.current_render
                     .PushAxisAlignedClip(&d2d_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
@@ -2265,8 +2265,8 @@ impl RenderContext for D2DRenderer {
                 let d2d_rect = D2D_RECT_F {
                     left: rect.0,
                     top: rect.1,
-                    right: rect.2,
-                    bottom: rect.3,
+                    right: rect.0 + rect.2,
+                    bottom: rect.1 + rect.3,
                 };
                 // 创建临时的矩形几何体 (CreateRectangleGeometry 开销非常小，无需缓存)
                 let geometry = RenderFactory::get()
@@ -2298,8 +2298,8 @@ impl RenderContext for D2DRenderer {
                 rect: D2D_RECT_F {
                     left: rect.0,
                     top: rect.1,
-                    right: rect.2,
-                    bottom: rect.3,
+                    right: rect.0 + rect.2,
+                    bottom: rect.1 + rect.3,
                 },
                 radiusX: radius,
                 radiusY: radius,
