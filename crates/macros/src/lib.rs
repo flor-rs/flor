@@ -71,7 +71,8 @@ pub fn color(input: TokenStream) -> TokenStream {
 /// - `computed = false` - 不生成 Computed 结构体
 /// - `computed_fn = false` - 不生成 computed_xxx 独立函数
 /// - `data = Type` - 指定 Resolver 的 D 泛型类型，生成类型别名
-/// - `control = ControlName` - 显式指定控件名（用于 StyleBuilder）
+/// - `control = ControlName` - 显式指定控件名（用于 StyleBuilder），默认使用去除 `Style` 后缀的类型名
+/// - `style_field = field_name` - 显式指定控件接收样式的字段名，默认为 `style`
 /// - `builder = false` - 跳过 StyleBuilder 生成
 /// - `default = false` - 不生成 Resolver 的 Default 实现
 #[proc_macro_derive(Resolver, attributes(resolver))]
@@ -92,9 +93,10 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
     let mut generate_computed = true; // 默认生成 computed 结构体
     let mut generate_computed_fn = true; // 默认生成 computed_xxx 函数
     let mut generate_default = true; // 默认生成 Default 实现
+    let mut generate_builder = true; // 默认生成 StyleBuilder 实现
     let mut data_type: Option<syn::Type> = None; // data = Type
     let mut control_type: Option<syn::Type> = None; // control = ControlName
-    let mut field_name_attr: Option<syn::Ident> = None; // field = field_name
+    let mut style_field_name_attr: Option<syn::Ident> = None; // style_field = field_name
 
     for attr in input.attrs.iter() {
         if !attr.path().is_ident("resolver") {
@@ -127,34 +129,24 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
                 let _: syn::Token![=] = meta.input.parse()?;
                 let value: syn::LitBool = meta.input.parse()?;
                 generate_default = value.value;
+            } else if meta.path.is_ident("builder") {
+                // #[resolver(builder = false)]
+                let _: syn::Token![=] = meta.input.parse()?;
+                let value: syn::LitBool = meta.input.parse()?;
+                generate_builder = value.value;
             } else if meta.path.is_ident("control") {
                 // #[resolver(control = TextInput)]
                 let _: syn::Token![=] = meta.input.parse()?;
                 let ty: syn::Type = meta.input.parse()?;
                 control_type = Some(ty);
-            } else if meta.path.is_ident("field") {
-                // #[resolver(field = style)]
+            } else if meta.path.is_ident("style_field") {
+                // #[resolver(style_field = style)]
                 let _: syn::Token![=] = meta.input.parse()?;
                 let ident: syn::Ident = meta.input.parse()?;
-                field_name_attr = Some(ident);
+                style_field_name_attr = Some(ident);
             }
             Ok(())
         });
-    }
-
-    // Validate: control and field must both be present or both be absent
-    match (&control_type, &field_name_attr) {
-        (Some(_), None) => {
-            panic!("Resolver macro error: 'control' attribute is specified but 'field' is missing. \
-                    Both 'control' and 'field' must be specified together to generate StyleBuilder implementation. \
-                    Example: #[resolver(control = TextInput, field = style)]");
-        }
-        (None, Some(_)) => {
-            panic!("Resolver macro error: 'field' attribute is specified but 'control' is missing. \
-                    Both 'control' and 'field' must be specified together to generate StyleBuilder implementation. \
-                    Example: #[resolver(control = TextInput, field = style)]");
-        }
-        _ => {}
     }
 
     // 只支持 enum
@@ -512,17 +504,27 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    // StyleBuilder implementation (when both control and field are specified)
-    let style_builder_code = if let (Some(control_ty), Some(field_ident)) =
-        (&control_type, &field_name_attr)
-    {
+    // StyleBuilder implementation
+    let style_builder_code = if generate_builder {
+        let control_ty = control_type.unwrap_or_else(|| {
+            let default_name = if enum_name_str.ends_with("Style") {
+                enum_name_str.strip_suffix("Style").unwrap().to_string()
+            } else {
+                enum_name_str.clone()
+            };
+            syn::parse_str::<syn::Type>(&default_name).unwrap()
+        });
+
+        let field_ident =
+            style_field_name_attr.unwrap_or_else(|| syn::Ident::new("style", enum_name.span()));
+
         quote! {
             // ==========================================
             // StyleBuilder implementation for control
             // ==========================================
             impl #flor_crate::view::view_builder::style_builder::StyleBuilder<#alias_name> for #control_ty {
                 fn style(mut self, style_fn: impl Fn(#alias_name) -> #alias_name) -> Self {
-                    self.#field_ident = style_fn(self.#field_ident.clone().normal());
+                    self.#field_ident = style_fn(self.#field_ident);
                     self
                 }
             }

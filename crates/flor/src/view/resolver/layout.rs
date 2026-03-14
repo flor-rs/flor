@@ -28,7 +28,8 @@ use taffy::{
 };
 
 #[derive(Clone, Debug, Resolver)]
-#[resolver(update_view = false,computed = false,data = taffy::Style,default = false)]
+#[resolver(update_view = false,computed = false,data = taffy::Style,default = false,builder = false
+)]
 pub enum Layout {
     /// What layout strategy should be used?
     Display(Display),
