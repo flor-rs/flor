@@ -1,4 +1,4 @@
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use std::sync::Arc;
 
 #[cfg(feature = "drag-drop")]

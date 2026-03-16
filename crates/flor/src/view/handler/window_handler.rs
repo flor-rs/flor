@@ -1,5 +1,5 @@
 use crate::view::handler::Handler;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use flor_base::platform::{KeyState, MousePosition, ScrollAxis};
 use std::sync::Arc;
 

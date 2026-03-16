@@ -1,11 +1,8 @@
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::render::FlorRenderer;
-use crate::view::control_state::ControlState;
-use crate::view::view_id::ViewId;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
-use crate::windows::entry::WindowEntryVisit;
+use crate::view::{ControlState, View, ViewId, VIEW_STORAGE};
+use crate::windows::WindowEntryVisit;
 use flor_base::graphics::RenderContext;
 use flor_base::types::{Rect, Transform2D};
 use log::debug;

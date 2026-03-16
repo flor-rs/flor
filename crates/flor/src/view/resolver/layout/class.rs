@@ -2,7 +2,7 @@ use crate::view::control_state::ControlState;
 use crate::view::resolver::layout::accumulators::LayoutAccumulator;
 use crate::view::resolver::shared::parse_state_prefix;
 use crate::view::resolver::{LayoutResolver, UnitResolver};
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug)]

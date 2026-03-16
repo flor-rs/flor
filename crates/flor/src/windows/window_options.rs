@@ -1,13 +1,13 @@
 use crate::error::Error;
 use crate::render::FlorRenderer;
-use crate::signal::effect::updater_effect::create_updater;
+use crate::signal::create_updater;
+use crate::view::builder::ViewBuilder;
 use crate::view::resolver::Unit;
-use crate::view::view_builder::builder::ViewBuilder;
-use crate::view::view_storage::{ViewStorage, VIEW_STORAGE};
 use crate::view::View;
+use crate::view::{ViewStorage, VIEW_STORAGE};
 use crate::windows::bus;
-use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
-use crate::windows::entry::WindowEntry;
+use crate::windows::WindowBusDispatchEntry;
+use crate::windows::WindowEntry;
 use arc_swap::ArcSwap;
 use flor_base::platform::{WindowApi, WindowMode};
 use flor_base::types::Color;

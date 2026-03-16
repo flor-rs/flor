@@ -1,8 +1,6 @@
 use crate::error::Error;
 use crate::min_wait_time::MinWaitTime;
-use crate::view::control_state::ControlState;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
+use crate::view::{ControlState, View, VIEW_STORAGE};
 use platform::WindowId;
 use std::time::{Duration, Instant};
 

@@ -1,5 +1,5 @@
-use crate::view::view_id::ViewId;
-use crate::view::view_storage::VIEW_STORAGE;
+use crate::view::ViewId;
+use crate::view::VIEW_STORAGE;
 use rustc_hash::FxHashMap;
 
 /// 焦点作用域条目（用于 Modal 等场景）

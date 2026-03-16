@@ -3,9 +3,9 @@
 // ============================================================================
 
 use crate::view::resolver::shared::extract_bracket_value;
-use crate::view::view_id::ViewId;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::windows::entry::WindowEntryVisit;
+use crate::view::ViewId;
+use crate::view::VIEW_STORAGE;
+use crate::windows::WindowEntryVisit;
 use arc_swap::ArcSwap;
 use atomic_float::AtomicF32;
 use std::sync::atomic::{AtomicBool, Ordering};

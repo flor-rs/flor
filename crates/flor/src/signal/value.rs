@@ -9,7 +9,6 @@ mod v_write_signal;
 
 pub use {
     v_read::*, v_read_signal::*, v_rw_signal::*, v_signal_ref::*, v_write::*, v_write_signal::*,
-    v_write_signal::*,
 };
 
 #[derive(Debug)]

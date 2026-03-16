@@ -1,20 +1,16 @@
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::render::FlorRenderer;
-use crate::view::view_id::ViewId;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
-use crate::windows::entry::{WindowEntryVisit, WINDOW_ENTRY_MAP};
+use crate::view::{ViewId, VIEW_STORAGE};
+use crate::windows::{WindowBusDispatchEntry, WindowEntryVisit, WINDOW_ENTRY_MAP};
 use crate::FlorGui;
 use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use flor_base::graphics::RenderContext;
-use flor_base::platform::KeyCode;
+use flor_base::platform::{HandleResult, KeyCode, Message};
 use log::trace;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use platform::base::HandleResult;
-use platform::base::Message;
 use platform::WindowId;
 use std::sync::atomic::Ordering;
 

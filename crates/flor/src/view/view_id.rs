@@ -2,18 +2,13 @@ use crate::error::Error;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRendererError, LoadRenderResource};
-use crate::signal::id::EffectId;
+use crate::signal::Id;
 use crate::view::control_state::ControlState;
 use crate::view::handler::ViewHandler;
 #[cfg(feature = "class")]
-use crate::view::resolver::Class;
-use crate::view::resolver::LayoutResolver;
-use crate::view::view_state::ViewState;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
-use crate::windows::bus::render_from_view_id;
-use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
-use crate::windows::entry::WindowEntryVisit;
+use crate::view::resolver::{Class, LayoutResolver};
+use crate::view::{View, ViewState, VIEW_STORAGE};
+use crate::windows::{render_from_view_id, WindowBusDispatchEntry, WindowEntryVisit};
 use flor_base::graphics::RenderContext;
 #[cfg(feature = "drag-drop")]
 use flor_base::platform::{DragFormat, DropEffect, KeyState};
@@ -402,7 +397,7 @@ impl ViewId {
         }
     }
 
-    pub fn pending_effect_id(self, effect_id: EffectId) {
+    pub fn pending_effect_id(self, effect_id: Id) {
         let mut pending_effect_id = VIEW_STORAGE.pending_effect_id.write();
         if let Some(effect_ids) = pending_effect_id.get_mut(self) {
             effect_ids.push(effect_id);

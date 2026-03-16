@@ -1,8 +1,8 @@
 use crate::error::Error;
 use crate::render::FlorRenderer;
-use crate::view::view_id::ViewId;
 use crate::view::View;
-use crate::windows::entry::{WindowEntryVisit, WINDOW_ENTRY_MAP};
+use crate::view::ViewId;
+use crate::windows::{WindowEntryVisit, WINDOW_ENTRY_MAP};
 use flor_base::graphics::RenderContext;
 use flor_base::platform::WindowApi;
 use flor_base::types::Color;

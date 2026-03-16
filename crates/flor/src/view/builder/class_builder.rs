@@ -1,4 +1,4 @@
-use crate::signal::effect::updater_effect::create_updater_with_id;
+use crate::signal::create_updater_with_id;
 use crate::view::View;
 
 // 使用 define_prop! 宏生成 ClassProp trait

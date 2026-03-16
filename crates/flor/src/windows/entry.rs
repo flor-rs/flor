@@ -1,6 +1,6 @@
 use crate::view::focus_manager::FocusManager;
 use crate::view::resolver::Unit;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use arc_swap::ArcSwap;
 use dashmap::mapref::one::{Ref, RefMut};
 use dashmap::DashMap;

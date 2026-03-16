@@ -1,6 +1,6 @@
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
-use crate::windows::entry::WindowEntryVisit;
+use crate::view::VIEW_STORAGE;
+use crate::windows::WindowBusDispatchEntry;
+use crate::windows::WindowEntryVisit;
 use platform::WindowId;
 
 pub fn mouse_leave_entry(window_id: WindowId) {

@@ -8,9 +8,7 @@
 //! 3. 递归深度优先，后绘制的元素先检测（z-order：最上层优先）
 //! 4. 正确处理 clip
 
-use crate::view::view_id::ViewId;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
+use crate::view::{View, ViewId, VIEW_STORAGE};
 use flor_base::platform::{KeyState, MousePosition};
 use flor_base::types::Transform2D;
 use platform::WindowId;
@@ -79,12 +77,9 @@ fn hit_test_recursive(
     mouse_point: (f32, f32),
     key_state: KeyState,
     parent_clip: Option<ClipRect>,
-    views: &slotmap::SecondaryMap<
-        ViewId,
-        parking_lot::RwLock<Box<dyn crate::view::View + Send + Sync>>,
-    >,
+    views: &slotmap::SecondaryMap<ViewId, parking_lot::RwLock<Box<dyn View + Send + Sync>>>,
     child_ids: &slotmap::SecondaryMap<ViewId, Vec<ViewId>>,
-    states: &slotmap::SecondaryMap<ViewId, parking_lot::RwLock<crate::view::view_state::ViewState>>,
+    states: &slotmap::SecondaryMap<ViewId, parking_lot::RwLock<crate::view::ViewState>>,
     visual: &slotmap::SecondaryMap<ViewId, ()>,
     accumulated_transform: &slotmap::SecondaryMap<ViewId, Transform2D>,
 ) -> Option<HitTestResult> {

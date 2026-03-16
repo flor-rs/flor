@@ -1,5 +1,5 @@
 use crate::view::resolver::LayoutResolver;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use std::fmt::{Debug, Formatter};
 use taffy::{Layout, NodeId};
 

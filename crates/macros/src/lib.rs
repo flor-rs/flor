@@ -219,7 +219,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
 
                 // Update 枚举
                 update_variants.push(quote! {
-                    #variant_ident(#flor_crate::view::control_state::ControlState, #ty)
+                    #variant_ident(#flor_crate::view::ControlState, #ty)
                 });
 
                 // Computed 字段
@@ -264,7 +264,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
 
                 // Update 枚举
                 update_variants.push(quote! {
-                    #variant_ident(#flor_crate::view::control_state::ControlState, #(#args_ty),*)
+                    #variant_ident(#flor_crate::view::ControlState, #(#args_ty),*)
                 });
 
                 // Computed 字段 (Tuple)
@@ -312,7 +312,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
 
                 // Update 枚举
                 update_variants.push(quote! {
-                    #variant_ident { state: #flor_crate::view::control_state::ControlState, #(#update_fields),* }
+                    #variant_ident { state: #flor_crate::view::ControlState, #(#update_fields),* }
                 });
 
                 // Computed 字段
@@ -377,8 +377,8 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
                     D: Clone,
                     F: for<'a> Fn(
                         &#flor_crate::view::resolver::UnitResolver,
-                        #flor_crate::view::control_state::ControlState,
-                        &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::control_state::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
+                        #flor_crate::view::ControlState,
+                        &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
                     ) -> D,
                 {
                     match update {
@@ -421,20 +421,20 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             // ==========================================
             pub fn #computed_fn_name(
                 _unit_resolver: &#flor_crate::view::resolver::UnitResolver,
-                state: #flor_crate::view::control_state::ControlState,
-                state_variants: &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::control_state::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>,
+                state: #flor_crate::view::ControlState,
+                state_variants: &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>,
             ) -> #computed_struct_name {
                 let mut computed = #computed_struct_name::default();
 
                 // 预先获取 Specific 状态的 Map 引用，用于优化 clone
-                let specific_variants = if state == #flor_crate::view::control_state::ControlState::Normal {
+                let specific_variants = if state == #flor_crate::view::ControlState::Normal {
                     None
                 } else {
                     state_variants.get(&state)
                 };
 
                 // 1. 应用 Normal 状态 (基础样式)
-                if let Some(normal_map) = state_variants.get(&#flor_crate::view::control_state::ControlState::Normal) {
+                if let Some(normal_map) = state_variants.get(&#flor_crate::view::ControlState::Normal) {
                     for (k, v) in normal_map.iter() {
                         // 优化：如果 Specific 层有相同的 key，跳过 Normal 层的 clone
                         if specific_variants.map_or(false, |s| s.contains_key(k)) {
@@ -473,8 +473,8 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             // ==========================================
             pub type #alias_name<F = fn(
                 &#flor_crate::view::resolver::UnitResolver,
-                #flor_crate::view::control_state::ControlState,
-                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::control_state::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
+                #flor_crate::view::ControlState,
+                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
             ) -> #data_ty> = #flor_crate::view::resolver::Resolver<
                 #key_enum_name,
                 #enum_name,
@@ -490,8 +490,8 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             // ==========================================
             pub type #alias_name<F = fn(
                 &#flor_crate::view::resolver::UnitResolver,
-                #flor_crate::view::control_state::ControlState,
-                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::control_state::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
+                #flor_crate::view::ControlState,
+                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
             ) -> #computed_struct_name> = #flor_crate::view::resolver::Resolver<
                 #key_enum_name,
                 #enum_name,
@@ -522,7 +522,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             // ==========================================
             // StyleBuilder implementation for control
             // ==========================================
-            impl #flor_crate::view::view_builder::style_builder::StyleBuilder<#alias_name> for #control_ty {
+            impl #flor_crate::view::builder::StyleBuilder<#alias_name> for #control_ty {
                 fn style(mut self, style_fn: impl Fn(#alias_name) -> #alias_name) -> Self {
                     self.#field_ident = style_fn(self.#field_ident);
                     self
@@ -560,8 +560,8 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             D: Clone,
             F: for<'a> Fn(
                 &#flor_crate::view::resolver::UnitResolver,
-                #flor_crate::view::control_state::ControlState,
-                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::control_state::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
+                #flor_crate::view::ControlState,
+                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
             ) -> D,
         {
             #(#impl_methods)*

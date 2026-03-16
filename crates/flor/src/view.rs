@@ -1,27 +1,10 @@
-pub mod control_state;
-pub mod focus_manager;
-pub mod frame_policy;
-pub mod handler;
-pub mod resolver;
-pub mod scroll_state;
-pub mod view_builder;
-pub mod view_id;
-pub mod view_state;
-pub mod view_storage;
-pub mod visual_overflow;
-
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::min_wait_time::MinWaitTime;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderer, FlorRendererError, LoadRenderResource};
-use crate::view::control_state::ControlState;
-use crate::view::frame_policy::FramePolicy;
-use crate::view::view_id::ViewId;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::visual_overflow::VisualOverflow;
-use crate::windows::bus::render_from_view_id;
+use crate::windows::render_from_view_id;
 use crate::ComputedLayout;
 use flor_base::graphics::RenderContext;
 #[cfg(feature = "drag-drop")]
@@ -30,6 +13,23 @@ use flor_base::platform::{HandleResult, InputEvent, KeyCode, KeyState, MousePosi
 use std::any::Any;
 use std::time::{Duration, Instant};
 use taffy::{AvailableSpace, Display, Size, Style};
+
+pub mod builder;
+mod control_state;
+pub mod focus_manager;
+mod frame_policy;
+pub mod handler;
+pub mod resolver;
+mod scroll_state;
+mod view_id;
+mod view_state;
+mod view_storage;
+mod visual_overflow;
+
+pub use {
+    control_state::*, frame_policy::*, handler::*, scroll_state::*, view_id::*, view_state::*,
+    view_storage::*, visual_overflow::*,
+};
 
 /// View特征定义了所有UI组件的基本行为
 pub trait View {

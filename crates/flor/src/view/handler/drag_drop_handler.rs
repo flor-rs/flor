@@ -1,5 +1,5 @@
 use crate::view::handler::Handler;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use flor_base::platform::{DragData, DragFormat, DropEffect, KeyState, MousePosition};
 use std::sync::Arc;
 

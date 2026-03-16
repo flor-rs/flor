@@ -1,7 +1,5 @@
-use crate::windows::bus;
 use log::error;
-use platform::base::HandleResult;
-use platform::base::Message;
+use platform::base::{HandleResult, Message};
 use platform::ProcHandler;
 use platform::WindowId;
 
@@ -13,7 +11,7 @@ impl ProcHandler for WindowsProcHandler {
         let msg_str = format!("{:?}", message);
         let start = std::time::Instant::now();
 
-        let result = bus::event(window_id, message).unwrap_or_else(|err| {
+        let result = crate::windows::event(window_id, message).unwrap_or_else(|err| {
             error!("bus error: {:?}", err);
             HandleResult::Default
         });

@@ -1,5 +1,5 @@
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::windows::entry::WindowEntryVisit;
+use crate::view::VIEW_STORAGE;
+use crate::windows::WindowEntryVisit;
 use platform::WindowId;
 use std::time::{Duration, Instant};
 

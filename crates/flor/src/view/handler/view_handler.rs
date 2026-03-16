@@ -1,5 +1,5 @@
 use crate::view::handler::Handler;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use std::sync::Arc;
 
 #[derive(Clone)]

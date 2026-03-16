@@ -15,8 +15,8 @@ use crate::view::handler::{
     DropHandler, OnDragEnterHandler, OnDragLeaveHandler, OnDragOverHandler,
 };
 
-use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
+use crate::view::VIEW_STORAGE;
 
 pub trait EventBuilder {
     fn on_mouse_move(self, handler: impl Into<OnMouseMoveHandler>) -> Self;

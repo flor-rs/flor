@@ -7,7 +7,7 @@ pub use class::*;
 
 use crate::view::control_state::ControlState;
 use crate::view::resolver::UnitResolver;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use flor_macros::Resolver;
 use rustc_hash::FxHashMap;
 #[cfg(feature = "layout-grid")]

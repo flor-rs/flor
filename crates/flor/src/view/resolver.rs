@@ -5,7 +5,7 @@ mod unit;
 pub use {layout::*, shared::*, unit::*};
 
 use crate::view::control_state::ControlState;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use parking_lot::{MappedRwLockReadGuard, RawRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;

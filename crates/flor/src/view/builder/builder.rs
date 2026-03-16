@@ -1,5 +1,5 @@
-use crate::view::view_storage::VIEW_STORAGE;
 use crate::view::View;
+use crate::view::VIEW_STORAGE;
 
 pub trait ViewBuilder {
     fn views(self, views: impl IntoIterator<Item = Box<dyn View + Send + Sync + 'static>>) -> Self;

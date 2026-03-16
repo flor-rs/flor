@@ -1,9 +1,8 @@
 use crate::log_error::ResultLogExt;
-use crate::signal::effect::updater_effect::create_updater_with_id;
+use crate::signal::create_updater_with_id;
 use crate::view::resolver::LayoutResolver;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
-use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
+use crate::view::{View, VIEW_STORAGE};
+use crate::windows::WindowBusDispatchEntry;
 
 pub trait LayoutBuilder {
     // 增加 'static 约束，因为闭包需要被 move 进 updater 长期持有

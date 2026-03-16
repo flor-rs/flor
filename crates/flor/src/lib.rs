@@ -31,10 +31,8 @@ use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::min_wait_time::MinWaitTime;
 use crate::proc::WindowsProcHandler;
-use crate::signal::effect::updater_effect::create_updater;
-use crate::windows::bus::RENDERS;
-use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
-use crate::windows::entry::WINDOW_ENTRY_MAP;
+use crate::signal::{create_updater, RUNTIME};
+use crate::windows::{WindowBusDispatchEntry, RENDERS, WINDOW_ENTRY_MAP};
 pub use flor_base::types;
 use log::{debug, info, trace};
 use once_cell::sync::Lazy;
@@ -52,7 +50,7 @@ static EXIT: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 pub static CONFIG: Lazy<bool> = Lazy::new(|| false);
 
 #[cfg(feature = "cross-thread-window-creation")]
-use crate::windows::window_creation_queue::WindowCreationQueue;
+use crate::windows::WindowCreationQueue;
 #[cfg(feature = "cross-thread-window-creation")]
 static WINDOW_SPAWNER: WindowCreationQueue = WindowCreationQueue::new();
 
@@ -130,7 +128,7 @@ impl FlorGui {
                 break Ok(());
             }
 
-            signal::runtime::RUNTIME.execute_update_queue();
+            RUNTIME.execute_update_queue();
 
             let mut lazy = true;
             let mut re_draw_window_ids = vec![];

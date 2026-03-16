@@ -1,5 +1,5 @@
 use crate::render::FlorRendererError;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use flor_base::types::ColorParseError;
 use thiserror::Error;
 

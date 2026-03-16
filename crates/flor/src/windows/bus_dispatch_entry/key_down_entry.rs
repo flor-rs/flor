@@ -1,7 +1,6 @@
 use crate::log_error::ResultLogExt;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
-use crate::windows::entry::WindowEntryVisit;
+use crate::view::{View, VIEW_STORAGE};
+use crate::windows::WindowEntryVisit;
 use flor_base::platform::{HandleResult, KeyCode};
 use platform::WindowId;
 

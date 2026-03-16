@@ -1,10 +1,10 @@
 use crate::error::Error;
-use crate::view::control_state::ControlState;
-use crate::view::view_id::ViewId;
-use crate::view::view_state::ViewState;
-use crate::view::view_storage::VIEW_STORAGE;
+use crate::view::ControlState;
+use crate::view::ViewId;
+use crate::view::ViewState;
+use crate::view::VIEW_STORAGE;
 use crate::windows::bus::render;
-use crate::windows::entry::WindowEntryVisit;
+use crate::windows::WindowEntryVisit;
 use flor_base::platform::WindowApi;
 use flor_base::types::{Rect, Transform2D};
 use log::{debug, trace, warn};

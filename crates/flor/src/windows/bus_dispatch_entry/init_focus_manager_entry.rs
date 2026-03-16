@@ -1,7 +1,6 @@
 use crate::error::Error;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
-use crate::windows::entry::WindowEntryVisit;
+use crate::view::{View, VIEW_STORAGE};
+use crate::windows::WindowEntryVisit;
 use platform::WindowId;
 
 pub fn init_focus_manager_entry(window_id: WindowId) -> Result<(), Error> {

@@ -25,7 +25,7 @@ mod wheel_scroll_lines_changed_entry;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
-use crate::view::view_id::ViewId;
+use crate::view::ViewId;
 use crate::windows::bus::render;
 use crate::windows::bus_dispatch_entry::button_down_entry::button_down_entry;
 use crate::windows::bus_dispatch_entry::button_up_entry::button_up_entry;
@@ -51,7 +51,7 @@ use crate::windows::bus_dispatch_entry::right_button_down_entry::right_button_do
 use crate::windows::bus_dispatch_entry::right_button_up_entry::right_button_up_entry;
 use crate::windows::bus_dispatch_entry::tooltip_check_entry::tooltip_check_entry;
 use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_scroll_lines_changed_entry;
-use crate::windows::entry::WindowEntryVisit;
+use crate::windows::WindowEntryVisit;
 use flor_base::graphics::RenderContext;
 use flor_base::platform::{HandleResult, InputEvent, KeyCode, KeyState};
 use flor_base::platform::{MousePosition, ScrollAxis};

@@ -1,6 +1,5 @@
 use crate::error::Error;
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::view::View;
+use crate::view::{View, VIEW_STORAGE};
 use platform::WindowId;
 
 /// 扁平化的 bus_create 入口实现

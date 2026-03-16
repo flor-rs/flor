@@ -1,6 +1,5 @@
-use crate::view::view_storage::VIEW_STORAGE;
-use crate::windows::bus_dispatch_entry::WindowBusDispatchEntry;
-use crate::windows::entry::WindowEntryVisit;
+use crate::view::VIEW_STORAGE;
+use crate::windows::{WindowBusDispatchEntry, WindowEntryVisit};
 use flor_base::platform::{KeyState, MousePosition};
 use platform::WindowId;
 

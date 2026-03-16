@@ -1,15 +1,11 @@
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
-use crate::signal;
-use crate::signal::id::EffectId;
+use crate::signal::{Id, RUNTIME};
 use crate::view::handler::ViewHandler;
 #[cfg(feature = "class")]
 use crate::view::resolver::Class;
-use crate::view::scroll_state::ScrollState;
-use crate::view::view_id::ViewId;
-use crate::view::view_state::ViewState;
-use crate::view::View;
-use crate::windows::entry::WINDOW_ENTRY_MAP;
+use crate::view::{ScrollState, View, ViewId, ViewState};
+use crate::windows::WINDOW_ENTRY_MAP;
 use flor_base::types::{Rect, Transform2D};
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
@@ -43,7 +39,7 @@ pub struct ViewStorage {
     pub visual: RwLock<SecondaryMap<ViewId, ()>>,
     pub scroll: RwLock<SecondaryMap<ViewId, ScrollState>>,
     pub view_z_index: RwLock<SecondaryMap<ViewId, i32>>,
-    pub pending_effect_id: RwLock<SecondaryMap<ViewId, Vec<EffectId>>>,
+    pub pending_effect_id: RwLock<SecondaryMap<ViewId, Vec<Id>>>,
     // 设置的 变换 ，这个在绘制时需要用到，在布局时，需要用来计算
     pub transform: RwLock<SecondaryMap<ViewId, Transform2D>>,
     // 当前控件累积的 变换 ，这个用来处理命中测试，在布局时计算
@@ -238,10 +234,7 @@ impl ViewStorage {
 
     pub fn active_pending_effect_id(&self, view_id: ViewId) {
         if let Some(effect_ids) = self.pending_effect_id.write().remove(view_id) {
-            signal::runtime::RUNTIME
-                .update_queue
-                .lock()
-                .extend(effect_ids);
+            RUNTIME.update_queue.lock().extend(effect_ids);
         }
     }
 
