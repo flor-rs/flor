@@ -1,7 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-
 pub enum Id {
     Signal(usize),
     Effect(usize),

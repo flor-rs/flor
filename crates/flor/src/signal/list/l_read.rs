@@ -142,42 +142,65 @@ pub trait ListRead<T>: Signal {
         Some(out)
     }
 
-    /// 返回一个持有 DashMap 读锁的迭代器，逐行读取，避免整表 clone。
-    /// 如果信号不存在返回 None。
-    fn iter(&self) -> Option<ListIter<'_, T>>
+    /// 遍历元素的不可变引用，避免 clone；回调在持锁期间执行，引用不得逃出回调。
+    fn for_each_ref<F>(&self, mut f: F) -> Option<()>
+    where
+        F: FnMut(&T),
+        T: 'static,
+    {
+        self.track();
+        let guard = RUNTIME.list_signal.get(&self.id())?;
+        for item in guard.iter() {
+            if let Some(scope_id) = SCOPE.get() {
+                RUNTIME.subscribe(item.id, scope_id);
+            }
+            if let Some(v) = item.value.get_ref::<T>() {
+                f(v);
+            } else {
+                panic!("for_each_ref: to downcast list item type fail");
+            }
+        }
+        Some(())
+    }
+
+    /// 借用列表读锁，返回一个只读视图，可自行按需迭代获取引用。
+    /// 只要 `ListRef` 存在，读锁就持有；引用生命周期与 `ListRef` 绑定，避免 `unsafe` 和 clone。
+    fn try_borrow(&self) -> Option<ListRef<'_, T>>
     where
         T: 'static,
     {
         self.track();
         let guard = RUNTIME.list_signal.get(&self.id())?;
-        Some(ListIter {
+        Some(ListRef {
             guard,
-            index: 0,
             _type: PhantomData,
         })
     }
 }
 
-/// 只读迭代器，持有 DashMap 读锁生命周期
-pub struct ListIter<'a, T> {
+/// 只读视图，持有 DashMap 读锁；引用生命周期与视图同在
+pub struct ListRef<'a, T> {
     guard: Ref<'a, Id, Vec<ListItem>>,
-    index: usize,
     _type: PhantomData<T>,
 }
 
-impl<'a, T: 'static> Iterator for ListIter<'a, T> {
-    type Item = &'a T;
+impl<'a, T: 'static> ListRef<'a, T> {
+    pub fn len(&self) -> usize {
+        self.guard.len()
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.guard.len() {
-            return None;
-        }
-        let item = &self.guard[self.index];
-        self.index += 1;
-        Some(
-            item.value
-                .get_ref::<T>()
-                .expect("iter: to downcast list item type fail"),
-        )
+    pub fn is_empty(&self) -> bool {
+        self.guard.is_empty()
+    }
+
+    pub fn get(&'a self, index: usize) -> Option<&'a T> {
+        let item = self.guard.get(index)?;
+        item.value.get_ref::<T>()
+    }
+
+    pub fn iter(&'a self) -> impl Iterator<Item = &'a T> + 'a {
+        self.guard
+            .iter()
+            .filter_map(|item| item.value.get_ref::<T>())
     }
 }
