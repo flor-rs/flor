@@ -18,7 +18,6 @@ categories.workspace = true
 [features]
 default = []
 tiny-skia = ["dep:flor-graphics-tiny-skia", "cpu-render-backend"]
-glow = []
 direct2d = ["dep:flor-graphics-direct2d", "gpu-render-backend"]
 opengl = ["dep:flor-graphics-opengl", "gpu-render-backend"]
 cpu-render-backend = []
