@@ -1,12 +1,19 @@
-pub mod id;
+mod batch;
+mod create;
+mod effect;
+mod id;
+mod list;
+mod runtime;
+mod value;
 
-pub mod runtime;
+pub use {batch::*, create::*, effect::*, id::*, list::*, runtime::*, value::*};
 
-pub mod batch;
-pub mod effect;
-pub mod read;
-pub mod read_signal;
-pub mod rw_signal;
-pub mod value;
-pub mod write;
-pub mod write_signal;
+pub trait Signal {
+    fn id(&self) -> Id;
+    /// 信号是否仍存在（未被 destroy），不进行依赖追踪。
+    fn exists(&self) -> bool;
+    /// 销毁信号，清理存储与订阅。
+    fn destroy(&self) {
+        RUNTIME.destroy_signal(self.id());
+    }
+}

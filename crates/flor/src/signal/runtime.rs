@@ -1,7 +1,4 @@
-use crate::signal::batch::BATCH;
-use crate::signal::effect::signal_effect::SignalEffect;
-use crate::signal::id::Id;
-use crate::signal::value::Value;
+use crate::signal::{Id, ListItem, SignalEffect, Value, BATCH};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -26,6 +23,7 @@ pub struct Runtime {
     #[cfg(any(debug_assertions, feature = "signal-tracing"))]
     pub(crate) labels: DashMap<Id, String>,
     pub(crate) update_queue: Mutex<Vec<Id>>,
+    pub(crate) list_signal: DashMap<Id, Vec<ListItem>>,
 }
 
 impl Runtime {
@@ -78,6 +76,13 @@ impl Runtime {
     }
 
     pub fn destroy_signal(&self, signal_id: Id) {
+        // 如果是列表信号，先移除并递归销毁其行级信号 id
+        if let Some((_, items)) = self.list_signal.remove(&signal_id) {
+            for item in items {
+                self.destroy_signal(item.id);
+            }
+        }
+
         self.values.remove(&signal_id);
         if let Some((_, effect_ids)) = self.subscribe.remove(&signal_id) {
             for effect_id in effect_ids {

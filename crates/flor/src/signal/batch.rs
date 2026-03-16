@@ -1,5 +1,4 @@
-use crate::signal::id::Id;
-use crate::signal::runtime::RUNTIME;
+use crate::signal::{Id, RUNTIME};
 use rustc_hash::FxHashSet;
 use std::cell::RefCell;
 
@@ -19,11 +18,13 @@ pub struct Batch {
 /// - 所有更新在闭包执行完毕后，统一触发一次副作用（去重）。
 /// - **线程隔离**：批处理只影响当前线程，跨线程的信号更新不会被捕获到当前批处理中。
 pub fn batch(f: impl Fn()) {
+    use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+
     // 先设置 batch_mode
     BATCH.with(|batch| batch.borrow_mut().batch_mode = true);
 
-    // 执行闭包
-    f();
+    // 执行闭包，确保 panic 时也能复原状态
+    let result = catch_unwind(AssertUnwindSafe(f));
 
     // 批量收集并清理 signal_effect_ids
     let collected_signal_ids = BATCH.with(|batch| {
@@ -36,15 +37,17 @@ pub fn batch(f: impl Fn()) {
 
     // 批量触发副作用
     RUNTIME.insert_update_queue(collected_signal_ids);
+
+    // 如果闭包 panic，继续传递
+    if let Err(payload) = result {
+        resume_unwind(payload);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signal::effect::effect::create_effect;
-    use crate::signal::read::Read;
-    use crate::signal::rw_signal::create_signal;
-    use crate::signal::write::Write;
+    use crate::signal::{create_effect, create_signal, Read, Write};
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::{Arc, Mutex};

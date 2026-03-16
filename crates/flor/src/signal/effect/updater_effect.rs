@@ -1,6 +1,5 @@
-use crate::signal::effect::signal_effect::SignalEffect;
-use crate::signal::id::{EffectId, Id};
 use crate::signal::runtime::{RUNTIME, SCOPE};
+use crate::signal::{Id, SignalEffect};
 use std::marker::PhantomData;
 
 struct UpdaterEffect<C, U, T>
@@ -67,7 +66,7 @@ pub fn create_updater<R>(compute: impl Fn() -> R + 'static, on_change: impl Fn(R
 where
     R: 'static,
 {
-    let effect_id = Id::next();
+    let effect_id = Id::next_effect_id();
     let effect = UpdaterEffect {
         id: effect_id,
         compute,
@@ -82,11 +81,11 @@ where
 pub fn create_updater_with_id<R>(
     compute: impl Fn() -> R + 'static,
     on_change: impl Fn(R) + 'static,
-) -> (EffectId, R)
+) -> (Id, R)
 where
     R: 'static,
 {
-    let effect_id = Id::next();
+    let effect_id = Id::next_effect_id();
     let effect = UpdaterEffect {
         id: effect_id,
         compute,
