@@ -25,6 +25,14 @@ drag-drop = ["platform"]
 tray = ["platform"]
 clipboard = ["platform"]
 
+# Feature check
+tiny-skia = ["cpu-render-backend"]
+direct2d = ["gpu-render-backend"]
+opengl = ["gpu-render-backend"]
+cpu-render-backend = []
+gpu-render-backend = []
+no-check-backend = []
+
 [dependencies]
 cosmic-text = { workspace = true, optional = true }
 rustc-hash = { workspace = true, optional = true }

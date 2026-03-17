@@ -23,12 +23,6 @@ use flor_base::graphics::{
 use flor_base::types::{Color, Transform2D};
 use platform::WindowId;
 
-#[cfg(not(any(feature = "gpu-render-backend", feature = "cpu-render-backend")))]
-compile_error!("You need to enable the features of at least one CPU or GPU rendering backend.");
-
-#[cfg(all(feature = "direct2d", feature = "opengl"))]
-compile_error!("Only one GPU rendering backend can be enabled at most.");
-
 #[derive(Debug)]
 pub enum FlorRenderer {
     #[cfg(feature = "gpu-render-backend")]
@@ -37,7 +31,7 @@ pub enum FlorRenderer {
         #[cfg(feature = "opengl")] GlRenderer,
     ),
     #[cfg(feature = "cpu-render-backend")]
-    CPU(#[cfg(feature = "tiny-skia")] crate::graphics_cpu::TinySkiaRenderer),
+    CPU(#[cfg(feature = "tiny-skia")] graphics_cpu::TinySkiaRenderer),
 }
 
 impl FlorRenderer {
@@ -64,12 +58,12 @@ impl FlorRenderer {
         }
 
         #[cfg(feature = "tiny-skia")]
-        match crate::graphics_cpu::TinySkiaRenderer::create(
+        match graphics_cpu::TinySkiaRenderer::create(
             window_id,
             width,
             height,
             wait_v_sync,
-            crate::graphics_cpu::TinySkiaConfig::default(),
+            graphics_cpu::TinySkiaConfig::default(),
         ) {
             Ok(render) => return Ok(Self::CPU(render)),
             Err(err) => {
