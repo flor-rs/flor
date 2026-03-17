@@ -10,17 +10,23 @@ use std::ops::Deref;
 /// 当此守卫 drop 时，读锁自动释放。
 ///
 /// 通过 [`Read::get_ref`] 或 [`Read::try_get_ref`] 获取。
-pub struct SignalRef<'a, T: 'static> {
-    inner: Ref<'a, Id, Value>,
-    _type: PhantomData<T>,
+pub enum SignalRef<'a, T: 'static> {
+    Const(&'a T),
+    Dynamic {
+        inner: Ref<'a, Id, Value>,
+        _type: PhantomData<T>,
+    },
 }
 
 impl<'a, T: 'static> SignalRef<'a, T> {
-    pub(crate) fn new(inner: Ref<'a, Id, Value>) -> Self {
-        Self {
+    pub(crate) fn dynamic(inner: Ref<'a, Id, Value>) -> Self {
+        Self::Dynamic {
             inner,
             _type: PhantomData,
         }
+    }
+    pub(crate) fn constant(value: &'a T) -> Self {
+        Self::Const(value)
     }
 }
 
@@ -29,8 +35,11 @@ impl<'a, T: 'static> Deref for SignalRef<'a, T> {
 
     #[inline]
     fn deref(&self) -> &T {
-        self.inner
-            .get_ref::<T>()
-            .expect("SignalRef: downcast type failed")
+        match self {
+            SignalRef::Const(inner) => inner,
+            SignalRef::Dynamic { inner, _type } => inner
+                .get_ref::<T>()
+                .expect("SignalRef: downcast type failed"),
+        }
     }
 }

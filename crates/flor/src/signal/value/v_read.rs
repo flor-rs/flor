@@ -41,26 +41,20 @@ pub trait Read<T>: Signal {
     ///
     /// # 注意
     /// 持有守卫期间，同一线程对同一信号调用 `set`/`update`/`get_mut`/`get_mut_ref` 会死锁。
-    fn get_ref(&self) -> SignalRef<'static, T>
-    where
-        T: 'static,
-    {
+    fn get_ref(&self) -> SignalRef<'_, T> {
         self.track();
         let guard = RUNTIME.values.get(&self.id()).expect(
             "invalid signal id: this signal has likely been destroyed.\n\
                     If the signal lifetime is not guaranteed, use `try_get_ref()` instead.",
         );
-        SignalRef::new(guard)
+        SignalRef::dynamic(guard)
     }
 
     /// 尝试返回持有 DashMap 读锁的不可变引用守卫 [`SignalRef`]。
     /// 如果信号已被销毁，返回 `None`。
-    fn try_get_ref(&self) -> Option<SignalRef<'static, T>>
-    where
-        T: 'static,
-    {
+    fn try_get_ref(&self) -> Option<SignalRef<'_, T>> {
         self.track();
         let guard = RUNTIME.values.get(&self.id())?;
-        Some(SignalRef::new(guard))
+        Some(SignalRef::dynamic(guard))
     }
 }

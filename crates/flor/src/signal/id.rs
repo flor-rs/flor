@@ -5,6 +5,7 @@ pub enum Id {
     Signal(usize),
     Effect(usize),
     List(usize),
+    Const,
 }
 
 impl Id {
