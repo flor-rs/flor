@@ -165,7 +165,7 @@ impl UnitResolver {
         if let Some(v) = value.strip_suffix("vw") {
             return v.parse::<f32>().ok().map(|n| self.vw_to_px(n));
         }
-        None
+        value.parse::<f32>().ok().map(|n| self.rem_to_px(n * 0.25))
     }
 
     /// 解析百分比后缀 `%`，返回百分比数值
@@ -199,12 +199,9 @@ impl UnitResolver {
     ///
     /// - `"16px"` -> 16.0
     /// - `"1rem"` -> 16.0 (如果 rem_px = 16)
-    /// - `"16"` -> 16.0 (纯数字，不乘 4)
+    /// - `"16"` -> rem_to_px(16 * 0.25) (与 Tailwind 间距规则一致)
     pub fn parse_length(&self, value: &str) -> Option<f32> {
-        if let Some(px) = self.parse_unit_px(value) {
-            return Some(px);
-        }
-        value.parse::<f32>().ok()
+        self.parse_unit_px(value)
     }
 
     // ========================================================================
@@ -221,14 +218,11 @@ impl UnitResolver {
         if let Some(pct) = Self::parse_percent(value) {
             return Some(LengthPercentageAuto::Percent(pct));
         }
-        if let Some(px) = self.parse_unit_px(value) {
-            return Some(LengthPercentageAuto::Length(px));
-        }
-        if let Ok(n) = value.parse::<f32>() {
-            return Some(LengthPercentageAuto::Length(n * 4.0));
-        }
         if let Some(pct) = Self::parse_fraction(value) {
             return Some(LengthPercentageAuto::Percent(pct));
+        }
+        if let Some(px) = self.parse_unit_px(value) {
+            return Some(LengthPercentageAuto::Length(px));
         }
         None
     }
@@ -243,14 +237,11 @@ impl UnitResolver {
         if let Some(pct) = Self::parse_percent(value) {
             return Some(Dimension::Percent(pct));
         }
-        if let Some(px) = self.parse_unit_px(value) {
-            return Some(Dimension::Length(px));
-        }
-        if let Ok(n) = value.parse::<f32>() {
-            return Some(Dimension::Length(n * 4.0));
-        }
         if let Some(pct) = Self::parse_fraction(value) {
             return Some(Dimension::Percent(pct));
+        }
+        if let Some(px) = self.parse_unit_px(value) {
+            return Some(Dimension::Length(px));
         }
         None
     }
@@ -262,11 +253,11 @@ impl UnitResolver {
         if let Some(pct) = Self::parse_percent(value) {
             return Some(LengthPercentage::Percent(pct));
         }
+        if let Some(pct) = Self::parse_fraction(value) {
+            return Some(LengthPercentage::Percent(pct));
+        }
         if let Some(px) = self.parse_unit_px(value) {
             return Some(LengthPercentage::Length(px));
-        }
-        if let Ok(n) = value.parse::<f32>() {
-            return Some(LengthPercentage::Length(n * 4.0));
         }
         None
     }
