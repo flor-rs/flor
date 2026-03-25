@@ -19,6 +19,7 @@ mod control_state;
 pub mod focus_manager;
 mod frame_policy;
 pub mod handler;
+mod into_iter;
 pub mod resolver;
 mod scroll_state;
 mod view_id;
@@ -27,11 +28,12 @@ mod view_storage;
 mod visual_overflow;
 
 pub use {
-    control_state::*, frame_policy::*, handler::*, scroll_state::*, view_id::*, view_state::*,
-    view_storage::*, visual_overflow::*,
+    control_state::*, frame_policy::*, handler::*, into_iter::*, scroll_state::*, view_id::*,
+    view_state::*, view_storage::*, visual_overflow::*,
 };
 
-/// View特征定义了所有UI组件的基本行为
+pub type ViewBox = Box<dyn View + Send + Sync + 'static>;
+
 pub trait View {
     /// 获取视图ID
     fn view_id(&self) -> ViewId;

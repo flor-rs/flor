@@ -3,7 +3,7 @@ use crate::render::FlorRenderer;
 use crate::signal::create_updater;
 use crate::view::builder::ViewBuilder;
 use crate::view::resolver::Unit;
-use crate::view::View;
+use crate::view::{IntoViewIter, View};
 use crate::view::{ViewStorage, VIEW_STORAGE};
 use crate::windows::bus;
 use crate::windows::WindowBusDispatchEntry;
@@ -54,9 +54,10 @@ impl WindowOption {
     pub fn open<F, V>(self, view_fn: F) -> Result<WindowId, Error>
     where
         F: Fn(WindowId) -> V + Send + Sync + 'static,
-        V: IntoIterator<Item = Box<dyn View + Send + Sync + 'static>>,
+        V: IntoViewIter,
     {
-        let view_fn = Box::new(move |window_id| view_fn(window_id).into_iter().collect::<Vec<_>>());
+        let view_fn =
+            Box::new(move |window_id| view_fn(window_id).into_view_iter().collect::<Vec<_>>());
 
         #[cfg(feature = "cross-thread-window-creation")]
         {
