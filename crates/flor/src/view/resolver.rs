@@ -92,6 +92,10 @@ where
         self
     }
 
+    pub fn switch(&mut self, control_state: ControlState) {
+        self.current_key = control_state;
+    }
+
     #[inline(always)]
     pub fn base(self) -> Self {
         self.normal()

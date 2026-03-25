@@ -205,6 +205,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
         let variant_ident = &v.ident;
         let snake_name = variant_ident.to_string().to_snake_case();
         let method_name = syn::Ident::new(&snake_name, variant_ident.span());
+        let set_method_name = format_ident!("set_{}", snake_name);
         let field_name = syn::Ident::new(&snake_name, variant_ident.span());
 
         // 始终添加 Key 枚举变体
@@ -243,8 +244,16 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
 
                 if !has_skip_linkfn {
                     trait_methods.push(quote! { fn #method_name(self, value: #ty) -> Self; });
+                    trait_methods
+                        .push(quote! { fn #set_method_name(&mut self, value: #ty) -> &mut Self; });
                     impl_methods.push(quote! {
                         fn #method_name(mut self, value: #ty) -> Self {
+                            self.push(#key_enum_name::#variant_ident, #enum_name::#variant_ident(value));
+                            self
+                        }
+                    });
+                    impl_methods.push(quote! {
+                        fn #set_method_name(&mut self, value: #ty) -> &mut Self {
                             self.push(#key_enum_name::#variant_ident, #enum_name::#variant_ident(value));
                             self
                         }
@@ -288,8 +297,17 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
 
                 if !has_skip_linkfn {
                     trait_methods.push(quote! { fn #method_name(self, #(#trait_args),*) -> Self; });
+                    trait_methods.push(
+                        quote! { fn #set_method_name(&mut self, #(#trait_args),*) -> &mut Self; },
+                    );
                     impl_methods.push(quote! {
                         fn #method_name(mut self, #(#trait_args),*) -> Self {
+                            self.push(#key_enum_name::#variant_ident, #enum_name::#variant_ident(#(#args),*));
+                            self
+                        }
+                    });
+                    impl_methods.push(quote! {
+                        fn #set_method_name(&mut self, #(#trait_args),*) -> &mut Self {
                             self.push(#key_enum_name::#variant_ident, #enum_name::#variant_ident(#(#args),*));
                             self
                         }
@@ -336,8 +354,17 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
 
                 if !has_skip_linkfn {
                     trait_methods.push(quote! { fn #method_name(self, #(#trait_args),*) -> Self; });
+                    trait_methods.push(
+                        quote! { fn #set_method_name(&mut self, #(#trait_args),*) -> &mut Self; },
+                    );
                     impl_methods.push(quote! {
                         fn #method_name(mut self, #(#trait_args),*) -> Self {
+                            self.push(#key_enum_name::#variant_ident, #enum_name::#variant_ident { #(#args),* });
+                            self
+                        }
+                    });
+                    impl_methods.push(quote! {
+                        fn #set_method_name(&mut self, #(#trait_args),*) -> &mut Self {
                             self.push(#key_enum_name::#variant_ident, #enum_name::#variant_ident { #(#args),* });
                             self
                         }
