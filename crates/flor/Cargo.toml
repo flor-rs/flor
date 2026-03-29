@@ -60,9 +60,10 @@ flor-graphics-direct2d = { workspace = true, optional = true }
 flor-graphics-opengl = { workspace = true, optional = true }
 flor-graphics-tiny-skia = { workspace = true, optional = true }
 taffy = { workspace = true }
-parking_lot = "0.12"
+parking_lot = { workspace = true }
 slotmap = { workspace = true }
 dashmap = { workspace = true }
+rand = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 flor-platform = { version = "0.1.0", path = "../platform/windows", package = "flor-platform-windows" }

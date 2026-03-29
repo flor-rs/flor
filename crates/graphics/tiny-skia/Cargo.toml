@@ -14,14 +14,11 @@ svg = ["flor-base/svg", "dep:usvg", "dep:resvg"]
 memory-font = ["flor-base/memory-font"]
 
 [dependencies]
-usvg = { version = "0.47.0", optional = true }
-resvg = { version = "0.47.0", optional = true }
-cosmic-text = "0.18"
-tiny-skia = "0.12.0"
-log = { workspace = true }
+usvg = { workspace = true, optional = true }
+resvg = { workspace = true, optional = true }
+cosmic-text = { workspace = true }
+tiny-skia = { workspace = true }
 thiserror = { workspace = true }
-rustc-hash = { workspace = true }
-once_cell = { workspace = true }
 parking_lot = { workspace = true }
 image = { workspace = true, default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
 flor-base = { workspace = true, features = ["graphics", "text-layout"] }
@@ -30,7 +27,7 @@ windows = { workspace = true, features = [
     "Win32_Graphics_Dwm",
 ] }
 slotmap = { workspace = true }
-libblur = "0.23.1"
+libblur = { workspace = true }
 
 [lints]
 workspace = true
