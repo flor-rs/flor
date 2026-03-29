@@ -163,7 +163,10 @@ fn computed_layout(
     state: ControlState,
     state_variants: &FxHashMap<ControlState, FxHashMap<LayoutKey, Layout>>,
 ) -> Style {
-    let mut layout_style = Style::default();
+    let mut layout_style = Style {
+        align_items: Some(AlignItems::Start),
+        ..Style::DEFAULT
+    };
 
     // 1. 预先获取特定状态（Specific）的 Map 引用
     // 用于在处理 Normal 层的昂贵数据时进行“查重”，避免无效 Clone
@@ -305,7 +308,7 @@ fn computed_layout(
                 Layout::Gap(v) => layout_style.gap = *v,
 
                 #[cfg(feature = "layout-block")]
-                TextAlign(v) => layout_style.text_align = *v,
+                Layout::TextAlign(v) => layout_style.text_align = *v,
 
                 #[cfg(feature = "layout-flex")]
                 Layout::FlexDirection(v) => layout_style.flex_direction = *v,
