@@ -205,6 +205,7 @@ pub trait View {
     fn on_draw(
         &mut self,
         render: &mut FlorRenderer,
+        control_state: ControlState,
         abs_location: (f32, f32),
         layout: ComputedLayout,
     ) -> Result<(), Error> {

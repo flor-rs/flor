@@ -133,7 +133,7 @@ pub fn draw_entry(window_id: WindowId, render: &mut FlorRenderer) -> Result<(), 
                 // Draw
                 visuals.insert(view_id, ());
                 view.write()
-                    .on_draw(render, abs_location, layout)
+                    .on_draw(render, control_state, abs_location, layout)
                     .error_on_err(format!("view id: {}", view_id));
                 drawn_count += 1;
 

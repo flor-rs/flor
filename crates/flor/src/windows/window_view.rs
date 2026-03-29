@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::render::FlorRenderer;
-use crate::view::View;
 use crate::view::ViewId;
+use crate::view::{ControlState, View};
 use crate::windows::{WindowEntryVisit, WINDOW_ENTRY_MAP};
 use flor_base::graphics::RenderContext;
 use flor_base::platform::WindowApi;
@@ -23,6 +23,7 @@ impl View for WindowId {
     fn on_draw(
         &mut self,
         render: &mut FlorRenderer,
+        _control_state: ControlState,
         _abs_location: (f32, f32),
         _layout: Layout,
     ) -> Result<(), Error> {
