@@ -7,7 +7,7 @@ use crate::view::control_state::ControlState;
 use crate::view::handler::ViewHandler;
 #[cfg(feature = "class")]
 use crate::view::resolver::{Class, LayoutResolver};
-use crate::view::{View, ViewState, VIEW_STORAGE};
+use crate::view::{ScrollState, View, ViewState, VIEW_STORAGE};
 use crate::windows::{render_from_view_id, WindowBusDispatchEntry, WindowEntryVisit};
 use flor_base::graphics::RenderContext;
 #[cfg(feature = "drag-drop")]
@@ -208,6 +208,10 @@ impl ViewId {
 
     pub fn is_scroll_view(self) -> bool {
         VIEW_STORAGE.scroll.read().get(self).copied().is_some()
+    }
+
+    pub fn register_scroll(self, scroll_state: ScrollState) {
+        VIEW_STORAGE.scroll.write().insert(self, scroll_state);
     }
 
     /// 获取当前滚动位置 (Current Scroll Offset)
