@@ -749,7 +749,7 @@ pub trait View {
         Ok(())
     }
     #[allow(unused_variables)]
-    fn on_ime_input(&mut self, input_event: &InputEvent) -> Result<(), Error> {
+    fn on_ime_input(&mut self, input_event: InputEvent) -> Result<(), Error> {
         Ok(())
     }
 

@@ -64,7 +64,8 @@ pub enum KeyCode {
     Right,
     Up,
     Down,
+    Delete,
 
     // 其他不常用按键
-    Other(u16),
+    Platform(u16),
 }

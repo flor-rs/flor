@@ -12,8 +12,8 @@ pub fn ime_input_entry(window_id: WindowId, input_event: InputEvent) {
     {
         if let Some(view) = VIEW_STORAGE.views.read().get(view_id) {
             view.write()
-                .on_ime_input(&input_event)
-                .error_on_err(format!("on_ime_input {{ {:?} }}", input_event));
+                .on_ime_input(input_event)
+                .error_on_err(format!("on_ime_input"));
         }
     }
 }

@@ -2,10 +2,10 @@
 use crate::base::KeyCode;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9, VK_A, VK_B, VK_BACK,
-    VK_C, VK_D, VK_DOWN, VK_E, VK_ESCAPE, VK_F, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4,
-    VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_G, VK_H, VK_I, VK_J, VK_K, VK_L, VK_LEFT, VK_M, VK_N,
-    VK_O, VK_P, VK_Q, VK_R, VK_RETURN, VK_RIGHT, VK_S, VK_SPACE, VK_T, VK_TAB, VK_U, VK_UP, VK_V,
-    VK_W, VK_X, VK_Y, VK_Z,
+    VK_C, VK_D, VK_DELETE, VK_DOWN, VK_E, VK_ESCAPE, VK_F, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2,
+    VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_G, VK_H, VK_I, VK_J, VK_K, VK_L, VK_LEFT,
+    VK_M, VK_N, VK_O, VK_P, VK_Q, VK_R, VK_RETURN, VK_RIGHT, VK_S, VK_SPACE, VK_T, VK_TAB, VK_U,
+    VK_UP, VK_V, VK_W, VK_X, VK_Y, VK_Z,
 };
 
 pub trait FromVkCode {
@@ -79,9 +79,10 @@ impl FromVkCode for KeyCode {
             VK_UP => KeyCode::Up,
             VK_RIGHT => KeyCode::Right,
             VK_DOWN => KeyCode::Down,
+            VK_DELETE => KeyCode::Delete,
 
             // 其他
-            VIRTUAL_KEY(v) => KeyCode::Other(v),
+            VIRTUAL_KEY(v) => KeyCode::Platform(v),
         }
     }
 }
