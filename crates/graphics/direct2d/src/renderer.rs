@@ -2687,7 +2687,9 @@ impl D2DRenderer {
             // Line Height
             if (text_format.line_height() - 1.0).abs() > f32::EPSILON {
                 let line_spacing = text_format.font_size() * text_format.line_height();
-                let baseline = line_spacing * 0.8;
+                let extra_space = line_spacing - text_format.font_size();
+                let baseline = extra_space / 2.0 + text_format.font_size() * 0.85;
+
                 new_text_format.SetLineSpacing(
                     DWRITE_LINE_SPACING_METHOD_UNIFORM,
                     line_spacing,
