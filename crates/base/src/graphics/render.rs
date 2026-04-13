@@ -1,6 +1,6 @@
 use crate::graphics::{
     BrushHandle, Gradient, HitTestResult, ImageDrawOptions, ImageHandle, Path, PathDrawOptions,
-    SurfaceDrawOptions, SurfaceId, TextDrawOptions, TextFormatHandle,
+    SurfaceDrawOptions, SurfaceId, TextChunk, TextDrawOptions, TextFormatHandle,
 };
 #[cfg(feature = "svg")]
 use crate::graphics::{SvgDrawOptions, SvgHandle};
@@ -88,6 +88,7 @@ pub trait RenderContext: Any {
         text_format: &Self::TextFormatHandle,
         width: f32,
         height: f32,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<(f32, f32), Self::Error>;
     /// 像素点 -> 字符索引
     fn hit_test_point(
@@ -98,6 +99,7 @@ pub trait RenderContext: Any {
         height: f32,
         x: f32,
         y: f32,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<HitTestResult, Self::Error>;
 
     /// 字符索引 -> 像素点（光标）
@@ -109,6 +111,7 @@ pub trait RenderContext: Any {
         height: f32,
         text_index: usize,
         trailing: bool,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<(f32, f32), Self::Error>;
 
     /// 创建 Brush
@@ -164,7 +167,8 @@ pub trait RenderContext: Any {
         top: f32,
         width: f32,
         height: f32,
-        brush: &Self::BrushHandle,
+        default_brush: &Self::BrushHandle,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
         options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error>;
 

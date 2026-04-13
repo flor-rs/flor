@@ -5,7 +5,7 @@ use crate::handle::{
 };
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
-    RenderContext, SurfaceDrawOptions, TextDrawOptions,
+    RenderContext, SurfaceDrawOptions, TextChunk, TextDrawOptions,
 };
 use flor_base::types::{Color, Transform2D};
 use libblur::BlurError;
@@ -530,23 +530,6 @@ impl RenderContext for TinySkiaRenderer {
     fn set_scale_factor(&mut self, dpi_x: f32, dpi_y: f32) -> Result<(), Self::Error> {
         let _timer = FuncTimer::new("set_scale_factor");
         self.dpi_scale = (dpi_x, dpi_y);
-
-        // let transform = match scale {
-        //     Some(t) => tiny_skia::Transform::from_row(t.m11, t.m12, t.m21, t.m22, t.dx, t.dy),
-        //     None => {
-        //         let scale_x = dpi_x / 96.0;
-        //         let scale_y = dpi_y / 96.0;
-        //         if (scale_x - 1.0).abs() < f32::EPSILON && (scale_y - 1.0).abs() < f32::EPSILON {
-        //             tiny_skia::Transform::identity()
-        //         } else {
-        //             tiny_skia::Transform::from_scale(scale_x, scale_y)
-        //         }
-        //     }
-        // };
-
-        // if let Some(first) = self.transform_stack.first_mut() {
-        //     *first = transform;
-        // }
         Ok(())
     }
 
@@ -671,10 +654,22 @@ impl RenderContext for TinySkiaRenderer {
         text_format: &Self::TextFormatHandle,
         width: f32,
         height: f32,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<(f32, f32), Self::Error> {
         let _timer = FuncTimer::new("measure_text");
         let (dpi_x, dpi_y) = self.dpi_scale;
         let mut temp_system = text_format.font_system.write();
+        let mut layout_config = Vec::new();
+        if let Some(chunks) = chunks {
+            for chunk in chunks {
+                let attrs = chunk
+                    .text_format
+                    .config
+                    .to_cosmic_attrs()
+                    .metadata(layout_config.len());
+                layout_config.push((attrs, chunk.start, chunk.length));
+            }
+        }
         Ok(flor_base::graphics::text_layout::measure_text(
             &mut temp_system,
             text,
@@ -683,6 +678,11 @@ impl RenderContext for TinySkiaRenderer {
             height,
             dpi_x,
             dpi_y,
+            if layout_config.is_empty() {
+                None
+            } else {
+                Some(&layout_config)
+            },
         ))
     }
 
@@ -694,10 +694,22 @@ impl RenderContext for TinySkiaRenderer {
         height: f32,
         x: f32,
         y: f32,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<HitTestResult, Self::Error> {
         let _timer = FuncTimer::new("hit_test_point");
         let (dpi_x, dpi_y) = self.dpi_scale;
         let mut temp_system = text_format.font_system.write();
+        let mut layout_config = Vec::new();
+        if let Some(chunks) = chunks {
+            for chunk in chunks {
+                let attrs = chunk
+                    .text_format
+                    .config
+                    .to_cosmic_attrs()
+                    .metadata(layout_config.len());
+                layout_config.push((attrs, chunk.start, chunk.length));
+            }
+        }
         Ok(flor_base::graphics::text_layout::hit_test_point(
             &mut temp_system,
             text,
@@ -708,6 +720,11 @@ impl RenderContext for TinySkiaRenderer {
             dpi_y,
             x,
             y,
+            if layout_config.is_empty() {
+                None
+            } else {
+                Some(&layout_config)
+            },
         ))
     }
 
@@ -719,10 +736,22 @@ impl RenderContext for TinySkiaRenderer {
         height: f32,
         text_index: usize,
         trailing: bool,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<(f32, f32), Self::Error> {
         let _timer = FuncTimer::new("hit_test_text_position");
         let (dpi_x, dpi_y) = self.dpi_scale;
         let mut temp_system = text_format.font_system.write();
+        let mut layout_config = Vec::new();
+        if let Some(chunks) = chunks {
+            for chunk in chunks {
+                let attrs = chunk
+                    .text_format
+                    .config
+                    .to_cosmic_attrs()
+                    .metadata(layout_config.len());
+                layout_config.push((attrs, chunk.start, chunk.length));
+            }
+        }
         Ok(flor_base::graphics::text_layout::hit_test_text_position(
             &mut temp_system,
             text,
@@ -733,6 +762,11 @@ impl RenderContext for TinySkiaRenderer {
             dpi_y,
             text_index,
             trailing,
+            if layout_config.is_empty() {
+                None
+            } else {
+                Some(&layout_config)
+            },
         ))
     }
 
@@ -1187,15 +1221,30 @@ impl RenderContext for TinySkiaRenderer {
         top: f32,
         width: f32,
         height: f32,
-        brush: &Self::BrushHandle,
+        default_brush: &Self::BrushHandle,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
         options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error> {
         let _timer = FuncTimer::new("draw_text");
         let (dpi_x, dpi_y) = self.dpi_scale;
         let phys_height = height * dpi_y;
-        // Note: phys_width is computed inside prepare_text_buffer;
-        // draw_text itself only needs phys_height for paragraph alignment.
 
+        let mut brushes = Vec::new();
+        let mut layout_config = Vec::new();
+        if let Some(chunks) = chunks {
+            for chunk in chunks {
+                let brush = chunk.brush;
+                brushes.push(brush);
+                let attrs = chunk
+                    .text_format
+                    .config
+                    .to_cosmic_attrs()
+                    .metadata(brushes.len() - 1);
+                layout_config.push((attrs, chunk.start, chunk.length));
+            }
+        }
+
+        // 编译文本布局
         let mut temp_system = text_format.font_system.write();
         let buffer = flor_base::graphics::text_layout::prepare_text_buffer(
             &mut temp_system,
@@ -1205,21 +1254,27 @@ impl RenderContext for TinySkiaRenderer {
             height,
             dpi_x,
             dpi_y,
+            if layout_config.is_empty() {
+                None
+            } else {
+                Some(&layout_config)
+            },
         );
 
+        // 计算文本总高度
         let mut total_h = 0.0f32;
         for run in buffer.layout_runs() {
             total_h += run.line_height;
         }
 
+        // 计算段落对齐的 Y 偏移
         let offset_y = match text_format.config.paragraph_alignment {
             ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
             ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
             _ => 0.0,
         };
 
-        let runs: Vec<_> = buffer.layout_runs().collect();
-
+        // 获取渲染变换
         let transform = self.get_options_transform(options);
 
         let draw_glyphs = |swash_cache: &mut cosmic_text::SwashCache,
@@ -1228,31 +1283,32 @@ impl RenderContext for TinySkiaRenderer {
                            clip_mask: Option<&tiny_skia::Mask>,
                            render_transform: tiny_skia::Transform,
                            override_color: Option<tiny_skia::Color>| {
-            for (_run_idx, run) in runs.iter().enumerate() {
+            for run in buffer.layout_runs() {
                 for glyph in run.glyphs.iter() {
-                    // cosmic_text already handles justified alignment by
-                    // distributing extra space into glyph.x positions on
-                    // non-last lines.  The last line of a paragraph is
-                    // intentionally left-aligned (standard typography).
-                    let glyph_x_shift = 0.0f32;
+                    // let start_byte = run
+                    //     .text
+                    //     .char_indices()
+                    //     .nth(glyph.start)
+                    //     .map_or(run.text.len(), |(i, _)| i);
+                    // let end_byte = run
+                    //     .text
+                    //     .char_indices()
+                    //     .nth(glyph.end)
+                    //     .map_or(run.text.len(), |(i, _)| i);
+
+                    // let glyph_text = &run.text[start_byte..end_byte];
+                    // debug!(
+                    //     "glyph: start={}, end={}, text={:?}",
+                    //     glyph.start, glyph.end, glyph_text
+                    // );
+
+                    let current_brush = brushes.get(glyph.metadata).unwrap_or(&default_brush);
 
                     let has_rotation = render_transform.kx != 0.0 || render_transform.ky != 0.0;
 
-                    // ── Vector-outline path (rotation present) ──────────────────
-                    // Like D2D, obtain the glyph outline as vector commands and
-                    // fill the resulting path with the *full* render_transform.
-                    // Rasterization happens AFTER the rotation, so there is zero
-                    // bitmap interpolation loss.
                     if has_rotation {
-                        // We still need a CacheKey at 1× DPI scale to fetch the
-                        // *unscaled* outline from cosmic-text.
-                        let physical_glyph = glyph.physical(
-                            (
-                                left * dpi_x + glyph_x_shift,
-                                top * dpi_y + offset_y + run.line_y,
-                            ),
-                            1.0,
-                        );
+                        let physical_glyph = glyph
+                            .physical((left * dpi_x, top * dpi_y + offset_y + run.line_y), 1.0);
 
                         if let Some(commands) =
                             swash_cache.get_outline_commands(temp_system, physical_glyph.cache_key)
@@ -1260,10 +1316,6 @@ impl RenderContext for TinySkiaRenderer {
                             let gx = physical_glyph.x as f32;
                             let gy = physical_glyph.y as f32;
 
-                            // Build a tiny_skia::Path from the outline commands.
-                            // The commands are in glyph-local space (origin at
-                            // the glyph's rasterization position).  We translate
-                            // them to pixel coordinates.
                             let mut pb = tiny_skia::PathBuilder::new();
                             for cmd in commands {
                                 match cmd {
@@ -1294,7 +1346,7 @@ impl RenderContext for TinySkiaRenderer {
 
                             if let Some(glyph_path) = pb.finish() {
                                 let fill_color = override_color.or_else(|| {
-                                    if let TinySkiaBrushHandle::Solid(c) = brush {
+                                    if let TinySkiaBrushHandle::Solid(c) = current_brush {
                                         Some(*c)
                                     } else {
                                         None
@@ -1307,14 +1359,9 @@ impl RenderContext for TinySkiaRenderer {
                                 if let Some(c) = fill_color {
                                     paint.set_color(c);
                                 } else {
-                                    Self::set_brush(brush, &mut paint);
+                                    Self::set_brush(current_brush, &mut paint);
                                 }
 
-                                // The outline coordinates are in physical (DPI-scaled)
-                                // pixel space.  The render_transform already
-                                // contains the DPI scale, so we need to undo it
-                                // before applying the full transform:
-                                //   render_transform * Scale(1/dpi_x, 1/dpi_y)
                                 let outline_transform =
                                     render_transform.pre_scale(1.0 / dpi_x, 1.0 / dpi_y);
 
@@ -1327,12 +1374,9 @@ impl RenderContext for TinySkiaRenderer {
                                 );
                             }
                         }
-                        // Outline not available (e.g. color emoji) → fall through
-                        // to bitmap path below is not needed; simply skip.
                         continue;
                     }
 
-                    // ── Bitmap path (no rotation — fast path) ───────────────────
                     let scale_x = (render_transform.sx * render_transform.sx
                         + render_transform.ky * render_transform.ky)
                         .sqrt();
@@ -1341,14 +1385,16 @@ impl RenderContext for TinySkiaRenderer {
                         .sqrt();
                     let raster_scale = scale_x.max(scale_y).max(0.001);
 
+                    // 使用 glyph 的字体属性创建物理字形
                     let physical_glyph = glyph.physical(
                         (
-                            (left * dpi_x + glyph_x_shift) * raster_scale,
+                            left * dpi_x * raster_scale,
                             (top * dpi_y + offset_y + run.line_y) * raster_scale,
                         ),
                         raster_scale,
                     );
 
+                    // 从缓存获取字形图像
                     if let Some(image) =
                         swash_cache.get_image(temp_system, physical_glyph.cache_key)
                     {
@@ -1362,20 +1408,23 @@ impl RenderContext for TinySkiaRenderer {
                             continue;
                         }
 
+                        // 创建 pixmap 并填充像素
                         if let Some(mut pixmap) =
                             Pixmap::new(image.placement.width, image.placement.height)
                         {
                             let pixels = pixmap.pixels_mut();
                             let mut i = 0;
 
+                            // 确定基础字形颜色
                             let mut base_glyph_color = override_color;
                             if base_glyph_color.is_none() {
-                                if let TinySkiaBrushHandle::Solid(c) = brush {
+                                if let TinySkiaBrushHandle::Solid(c) = current_brush {
                                     let color_op = *c;
                                     base_glyph_color = Some(color_op);
                                 }
                             }
 
+                            // 根据图像内容类型处理像素
                             match image.content {
                                 cosmic_text::SwashContent::SubpixelMask => {
                                     for _y in 0..image.placement.height {
@@ -1433,6 +1482,7 @@ impl RenderContext for TinySkiaRenderer {
 
                             let inv_raster = 1.0 / raster_scale;
 
+                            // 处理渐变画笔
                             if base_glyph_color.is_none() {
                                 let mut stops = Vec::new();
                                 let mut local_shader = None;
@@ -1443,7 +1493,7 @@ impl RenderContext for TinySkiaRenderer {
                                     .invert()
                                     .unwrap_or(tiny_skia::Transform::identity());
 
-                                if let TinySkiaBrushHandle::Gradient { gradient } = brush {
+                                if let TinySkiaBrushHandle::Gradient { gradient } = current_brush {
                                     match gradient {
                                         Gradient::Linear { start, end, colors } => {
                                             for (pos, c) in colors {
@@ -1506,6 +1556,7 @@ impl RenderContext for TinySkiaRenderer {
                                 }
                             }
 
+                            // 计算局部变换
                             let local_transform = render_transform
                                 .pre_translate(logical_gx, logical_gy)
                                 .pre_scale(inv_raster, inv_raster);
@@ -1513,6 +1564,7 @@ impl RenderContext for TinySkiaRenderer {
                             let mut pixmap_paint = PixmapPaint::default();
                             pixmap_paint.quality = tiny_skia::FilterQuality::Bicubic;
 
+                            // 绘制 pixmap 到目标
                             render_target.draw_pixmap(
                                 0,
                                 0,
@@ -1527,12 +1579,18 @@ impl RenderContext for TinySkiaRenderer {
             }
         };
 
+        // ====================================================================
+        // 第三阶段：绘制阴影（如果有）
+        // ====================================================================
+
         if let Some(opts) = options {
             if let Some(shadow) = &opts.shadow {
                 let shadow_color = shadow.color.to_tiny_skia();
 
+                // ------------------------------------------------------------
+                // 子阶段 3.1：硬阴影（无模糊）
+                // ------------------------------------------------------------
                 if shadow.blur_radius <= 0.0 {
-                    // Fast path hard shadow
                     let shadow_transform =
                         transform.post_translate(shadow.offset_x, shadow.offset_y);
                     let (cache, mut p, c) = self.split_pixmap_and_cache();
@@ -1544,27 +1602,24 @@ impl RenderContext for TinySkiaRenderer {
                         shadow_transform,
                         Some(shadow_color),
                     );
-                } else {
-                    // Soft shadow — rendered into an offscreen pixmap, blurred,
-                    // then composited back with offset (and optional rotation).
-
-                    // ── 1. Strip rotation from transform for the offscreen render ──
-                    // We need to render glyphs *without* rotation into the shadow
-                    // pixmap (so the BB calculation is valid and glyphs fit).
-                    // The rotation is re-applied during compositing.
-                    let base_transform = self.get_current_transform(); // DPI + view, no user xform
-                                                                       // `transform` = base_transform * user_xform (may include rotation)
-                                                                       // For shadow offscreen, use only base_transform (DPI scale).
+                }
+                // ------------------------------------------------------------
+                // 子阶段 3.2：软阴影（有模糊）
+                // ------------------------------------------------------------
+                else {
+                    // 步骤 1：从变换中移除旋转（用于离屏渲染）
+                    let base_transform = self.get_current_transform();
 
                     let pad = (shadow.blur_radius.ceil() * 3.0).max(0.0);
                     let pad_log = pad;
 
+                    // 计算文本边界框
                     let mut bb_min_x = f32::MAX;
                     let mut bb_min_y = f32::MAX;
                     let mut bb_max_x = f32::MIN;
                     let mut bb_max_y = f32::MIN;
 
-                    for run in runs.iter() {
+                    for run in buffer.layout_runs() {
                         for glyph in run.glyphs.iter() {
                             let px = left + glyph.x / dpi_x;
                             let py = top + offset_y / dpi_y + run.line_y / dpi_y;
@@ -1588,9 +1643,7 @@ impl RenderContext for TinySkiaRenderer {
                         if let Some(mut shadow_pixmap) = Pixmap::new(sw, sh) {
                             shadow_pixmap.fill(tiny_skia::Color::TRANSPARENT);
 
-                            // ── 2. Draw glyphs into shadow pixmap (no rotation) ──
-                            // Use base_transform (DPI only) shifted so that
-                            // bb_min maps to (pad_log, pad_log) in pixmap space.
+                            // 步骤 2：将字形绘制到阴影 pixmap（无旋转）
                             let bounds_transform = base_transform
                                 .pre_translate(-bb_min_x + pad_log, -bb_min_y + pad_log);
                             let swash_cache = &mut self.swash_cache;
@@ -1603,11 +1656,7 @@ impl RenderContext for TinySkiaRenderer {
                                 Some(shadow_color),
                             );
 
-                            // ── 3. Blur ──
-                            // D2D uses `blur_radius` as Gaussian standard deviation
-                            // (sigma).  libblur's fast_gaussian uses radius.  To
-                            // approximate: radius ≈ 2 * sigma gives a visually
-                            // similar spread.
+                            // 步骤 3：模糊处理
                             let blur_px =
                                 (shadow.blur_radius * 2.0 * dpi_x).round().max(1.0) as u32;
                             Self::fast_blur(
@@ -1618,11 +1667,8 @@ impl RenderContext for TinySkiaRenderer {
                             )
                             .ok();
 
-                            // ── 4. Composite the blurred shadow onto the screen ──
-                            // Extract the user's rotation/scale from the full
-                            // transform so the shadow rotates with the text.
+                            // 步骤 4：将模糊后的阴影合成到屏幕上
                             let user_xform = if transform != base_transform {
-                                // user_xform = base_transform⁻¹ * transform
                                 base_transform
                                     .invert()
                                     .map(|inv| inv.pre_concat(transform))
@@ -1631,8 +1677,6 @@ impl RenderContext for TinySkiaRenderer {
                                 tiny_skia::Transform::identity()
                             };
 
-                            // Position shadow pixmap at the correct screen location,
-                            // then apply the user's rotation.
                             let shadow_draw_transform = user_xform.pre_translate(
                                 bb_min_x - pad_log + shadow.offset_x,
                                 bb_min_y - pad_log + shadow.offset_y,

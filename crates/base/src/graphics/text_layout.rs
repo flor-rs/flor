@@ -119,6 +119,62 @@ fn check_layout_overflow(buffer: &Buffer, phys_width: f32, phys_height: f32, hei
     false
 }
 
+/// Set text to buffer with appropriate method based on whether chunks are provided
+fn set_text_to_buffer(
+    buffer: &mut Buffer,
+    font_system: &mut FontSystem,
+    text: &str,
+    chunks: Option<&[(Attrs, usize, usize)]>,
+    config: &TextLayoutConfig,
+) {
+    if let Some(chunks) = chunks {
+        if !chunks.is_empty() {
+            let mut spans = Vec::new();
+            let text_len = text.len();
+            let mut last_end = 0;
+            let default_attrs = config.to_cosmic_attrs();
+
+            for chunk in chunks {
+                let start = chunk.1.min(text_len);
+                let end = (chunk.1 + chunk.2).min(text_len);
+
+                if start > last_end {
+                    spans.push((&text[last_end..start], default_attrs.clone()));
+                }
+                if end > start {
+                    spans.push((&text[start..end], chunk.0.clone()));
+                    last_end = end;
+                }
+            }
+
+            // 补全最后一段
+            if last_end < text_len {
+                spans.push((&text[last_end..text_len], default_attrs.clone()));
+            }
+
+            // 使用默认属性作为基础，spans 中的属性会覆盖它
+            buffer.set_rich_text(
+                font_system,
+                spans,
+                &default_attrs,
+                Shaping::Advanced,
+                config.to_cosmic_align(),
+            );
+            buffer.shape_until_scroll(font_system, false);
+            return;
+        }
+    }
+    buffer.set_text(
+        font_system,
+        text,
+        &config.to_cosmic_attrs(),
+        Shaping::Advanced,
+        config.to_cosmic_align(),
+    );
+    buffer.shape_until_scroll(font_system, false);
+}
+
+/// (meta, TextLayoutConfig)
 pub fn prepare_text_buffer(
     font_system: &mut FontSystem,
     text: &str,
@@ -127,6 +183,7 @@ pub fn prepare_text_buffer(
     height: f32,
     dpi_x: f32,
     dpi_y: f32,
+    chunk: Option<&[(Attrs, usize, usize)]>,
 ) -> Buffer {
     let font_size = config.font_size * dpi_y;
     let phys_width = width * dpi_x;
@@ -161,14 +218,8 @@ pub fn prepare_text_buffer(
     let mut final_text = text.to_string();
 
     if width > 0.0 && trimming != TextTrimming::None {
-        buffer.set_text(
-            font_system,
-            text,
-            &config.to_cosmic_attrs(),
-            Shaping::Advanced,
-            config.to_cosmic_align(),
-        );
-        buffer.shape_until_scroll(font_system, false);
+        // 根据是否有 chunk 选择不同的设置文本方式
+        set_text_to_buffer(&mut buffer, font_system, text, chunk, config);
 
         let do_trim = check_layout_overflow(&buffer, phys_width, phys_height, height);
 
@@ -202,14 +253,8 @@ pub fn prepare_text_buffer(
                     test_text.push_str("...");
                 }
 
-                buffer.set_text(
-                    font_system,
-                    &test_text,
-                    &config.to_cosmic_attrs(),
-                    Shaping::Advanced,
-                    config.to_cosmic_align(),
-                );
-                buffer.shape_until_scroll(font_system, false);
+                // 根据是否有 chunk 选择不同的设置文本方式
+                set_text_to_buffer(&mut buffer, font_system, &test_text, chunk, config);
 
                 let overflow = check_layout_overflow(&buffer, phys_width, phys_height, height);
 
@@ -229,15 +274,8 @@ pub fn prepare_text_buffer(
             final_text = best_text;
         }
     }
-
-    buffer.set_text(
-        font_system,
-        &final_text,
-        &config.to_cosmic_attrs(),
-        Shaping::Advanced,
-        config.to_cosmic_align(),
-    );
-    buffer.shape_until_scroll(font_system, false);
+    // 设置最终文本
+    set_text_to_buffer(&mut buffer, font_system, &final_text, chunk, config);
     buffer
 }
 
@@ -249,8 +287,18 @@ pub fn measure_text(
     height: f32,
     dpi_x: f32,
     dpi_y: f32,
+    chunk: Option<&[(Attrs, usize, usize)]>,
 ) -> (f32, f32) {
-    let buffer = prepare_text_buffer(font_system, text, config, width, height, dpi_x, dpi_y);
+    let buffer = prepare_text_buffer(
+        font_system,
+        text,
+        config,
+        width,
+        height,
+        dpi_x,
+        dpi_y,
+        chunk,
+    );
 
     let mut max_w = 0.0f32;
     let mut total_h = 0.0f32;
@@ -272,9 +320,19 @@ pub fn hit_test_point(
     dpi_y: f32,
     x: f32,
     y: f32,
+    chunk: Option<&[(Attrs, usize, usize)]>,
 ) -> HitTestResult {
     let phys_height = height * dpi_y;
-    let buffer = prepare_text_buffer(font_system, text, config, width, height, dpi_x, dpi_y);
+    let buffer = prepare_text_buffer(
+        font_system,
+        text,
+        config,
+        width,
+        height,
+        dpi_x,
+        dpi_y,
+        chunk,
+    );
 
     let offset_y = config.calc_offset_y(&buffer, phys_height);
 
@@ -307,9 +365,19 @@ pub fn hit_test_text_position(
     dpi_y: f32,
     text_index: usize,
     trailing: bool,
+    chunk: Option<&[(Attrs, usize, usize)]>,
 ) -> (f32, f32) {
     let phys_height = height * dpi_y;
-    let buffer = prepare_text_buffer(font_system, text, config, width, height, dpi_x, dpi_y);
+    let buffer = prepare_text_buffer(
+        font_system,
+        text,
+        config,
+        width,
+        height,
+        dpi_x,
+        dpi_y,
+        chunk,
+    );
 
     let offset_y = config.calc_offset_y(&buffer, phys_height);
 

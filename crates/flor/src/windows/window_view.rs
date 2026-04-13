@@ -70,8 +70,9 @@ impl View for WindowId {
             fps_x,
             fps_y,
             fps_box_width,
-            30.0, // height
+            30.0,
             &fps_brush,
+            None,
             None,
         )?;
 

@@ -46,3 +46,15 @@ pub struct TextDrawOptions {
     /// 可选阴影
     pub shadow: Option<Shadow>,
 }
+
+/// 文本高亮块，用于编辑器语法高亮等场景
+#[derive(Clone, Debug)]
+pub struct TextChunk<'a, B, TF> {
+    /// 该文本块使用的画笔
+    pub brush: &'a B,
+    pub text_format: &'a TF,
+    /// 起始字节索引（和标准库 find 方法返回的索引单位一致）
+    pub start: usize,
+    /// 字节长度
+    pub length: usize,
+}

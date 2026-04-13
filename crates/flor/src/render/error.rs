@@ -13,4 +13,6 @@ pub enum FlorRendererError {
     RenderNotFound,
     #[error("Resource origin mismatch: Expected resources from current backend, found from different backend")]
     ResourceMismatch,
+    #[error("Text chunks have overlapping ranges")]
+    OverlappingTextChunks,
 }

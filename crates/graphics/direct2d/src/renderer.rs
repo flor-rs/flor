@@ -7,7 +7,7 @@ use crate::to_d2d::{AsD2dColor, IntoD2DTransform};
 use flor_base::graphics::{
     Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
     PathDrawOptions, Render, RenderContext, ScaleMode, SurfaceDrawOptions, TextAlignment,
-    TextDrawOptions, TextFormatHandle, TextTrimming, WordWrapping,
+    TextChunk, TextDrawOptions, TextFormatHandle, TextTrimming, WordWrapping,
 };
 use flor_base::types::{Color, Transform2D};
 use log::debug;
@@ -41,15 +41,15 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL,
-    DWRITE_HIT_TEST_METRICS, DWRITE_LINE_SPACING_METHOD_DEFAULT,
+    IDWriteTextLayout, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_LINE_SPACING_METHOD_DEFAULT,
     DWRITE_LINE_SPACING_METHOD_UNIFORM, DWRITE_MEASURING_MODE_NATURAL,
     DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_FAR,
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_JUSTIFIED,
     DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
-    DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_TRIMMING_GRANULARITY_NONE,
-    DWRITE_TRIMMING_GRANULARITY_WORD, DWRITE_WORD_WRAPPING_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
-    DWRITE_WORD_WRAPPING_WRAP,
+    DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    DWRITE_TRIMMING_GRANULARITY_NONE, DWRITE_TRIMMING_GRANULARITY_WORD,
+    DWRITE_WORD_WRAPPING_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
 };
 use windows_numerics::{Matrix3x2, Vector2};
 
@@ -454,6 +454,7 @@ impl RenderContext for D2DRenderer {
         text_format: &Self::TextFormatHandle,
         width: f32,
         height: f32,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<(f32, f32), Self::Error> {
         self.rebuild_text_format(text_format)?;
         unsafe {
@@ -463,6 +464,10 @@ impl RenderContext for D2DRenderer {
                 width,
                 height,
             )?;
+
+            // 应用文本块格式设置
+            self.apply_text_chunks(&text_layout, text, chunks)?;
+
             let mut text_metrics = DWRITE_TEXT_METRICS {
                 left: 0.0,
                 top: 0.0,
@@ -487,6 +492,7 @@ impl RenderContext for D2DRenderer {
         height: f32,
         x: f32,
         y: f32,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<HitTestResult, Self::Error> {
         self.rebuild_text_format(text_format)?;
         unsafe {
@@ -496,6 +502,9 @@ impl RenderContext for D2DRenderer {
                 width,
                 height,
             )?;
+
+            // 应用文本块格式设置
+            self.apply_text_chunks(&text_layout, text, chunks)?;
 
             let mut is_trailing = BOOL(0);
             let mut is_inside = BOOL(0);
@@ -531,6 +540,7 @@ impl RenderContext for D2DRenderer {
         height: f32,
         text_index: usize,
         trailing: bool,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
     ) -> Result<(f32, f32), Self::Error> {
         self.rebuild_text_format(text_format)?;
         unsafe {
@@ -540,6 +550,9 @@ impl RenderContext for D2DRenderer {
                 width,
                 height,
             )?;
+
+            // 应用文本块格式设置
+            self.apply_text_chunks(&text_layout, text, chunks)?;
 
             let mut x = 0.0f32;
             let mut y = 0.0f32;
@@ -1303,7 +1316,8 @@ impl RenderContext for D2DRenderer {
         top: f32,
         width: f32,
         height: f32,
-        brush: &Self::BrushHandle,
+        default_brush: &Self::BrushHandle,
+        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
         options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error> {
         // 1. 确保 Format 是最新的 (Lazy Rebuild)
@@ -1314,7 +1328,7 @@ impl RenderContext for D2DRenderer {
             // 关键：使用 clone() (AddRef) 将接口指针从 self 的生命周期中剥离。
             // 这样后续调用 self.get_or_create_shadow_effect() (&mut self) 时就不会报错。
             let d2d_format = text_format.raw();
-            let main_brush = brush.raw();
+            let main_brush = default_brush.raw();
 
             // 预处理文本 (转 UTF-16)
             let text_utf16 = encode_unicode(text);
@@ -1449,13 +1463,29 @@ impl RenderContext for D2DRenderer {
             }
 
             // 5. 绘制 主文本 (Main Text)
-            self.current_render.DrawText(
+            let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
                 &text_utf16,
                 &d2d_format,
-                &layout_rect,
+                width,
+                height,
+            )?;
+
+            // 设置默认文本范围
+            let default_range = DWRITE_TEXT_RANGE {
+                startPosition: 0,
+                length: text.len() as u32,
+            };
+            text_layout.SetDrawingEffect(main_brush, default_range)?;
+
+            // 应用文本块格式设置
+            self.apply_text_chunks(&text_layout, text, chunks)?;
+
+            // 使用 DrawTextLayout 绘制文本以支持不同颜色的文本块
+            self.current_render.DrawTextLayout(
+                Vector2 { X: left, Y: top },
+                &text_layout,
                 main_brush,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
-                DWRITE_MEASURING_MODE_NATURAL,
             );
 
             // 6. 恢复矩阵
@@ -2615,6 +2645,53 @@ impl D2DRenderer {
         };
 
         Ok(effect)
+    }
+
+    fn apply_text_chunks(
+        &self,
+        text_layout: &impl Interface,
+        text: &str,
+        chunks: Option<
+            &[TextChunk<
+                '_,
+                <D2DRenderer as RenderContext>::BrushHandle,
+                <D2DRenderer as RenderContext>::TextFormatHandle,
+            >],
+        >,
+    ) -> Result<(), D2DError> {
+        unsafe {
+            let text_layout = text_layout.cast::<IDWriteTextLayout>()?;
+            if let Some(chunks) = chunks {
+                for chunk in chunks {
+                    let end = chunk.start + chunk.length;
+                    if end <= text.len() {
+                        let chunk_range = DWRITE_TEXT_RANGE {
+                            startPosition: chunk.start as u32,
+                            length: chunk.length as u32,
+                        };
+
+                        // 设置画笔
+                        text_layout.SetDrawingEffect(chunk.brush.raw(), chunk_range)?;
+
+                        // 直接使用 D2DTextFormatHandle 的方法获取属性
+                        let (weight, style, stretch) = chunk.text_format.map_props();
+
+                        // 设置字体家族
+                        let family_name_utf16 = HSTRING::from(chunk.text_format.font_family_name());
+                        text_layout.SetFontFamilyName(&family_name_utf16, chunk_range)?;
+
+                        // 设置字体大小
+                        text_layout.SetFontSize(chunk.text_format.font_size(), chunk_range)?;
+
+                        // 设置字重、字体样式和拉伸
+                        text_layout.SetFontWeight(weight, chunk_range)?;
+                        text_layout.SetFontStyle(style, chunk_range)?;
+                        text_layout.SetFontStretch(stretch, chunk_range)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn rebuild_text_format(&self, text_format: &D2DTextFormatHandle) -> Result<(), D2DError> {
