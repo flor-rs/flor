@@ -100,7 +100,7 @@ pub trait RenderContext: Any {
         x: f32,
         y: f32,
         chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<HitTestResult, Self::Error>;
+    ) -> Result<Option<HitTestResult>, Self::Error>;
 
     /// 字符索引 -> 像素点（光标）
     fn hit_test_text_position(

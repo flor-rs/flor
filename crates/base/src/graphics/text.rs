@@ -1,3 +1,15 @@
+use crate::types::Rect;
+
+#[cfg(feature = "text-layout")]
+mod handle;
+#[cfg(feature = "text-layout")]
+pub use handle::*;
+
+#[cfg(feature = "text-layout")]
+mod layout;
+#[cfg(feature = "text-layout")]
+pub use layout::*;
+
 /// 对应 CSS font-weight
 /// 数值参考: https://developer.mozilla.org/en-US/docs/Web/CSS/font-weight
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -82,9 +94,18 @@ pub enum TextTrimming {
 
 /// 命中测试结果
 pub struct HitTestResult {
-    pub text_index: usize,          // 字符索引
-    pub is_trailing: bool,          // 在字符前/后
-    pub is_inside: bool,            // 是否命中文本区域
-    pub is_trimmed: bool,           // 文本是否被完整显示
-    pub rect: (f32, f32, f32, f32), // 该字符的像素区域
+    /// 字符在全文中的字节偏移量 (UTF-8 Byte Index)
+    pub global_index: usize,
+    /// 行号 (从 0 开始)
+    pub line: usize,
+    /// 字符在当前行内的字节偏移量 (UTF-8 Byte Index)
+    pub line_offset: usize,
+    /// 命中位置是否位于字符的后半部分
+    /// 对于 D2D：对应 isTrailingHit
+    /// 对于 cosmic-text：对应 Affinity::After
+    pub is_trailing: bool,
+    /// 命中的字符在 UI 坐标系中的包围盒
+    pub bounds: Option<Rect<f32>>,
+    /// 鼠标点击是否落在文本的物理区域内
+    pub is_inside: bool,
 }

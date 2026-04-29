@@ -16,8 +16,6 @@ mod render;
 mod scale_mode;
 mod shadow;
 mod text;
-#[cfg(feature = "text-layout")]
-pub mod text_layout;
 
 pub use {
     draw_options::*, error::*, gradient::*, handle::*, path::*, render::*, scale_mode::*,

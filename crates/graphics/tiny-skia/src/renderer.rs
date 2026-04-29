@@ -5,7 +5,7 @@ use crate::handle::{
 };
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
-    RenderContext, SurfaceDrawOptions, TextChunk, TextDrawOptions,
+    RenderContext, SurfaceDrawOptions, TextChunk, TextDrawOptions, FONT_SYSTEM,
 };
 use flor_base::types::{Color, Transform2D};
 use libblur::BlurError;
@@ -22,6 +22,7 @@ use crate::display_context::{DisplayContext, NativeDisplayContext};
 use crate::has_transform::HasTransform;
 use crate::to_tiny_skia::ToTinySkia;
 pub use config::*;
+use flor_base::graphics;
 
 #[derive(Debug)]
 pub struct TinySkiaRenderer {
@@ -35,7 +36,6 @@ pub struct TinySkiaRenderer {
     pub current_render_target: Option<SurfaceSlotId>,
 
     // Text rendering caches
-    pub font_system: std::sync::Arc<parking_lot::RwLock<cosmic_text::FontSystem>>,
     pub swash_cache: cosmic_text::SwashCache,
 
     // Clipping state
@@ -73,9 +73,6 @@ impl Render for TinySkiaRenderer {
             wait_v_sync,
             transform_stack: vec![tiny_skia::Transform::identity()],
             current_render_target: None,
-            font_system: std::sync::Arc::new(parking_lot::RwLock::new(
-                cosmic_text::FontSystem::new(),
-            )),
             swash_cache: cosmic_text::SwashCache::new(),
             clip_stack: Vec::new(),
             active_clip: None,
@@ -200,7 +197,7 @@ impl TinySkiaRenderer {
     fn draw_shadow(
         &mut self,
         path: &Path,
-        shadow: &flor_base::graphics::Shadow,
+        shadow: &graphics::Shadow,
         options_transform: Option<&Transform2D>,
     ) -> Result<(), TinySkiaError> {
         let ts_path = if let Some(p) = Self::build_tiny_skia_path(path) {
@@ -459,11 +456,11 @@ impl FuncTimer {
 }
 impl Drop for FuncTimer {
     fn drop(&mut self) {
-        let elapsed = self.1.elapsed();
-        println!(
-            "[RenderContext] TinySkiaRenderer::{} took {:?}",
-            self.0, elapsed
-        );
+        // let elapsed = self.1.elapsed();
+        // println!(
+        //     "[RenderContext] TinySkiaRenderer::{} took {:?}",
+        //     self.0, elapsed
+        // );
     }
 }
 impl RenderContext for TinySkiaRenderer {
@@ -630,9 +627,9 @@ impl RenderContext for TinySkiaRenderer {
         font_family_name: &str,
     ) -> Result<Self::TextFormatHandle, Self::Error> {
         let _timer = FuncTimer::new("create_text_format");
-        let mut handle = TinySkiaTextFormatHandle::new(self.font_system.clone());
-        handle.config.font_family_name = font_family_name.to_string();
-        Ok(handle)
+        Ok(TinySkiaTextFormatHandle::new_with_font_family_name(
+            font_family_name,
+        ))
     }
 
     #[cfg(feature = "memory-font")]
@@ -643,9 +640,7 @@ impl RenderContext for TinySkiaRenderer {
     ) -> Result<Self::TextFormatHandle, Self::Error> {
         let _timer = FuncTimer::new("create_text_format_from_bytes");
         let source = cosmic_text::fontdb::Source::Binary(std::sync::Arc::new(font_data.to_vec()));
-        self.font_system.write().db_mut().load_font_source(source);
-        let handle = TinySkiaTextFormatHandle::new(self.font_system.clone());
-        Ok(handle)
+        Ok(TinySkiaTextFormatHandle::new_with_font_source(source))
     }
 
     fn measure_text(
@@ -658,31 +653,15 @@ impl RenderContext for TinySkiaRenderer {
     ) -> Result<(f32, f32), Self::Error> {
         let _timer = FuncTimer::new("measure_text");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let mut temp_system = text_format.font_system.write();
-        let mut layout_config = Vec::new();
-        if let Some(chunks) = chunks {
-            for chunk in chunks {
-                let attrs = chunk
-                    .text_format
-                    .config
-                    .to_cosmic_attrs()
-                    .metadata(layout_config.len());
-                layout_config.push((attrs, chunk.start, chunk.length));
-            }
-        }
-        Ok(flor_base::graphics::text_layout::measure_text(
-            &mut temp_system,
+        let chunks = graphics::prepare_text_chunks(chunks, None);
+        Ok(graphics::measure_text(
             text,
             &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-            if layout_config.is_empty() {
-                None
-            } else {
-                Some(&layout_config)
-            },
+            &chunks,
         ))
     }
 
@@ -695,23 +674,11 @@ impl RenderContext for TinySkiaRenderer {
         x: f32,
         y: f32,
         chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<HitTestResult, Self::Error> {
+    ) -> Result<Option<HitTestResult>, Self::Error> {
         let _timer = FuncTimer::new("hit_test_point");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let mut temp_system = text_format.font_system.write();
-        let mut layout_config = Vec::new();
-        if let Some(chunks) = chunks {
-            for chunk in chunks {
-                let attrs = chunk
-                    .text_format
-                    .config
-                    .to_cosmic_attrs()
-                    .metadata(layout_config.len());
-                layout_config.push((attrs, chunk.start, chunk.length));
-            }
-        }
-        Ok(flor_base::graphics::text_layout::hit_test_point(
-            &mut temp_system,
+        let chunks = graphics::prepare_text_chunks(chunks, None);
+        Ok(graphics::hit_test_point(
             text,
             &text_format.config,
             width,
@@ -720,11 +687,7 @@ impl RenderContext for TinySkiaRenderer {
             dpi_y,
             x,
             y,
-            if layout_config.is_empty() {
-                None
-            } else {
-                Some(&layout_config)
-            },
+            &chunks,
         ))
     }
 
@@ -740,20 +703,8 @@ impl RenderContext for TinySkiaRenderer {
     ) -> Result<(f32, f32), Self::Error> {
         let _timer = FuncTimer::new("hit_test_text_position");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let mut temp_system = text_format.font_system.write();
-        let mut layout_config = Vec::new();
-        if let Some(chunks) = chunks {
-            for chunk in chunks {
-                let attrs = chunk
-                    .text_format
-                    .config
-                    .to_cosmic_attrs()
-                    .metadata(layout_config.len());
-                layout_config.push((attrs, chunk.start, chunk.length));
-            }
-        }
-        Ok(flor_base::graphics::text_layout::hit_test_text_position(
-            &mut temp_system,
+        let chunks = graphics::prepare_text_chunks(chunks, None);
+        Ok(graphics::hit_test_text_position(
             text,
             &text_format.config,
             width,
@@ -762,11 +713,7 @@ impl RenderContext for TinySkiaRenderer {
             dpi_y,
             text_index,
             trailing,
-            if layout_config.is_empty() {
-                None
-            } else {
-                Some(&layout_config)
-            },
+            &chunks,
         ))
     }
 
@@ -1230,35 +1177,20 @@ impl RenderContext for TinySkiaRenderer {
         let phys_height = height * dpi_y;
 
         let mut brushes = Vec::new();
-        let mut layout_config = Vec::new();
-        if let Some(chunks) = chunks {
-            for chunk in chunks {
-                let brush = chunk.brush;
-                brushes.push(brush);
-                let attrs = chunk
-                    .text_format
-                    .config
-                    .to_cosmic_attrs()
-                    .metadata(brushes.len() - 1);
-                layout_config.push((attrs, chunk.start, chunk.length));
-            }
-        }
+        let chunks = graphics::prepare_text_chunks(chunks, Some(&mut brushes));
+
+        // 将 default_brush 加入 brushes 数组最后，这样默认 span 的 metadata = chunks.len() 就能找到它
+        brushes.push(default_brush);
 
         // 编译文本布局
-        let mut temp_system = text_format.font_system.write();
-        let buffer = flor_base::graphics::text_layout::prepare_text_buffer(
-            &mut temp_system,
+        let buffer = graphics::prepare_text_buffer(
             text,
             &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-            if layout_config.is_empty() {
-                None
-            } else {
-                Some(&layout_config)
-            },
+            &chunks,
         );
 
         // 计算文本总高度
@@ -1302,7 +1234,9 @@ impl RenderContext for TinySkiaRenderer {
                     //     glyph.start, glyph.end, glyph_text
                     // );
 
-                    let current_brush = brushes.get(glyph.metadata).unwrap_or(&default_brush);
+                    let current_brush = brushes
+                        .get(glyph.metadata)
+                        .unwrap_or_else(|| brushes.last().unwrap());
 
                     let has_rotation = render_transform.kx != 0.0 || render_transform.ky != 0.0;
 
@@ -1582,7 +1516,7 @@ impl RenderContext for TinySkiaRenderer {
         // ====================================================================
         // 第三阶段：绘制阴影（如果有）
         // ====================================================================
-
+        let mut font_system = FONT_SYSTEM.lock();
         if let Some(opts) = options {
             if let Some(shadow) = &opts.shadow {
                 let shadow_color = shadow.color.to_tiny_skia();
@@ -1596,7 +1530,7 @@ impl RenderContext for TinySkiaRenderer {
                     let (cache, mut p, c) = self.split_pixmap_and_cache();
                     draw_glyphs(
                         cache,
-                        &mut temp_system,
+                        &mut font_system,
                         &mut p,
                         c,
                         shadow_transform,
@@ -1649,7 +1583,7 @@ impl RenderContext for TinySkiaRenderer {
                             let swash_cache = &mut self.swash_cache;
                             draw_glyphs(
                                 swash_cache,
-                                &mut temp_system,
+                                &mut font_system,
                                 &mut shadow_pixmap.as_mut(),
                                 None,
                                 bounds_transform,
@@ -1701,7 +1635,7 @@ impl RenderContext for TinySkiaRenderer {
         }
 
         let (cache, mut p, c) = self.split_pixmap_and_cache();
-        draw_glyphs(cache, &mut temp_system, &mut p, c, transform, None);
+        draw_glyphs(cache, &mut font_system, &mut p, c, transform, None);
 
         Ok(())
     }

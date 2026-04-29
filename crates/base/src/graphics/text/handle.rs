@@ -1,26 +1,52 @@
-use flor_base::graphics::text_layout::TextLayoutConfig;
-use flor_base::graphics::{
+use crate::graphics::{
     FontStretch, FontStyle, FontWeight, ParagraphAlignment, TextAlignment, TextFormatHandle,
-    TextTrimming, WordWrapping,
+    TextLayoutConfig, TextTrimming, WordWrapping,
 };
-use slotmap::new_key_type;
+use cosmic_text::fontdb::{Source, ID};
+use cosmic_text::FontSystem;
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
+
+pub static FONT_SYSTEM: Lazy<Mutex<FontSystem>> = Lazy::new(|| Mutex::new(FontSystem::new()));
 
 #[derive(Debug, Clone)]
-pub struct TinySkiaTextFormatHandle {
-    pub font_system: std::sync::Arc<parking_lot::RwLock<cosmic_text::FontSystem>>,
+pub struct CosmicTextFormatHandle {
     pub config: TextLayoutConfig,
+    pub custom_font_id: Option<ID>,
 }
 
-impl TinySkiaTextFormatHandle {
-    pub fn new(font_system: std::sync::Arc<parking_lot::RwLock<cosmic_text::FontSystem>>) -> Self {
+impl CosmicTextFormatHandle {
+    pub fn new_with_font_family_name(font_family_name: &str) -> Self {
         Self {
-            font_system,
-            config: TextLayoutConfig::default(),
+            config: TextLayoutConfig {
+                font_family_name: font_family_name.to_string(),
+                ..Default::default()
+            },
+            custom_font_id: None,
+        }
+    }
+    pub fn new_with_font_source(font_source: Source) -> Self {
+        let mut font_system_lock = FONT_SYSTEM.lock();
+        let ids = font_system_lock.db_mut().load_font_source(font_source);
+        Self {
+            config: TextLayoutConfig {
+                ..Default::default()
+            },
+            custom_font_id: if !ids.is_empty() { Some(ids[0]) } else { None },
         }
     }
 }
 
-impl TextFormatHandle for TinySkiaTextFormatHandle {
+impl Drop for CosmicTextFormatHandle {
+    fn drop(&mut self) {
+        if let Some(id) = self.custom_font_id {
+            let mut font_system_lock = FONT_SYSTEM.lock();
+            font_system_lock.db_mut().remove_face(id);
+        }
+    }
+}
+
+impl TextFormatHandle for CosmicTextFormatHandle {
     fn set_font_size(&mut self, size: f32) -> &mut Self {
         self.config.font_size = size;
         self
@@ -105,8 +131,4 @@ impl TextFormatHandle for TinySkiaTextFormatHandle {
     fn text_trimming(&self) -> TextTrimming {
         self.config.text_trimming
     }
-}
-
-new_key_type! {
-    pub struct TextFormatSlotId;
 }

@@ -9,7 +9,7 @@ use flor_base::graphics::{
     PathDrawOptions, Render, RenderContext, ScaleMode, SurfaceDrawOptions, TextAlignment,
     TextChunk, TextDrawOptions, TextFormatHandle, TextTrimming, WordWrapping,
 };
-use flor_base::types::{Color, Transform2D};
+use flor_base::types::{Color, Rect, Transform2D};
 use log::debug;
 use lru::LruCache;
 use std::fmt::{Debug, Formatter};
@@ -42,12 +42,12 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::{
     IDWriteTextLayout, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_LINE_SPACING_METHOD_DEFAULT,
-    DWRITE_LINE_SPACING_METHOD_UNIFORM, DWRITE_MEASURING_MODE_NATURAL,
-    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_FAR,
-    DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_JUSTIFIED,
-    DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
-    DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS,
+    DWRITE_LINE_SPACING_METHOD_DEFAULT, DWRITE_LINE_SPACING_METHOD_UNIFORM,
+    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_PARAGRAPH_ALIGNMENT_FAR, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_JUSTIFIED, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
+    DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
     DWRITE_TRIMMING_GRANULARITY_NONE, DWRITE_TRIMMING_GRANULARITY_WORD,
     DWRITE_WORD_WRAPPING_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
 };
@@ -60,6 +60,7 @@ use flor_base::graphics::SvgDrawOptions;
 #[cfg(feature = "svg")]
 use std::ffi::c_void;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use unicode_segmentation::UnicodeSegmentation;
 #[cfg(feature = "svg")]
 use windows::{
     Win32::Foundation::HGLOBAL,
@@ -493,7 +494,7 @@ impl RenderContext for D2DRenderer {
         x: f32,
         y: f32,
         chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<HitTestResult, Self::Error> {
+    ) -> Result<Option<HitTestResult>, Self::Error> {
         self.rebuild_text_format(text_format)?;
         unsafe {
             let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
@@ -502,33 +503,90 @@ impl RenderContext for D2DRenderer {
                 width,
                 height,
             )?;
-
-            // 应用文本块格式设置
             self.apply_text_chunks(&text_layout, text, chunks)?;
 
+            // 1. 先拿到目标 U16 位置
             let mut is_trailing = BOOL(0);
             let mut is_inside = BOOL(0);
-            let mut metrics = DWRITE_HIT_TEST_METRICS {
-                textPosition: 0,
-                length: 0,
-                left: 0.0,
-                top: 0.0,
-                width: 0.0,
-                height: 0.0,
-                bidiLevel: 0,
-                isText: BOOL(0),
-                isTrimmed: BOOL(0),
-            };
-
+            let mut metrics = DWRITE_HIT_TEST_METRICS::default();
             text_layout.HitTestPoint(x, y, &mut is_trailing, &mut is_inside, &mut metrics)?;
+            let target_u16 = metrics.textPosition;
 
-            Ok(HitTestResult {
-                text_index: metrics.textPosition as usize,
+            // 2. 一次性获取行指标
+            let mut line_count = 0;
+            text_layout.GetLineMetrics(None, &mut line_count)?;
+            let mut dw_line_metrics = vec![DWRITE_LINE_METRICS::default(); line_count as usize];
+            text_layout.GetLineMetrics(Some(&mut dw_line_metrics), &mut line_count)?;
+
+            // 3. 单次扫描：同步查找行号和字节偏移
+            let mut u16_acc = 0u32;
+            let mut u8_acc = 0usize;
+
+            let mut result = HitTestResult {
+                global_index: 0,
+                line: 0,
+                line_offset: 0,
                 is_trailing: is_trailing.as_bool(),
                 is_inside: is_inside.as_bool(),
-                is_trimmed: metrics.isTrimmed.as_bool(),
-                rect: (metrics.left, metrics.top, metrics.width, metrics.height),
-            })
+                bounds: Some(Rect {
+                    x: metrics.left,
+                    y: metrics.top,
+                    w: metrics.width,
+                    h: metrics.height,
+                }),
+            };
+
+            for (idx, lm) in dw_line_metrics.iter().enumerate() {
+                let line_u8_start = u8_acc;
+                let line_u16_start = u16_acc;
+                let line_u16_end = u16_acc + lm.length;
+
+                // 检查目标是否在这一行
+                if target_u16 >= line_u16_start && target_u16 < line_u16_end {
+                    result.line = idx;
+
+                    // 行内细查：找到具体的字节偏移
+                    let mut current_line_u16 = line_u16_start;
+                    for g in text[line_u8_start..].graphemes(true) {
+                        if current_line_u16 >= target_u16 {
+                            break;
+                        }
+
+                        let g_u16_len = g.chars().map(|c| c.len_utf16()).sum::<usize>() as u32;
+                        current_line_u16 += g_u16_len;
+                        u8_acc += g.len();
+                    }
+
+                    result.global_index = u8_acc;
+                    result.line_offset = u8_acc - line_u8_start;
+
+                    // 找到结果，提前退出全文扫描
+                    return Ok(Some(result));
+                }
+
+                // 如果没命中这一行，依然需要计算这一行的 UTF-8 总长度以供下一行使用
+                // 这一步是无法避免的，因为 D2D 不提供行起始的字节偏移
+                let mut current_line_u16 = 0u32;
+                for g in text[u8_acc..].graphemes(true) {
+                    if current_line_u16 >= lm.length {
+                        break;
+                    }
+                    let g_u16_len = g.chars().map(|c| c.len_utf16()).sum::<usize>() as u32;
+                    current_line_u16 += g_u16_len;
+                    u8_acc += g.len();
+                }
+                u16_acc = line_u16_end;
+            }
+
+            // 处理点击在文末的情况
+            if target_u16 >= u16_acc {
+                result.line = dw_line_metrics.len().saturating_sub(1);
+                result.global_index = u8_acc;
+                // 此处 line_offset 逻辑需根据需求微调
+                return Ok(Some(result));
+            }
+
+            Ok(None)
         }
     }
 
@@ -544,8 +602,9 @@ impl RenderContext for D2DRenderer {
     ) -> Result<(f32, f32), Self::Error> {
         self.rebuild_text_format(text_format)?;
         unsafe {
+            let text_utf16 = encode_unicode(text);
             let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
-                &encode_unicode(text),
+                &text_utf16,
                 &text_format.raw(),
                 width,
                 height,
@@ -553,6 +612,16 @@ impl RenderContext for D2DRenderer {
 
             // 应用文本块格式设置
             self.apply_text_chunks(&text_layout, text, chunks)?;
+
+            // 将 UTF-8 索引转换为 UTF-16 索引
+            let mut utf16_index = 0;
+            let mut utf8_index = 0;
+
+            while utf8_index < text_index && utf8_index < text.len() {
+                let c = text[utf8_index..].chars().next().unwrap();
+                utf16_index += c.len_utf16();
+                utf8_index += c.len_utf8();
+            }
 
             let mut x = 0.0f32;
             let mut y = 0.0f32;
@@ -570,7 +639,7 @@ impl RenderContext for D2DRenderer {
             };
 
             text_layout.HitTestTextPosition(
-                text_index as u32,
+                utf16_index as u32,
                 trailing,
                 &mut x,
                 &mut y,
@@ -1473,7 +1542,7 @@ impl RenderContext for D2DRenderer {
             // 设置默认文本范围
             let default_range = DWRITE_TEXT_RANGE {
                 startPosition: 0,
-                length: text.len() as u32,
+                length: text_utf16.len() as u32,
             };
             text_layout.SetDrawingEffect(main_brush, default_range)?;
 
@@ -2659,15 +2728,34 @@ impl D2DRenderer {
             >],
         >,
     ) -> Result<(), D2DError> {
+        // 辅助函数：将 UTF-8 索引转换为 UTF-16 索引
+        let utf8_to_utf16 = |text: &str, utf8_idx: usize| -> usize {
+            let mut utf16_idx = 0;
+            let mut current_utf8 = 0;
+
+            for c in text.chars() {
+                if current_utf8 >= utf8_idx {
+                    break;
+                }
+                utf16_idx += c.len_utf16();
+                current_utf8 += c.len_utf8();
+            }
+
+            utf16_idx
+        };
+
         unsafe {
             let text_layout = text_layout.cast::<IDWriteTextLayout>()?;
             if let Some(chunks) = chunks {
                 for chunk in chunks {
                     let end = chunk.start + chunk.length;
                     if end <= text.len() {
+                        let start_utf16 = utf8_to_utf16(text, chunk.start);
+                        let end_utf16 = utf8_to_utf16(text, end);
+
                         let chunk_range = DWRITE_TEXT_RANGE {
-                            startPosition: chunk.start as u32,
-                            length: chunk.length as u32,
+                            startPosition: start_utf16 as u32,
+                            length: (end_utf16 - start_utf16) as u32,
                         };
 
                         // 设置画笔

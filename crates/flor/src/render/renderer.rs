@@ -371,7 +371,7 @@ impl RenderContext for FlorRenderer {
         x: f32,
         y: f32,
         chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<HitTestResult, Self::Error> {
+    ) -> Result<Option<HitTestResult>, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRenderer::GPU(g) => {

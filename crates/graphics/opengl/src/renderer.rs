@@ -2,17 +2,17 @@ use crate::error::GlError;
 use crate::handle::GlImageHandle;
 use crate::handle::GlSurfaceId;
 use crate::handle::{GlBrushHandle, GlTextFormatHandle};
-use cosmic_text::{CacheKey, FontSystem, Placement, SwashCache};
+use cosmic_text::{CacheKey, Placement, SwashCache};
 use flor_base::graphics::{
     Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
-    RenderContext, ScaleMode, Shadow, SurfaceDrawOptions, TextChunk, TextDrawOptions,
+    RenderContext, ScaleMode, Shadow, SurfaceDrawOptions, TextChunk, TextDrawOptions, FONT_SYSTEM,
 };
 use flor_base::types::{Color, Transform2D};
 use glow::{HasContext, NativeTexture, PixelUnpackData};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::slice;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use windows::Win32::Foundation::HWND;
 
 use crate::display_context::{DisplayContext, NativeDisplayContext};
@@ -29,10 +29,9 @@ use {crate::handle::GlSvgHandle, flor_base::graphics::SvgDrawOptions};
 mod config;
 use crate::renderer::context::GlContext;
 pub use config::*;
+use flor_base::graphics;
 
 pub mod context;
-
-pub(crate) static FONT_SYSTEM: OnceLock<Mutex<FontSystem>> = OnceLock::new();
 
 macro_rules! time_it {
     ($name:literal) => {
@@ -156,8 +155,6 @@ impl Render for GlRenderer {
             gl_context.enable_vertex_attrib_array(0);
             gl_context.bind_vertex_array(None);
         }
-
-        FONT_SYSTEM.get_or_init(|| Mutex::new(FontSystem::new()));
 
         let proj_transform = Transform2D::ortho(width as f32, height as f32);
 
@@ -518,9 +515,9 @@ impl RenderContext for GlRenderer {
         &mut self,
         font_family_name: &str,
     ) -> Result<Self::TextFormatHandle, Self::Error> {
-        let mut handle = GlTextFormatHandle::new();
-        handle.config.font_family_name = font_family_name.to_string();
-        Ok(handle)
+        Ok(GlTextFormatHandle::new_with_font_family_name(
+            font_family_name,
+        ))
     }
 
     #[cfg(feature = "memory-font")]
@@ -530,14 +527,7 @@ impl RenderContext for GlRenderer {
         _ttc_index: u32,
     ) -> Result<Self::TextFormatHandle, Self::Error> {
         let source = cosmic_text::fontdb::Source::Binary(Arc::new(font_data.to_vec()));
-        let mut handle = GlTextFormatHandle::new();
-        if let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) {
-            let ids = font_system_lock.db_mut().load_font_source(source);
-            if !ids.is_empty() {
-                handle.custom_font_id = Some(ids[0]);
-            }
-        }
-        Ok(handle)
+        Ok(GlTextFormatHandle::new_with_font_source(source))
     }
 
     fn measure_text(
@@ -550,23 +540,15 @@ impl RenderContext for GlRenderer {
     ) -> Result<(f32, f32), Self::Error> {
         time_it!("measure_text");
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) else {
-            return Ok((0.0, 0.0));
-        };
-        let layout_config = Self::prepare_text_layout_config(chunks);
-        Ok(flor_base::graphics::text_layout::measure_text(
-            &mut font_system_lock,
+        let layout_config = graphics::prepare_text_chunks(chunks, None);
+        Ok(graphics::measure_text(
             text,
             &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-            if layout_config.is_empty() {
-                None
-            } else {
-                Some(&layout_config)
-            },
+            &layout_config,
         ))
     }
 
@@ -579,22 +561,12 @@ impl RenderContext for GlRenderer {
         x: f32,
         y: f32,
         chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<HitTestResult, Self::Error> {
+    ) -> Result<Option<HitTestResult>, Self::Error> {
         time_it!("hit_test_point");
         let (dpi_x, dpi_y) = self.dpi_scale;
 
-        let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) else {
-            return Ok(HitTestResult {
-                is_inside: false,
-                text_index: 0,
-                is_trailing: false,
-                is_trimmed: false,
-                rect: (0.0, 0.0, 0.0, 0.0),
-            });
-        };
-        let layout_config = Self::prepare_text_layout_config(chunks);
-        Ok(flor_base::graphics::text_layout::hit_test_point(
-            &mut font_system_lock,
+        let layout_config = graphics::prepare_text_chunks(chunks, None);
+        Ok(graphics::hit_test_point(
             text,
             &text_format.config,
             width,
@@ -603,11 +575,7 @@ impl RenderContext for GlRenderer {
             dpi_y,
             x,
             y,
-            if layout_config.is_empty() {
-                None
-            } else {
-                Some(&layout_config)
-            },
+            &layout_config,
         ))
     }
 
@@ -624,12 +592,8 @@ impl RenderContext for GlRenderer {
         time_it!("hit_test_text_position");
         let (dpi_x, dpi_y) = self.dpi_scale;
 
-        let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) else {
-            return Ok((0.0, 0.0));
-        };
-        let layout_config = Self::prepare_text_layout_config(chunks);
-        Ok(flor_base::graphics::text_layout::hit_test_text_position(
-            &mut font_system_lock,
+        let layout_config = graphics::prepare_text_chunks(chunks, None);
+        Ok(graphics::hit_test_text_position(
             text,
             &text_format.config,
             width,
@@ -638,11 +602,7 @@ impl RenderContext for GlRenderer {
             dpi_y,
             text_index,
             trailing,
-            if layout_config.is_empty() {
-                None
-            } else {
-                Some(&layout_config)
-            },
+            &layout_config,
         ))
     }
 
@@ -908,32 +868,16 @@ impl RenderContext for GlRenderer {
         let phys_height = height * dpi_y;
 
         let mut brushes = Vec::new();
-        let mut layout_config = Vec::new();
-        if let Some(chunks) = chunks {
-            for chunk in chunks {
-                let brush = chunk.brush;
-                brushes.push(brush);
-                let attrs = chunk
-                    .text_format
-                    .config
-                    .to_cosmic_attrs()
-                    .metadata(brushes.len() - 1);
-                layout_config.push((attrs, chunk.start, chunk.length));
-            }
-        }
+        let layout_config = graphics::prepare_text_chunks(chunks, Some(&mut brushes));
 
-        let Some(mut font_system_lock) = FONT_SYSTEM.get().map(|f| f.lock()) else {
-            return Ok(());
-        };
-        let buffer = flor_base::graphics::text_layout::prepare_text_buffer(
-            &mut font_system_lock,
+        let buffer = graphics::prepare_text_buffer(
             text,
             &text_format.config,
             width,
             height,
             dpi_x,
             dpi_y,
-            Some(&layout_config),
+            &layout_config,
         );
 
         let mut total_h = 0.0f32;
@@ -958,7 +902,7 @@ impl RenderContext for GlRenderer {
         }
 
         let mut batches: Vec<BrushBatch> = Vec::new();
-
+        let mut font_system = FONT_SYSTEM.lock();
         for run in runs.iter() {
             for glyph in run.glyphs.iter() {
                 let current_brush = brushes.get(glyph.metadata).unwrap_or(&default_brush);
@@ -972,7 +916,7 @@ impl RenderContext for GlRenderer {
                     std::collections::hash_map::Entry::Vacant(v) => {
                         if let Some(image) = self
                             .swash_cache
-                            .get_image(&mut font_system_lock, physical_glyph.cache_key)
+                            .get_image(&mut font_system, physical_glyph.cache_key)
                         {
                             let w = image.placement.width;
                             let h = image.placement.height;
@@ -1046,8 +990,8 @@ impl RenderContext for GlRenderer {
             }
         }
 
-        unsafe {
-            for batch in batches.iter_mut() {
+        for batch in batches.iter_mut() {
+            unsafe {
                 self.render_text_glyphs(
                     &mut batch.glyphs,
                     &batch.brush_data,
@@ -1057,7 +1001,6 @@ impl RenderContext for GlRenderer {
                 )?;
             }
         }
-
         Ok(())
     }
 
@@ -1473,22 +1416,22 @@ mod utils {
 }
 
 impl GlRenderer {
-    fn prepare_text_layout_config<'a>(
-        chunks: Option<&'a [TextChunk<'a, GlBrushHandle, GlTextFormatHandle>]>,
-    ) -> Vec<(cosmic_text::Attrs<'a>, usize, usize)> {
-        let mut layout_config = Vec::new();
-        if let Some(chunks) = chunks {
-            for chunk in chunks {
-                let attrs = chunk
-                    .text_format
-                    .config
-                    .to_cosmic_attrs()
-                    .metadata(layout_config.len());
-                layout_config.push((attrs, chunk.start, chunk.length));
-            }
-        }
-        layout_config
-    }
+    // fn prepare_text_layout_config<'a>(
+    //     chunks: Option<&'a [TextChunk<'a, GlBrushHandle, GlTextFormatHandle>]>,
+    // ) -> Vec<(cosmic_text::Attrs<'a>, usize, usize)> {
+    //     let mut layout_config = Vec::new();
+    //     if let Some(chunks) = chunks {
+    //         for chunk in chunks {
+    //             let attrs = chunk
+    //                 .text_format
+    //                 .config
+    //                 .to_cosmic_attrs()
+    //                 .metadata(layout_config.len());
+    //             layout_config.push((attrs, chunk.start, chunk.length));
+    //         }
+    //     }
+    //     layout_config
+    // }
 
     #[inline]
     fn get_fbo_size(&self) -> (i32, i32) {
