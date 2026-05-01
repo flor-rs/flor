@@ -73,7 +73,6 @@ impl View for WindowId {
             30.0,
             &fps_brush,
             None,
-            None,
         )?;
 
         Ok(())

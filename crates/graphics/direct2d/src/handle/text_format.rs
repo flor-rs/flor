@@ -1,3 +1,5 @@
+use crate::error::D2DError;
+use crate::render_factory::RenderFactory;
 use flor_base::graphics::{
     FontStretch, FontStyle, FontWeight, ParagraphAlignment, TextAlignment, TextFormatHandle,
     TextTrimming, WordWrapping,
@@ -5,6 +7,7 @@ use flor_base::graphics::{
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use windows::core::HSTRING;
 use windows::Win32::Graphics::DirectWrite::*;
 #[derive(Debug, Clone)]
 pub struct D2DTextFormatHandle {
@@ -208,5 +211,100 @@ impl D2DTextFormatHandle {
 
     pub fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::Release);
+    }
+
+    pub fn rebuild(&self) -> Result<(), D2DError> {
+        // 1. 极速路径 (Fast Path)
+        if !self.dirty() {
+            return Ok(());
+        }
+
+        // 2. 准备不可变参数
+        let family = HSTRING::from(&self.font_family_name());
+        let (weight, style, stretch) = self.map_props();
+        let locale = HSTRING::from("en-us");
+
+        // 3. 创建核心对象
+        let new_text_format = unsafe {
+            RenderFactory::get().write_factory.CreateTextFormat(
+                windows::core::PCWSTR(family.as_ptr()),
+                None,
+                weight,
+                style,
+                stretch,
+                self.font_size(),
+                windows::core::PCWSTR(locale.as_ptr()),
+            )?
+        };
+
+        // 4. 配置可变属性
+        unsafe {
+            // Alignment
+            let dw_text_align = match self.text_alignment() {
+                TextAlignment::Start => DWRITE_TEXT_ALIGNMENT_LEADING,
+                TextAlignment::End => DWRITE_TEXT_ALIGNMENT_TRAILING,
+                TextAlignment::Center => DWRITE_TEXT_ALIGNMENT_CENTER,
+                TextAlignment::Justified => DWRITE_TEXT_ALIGNMENT_JUSTIFIED,
+            };
+            new_text_format.SetTextAlignment(dw_text_align)?;
+
+            let dw_para_align = match self.paragraph_alignment() {
+                ParagraphAlignment::Top => DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
+                ParagraphAlignment::Center => DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+                ParagraphAlignment::Bottom => DWRITE_PARAGRAPH_ALIGNMENT_FAR,
+            };
+            new_text_format.SetParagraphAlignment(dw_para_align)?;
+
+            // Wrapping
+            let dw_wrap = if self.text_alignment() == TextAlignment::Justified
+                && self.word_wrapping() == WordWrapping::NoWrap
+            {
+                DWRITE_WORD_WRAPPING_WRAP
+            } else {
+                match self.word_wrapping() {
+                    WordWrapping::NoWrap => DWRITE_WORD_WRAPPING_NO_WRAP,
+                    WordWrapping::Wrap => DWRITE_WORD_WRAPPING_WRAP,
+                    WordWrapping::Character => DWRITE_WORD_WRAPPING_CHARACTER,
+                }
+            };
+            new_text_format.SetWordWrapping(dw_wrap)?;
+
+            // Line Height
+            if (self.line_height() - 1.0).abs() > f32::EPSILON {
+                let line_spacing = self.font_size() * self.line_height();
+                let extra_space = line_spacing - self.font_size();
+                let baseline = extra_space / 2.0 + self.font_size() * 0.85;
+
+                new_text_format.SetLineSpacing(
+                    DWRITE_LINE_SPACING_METHOD_UNIFORM,
+                    line_spacing,
+                    baseline,
+                )?;
+            } else {
+                new_text_format.SetLineSpacing(DWRITE_LINE_SPACING_METHOD_DEFAULT, 0.0, 0.0)?;
+            }
+
+            // Trimming
+            let (granularity, _delimiter) = match self.text_trimming() {
+                TextTrimming::None => (DWRITE_TRIMMING_GRANULARITY_NONE, 0),
+                TextTrimming::Character | TextTrimming::EllipsisChar => {
+                    (DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0)
+                }
+                TextTrimming::Word | TextTrimming::EllipsisWord => {
+                    (DWRITE_TRIMMING_GRANULARITY_WORD, 0)
+                }
+            };
+            new_text_format.SetTrimming(
+                &DWRITE_TRIMMING {
+                    granularity,
+                    delimiter: 0,
+                    delimiterCount: 0,
+                },
+                None,
+            )?;
+        }
+        self.set_raw(new_text_format);
+        self.clear_dirty();
+        Ok(())
     }
 }

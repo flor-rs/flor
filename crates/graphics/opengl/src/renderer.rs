@@ -4,10 +4,10 @@ use crate::handle::GlSurfaceId;
 use crate::handle::{GlBrushHandle, GlTextFormatHandle};
 use cosmic_text::{CacheKey, Placement, SwashCache};
 use flor_base::graphics::{
-    Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
-    RenderContext, ScaleMode, Shadow, SurfaceDrawOptions, TextChunk, TextDrawOptions, FONT_SYSTEM,
+    Gradient, ImageDrawOptions, LayoutText, Path, PathDrawOptions, Render, RenderContext,
+    ScaleMode, Shadow, SurfaceDrawOptions, TextDrawOptions, FONT_SYSTEM,
 };
-use flor_base::types::{Color, Transform2D};
+use flor_base::types::{Color, Rect, Transform2D};
 use glow::{HasContext, NativeTexture, PixelUnpackData};
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -28,8 +28,8 @@ use {crate::handle::GlSvgHandle, flor_base::graphics::SvgDrawOptions};
 
 mod config;
 use crate::renderer::context::GlContext;
+use crate::text_layout::GlTextLayout;
 pub use config::*;
-use flor_base::graphics;
 
 pub mod context;
 
@@ -204,6 +204,7 @@ impl RenderContext for GlRenderer {
     #[cfg(feature = "svg")]
     type SvgHandle = GlSvgHandle;
     type TextFormatHandle = GlTextFormatHandle;
+    type LayoutText = GlTextLayout;
 
     fn begin(&mut self) -> Result<(), Self::Error> {
         time_it!("begin");
@@ -530,80 +531,15 @@ impl RenderContext for GlRenderer {
         Ok(GlTextFormatHandle::new_with_font_source(source))
     }
 
-    fn measure_text(
+    fn create_text_layout(
         &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error> {
-        time_it!("measure_text");
-        let (dpi_x, dpi_y) = self.dpi_scale;
-        let layout_config = graphics::prepare_text_chunks(chunks, None);
-        Ok(graphics::measure_text(
-            text,
-            &text_format.config,
-            width,
-            height,
-            dpi_x,
-            dpi_y,
-            &layout_config,
-        ))
-    }
-
-    fn hit_test_point(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        x: f32,
-        y: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<Option<HitTestResult>, Self::Error> {
-        time_it!("hit_test_point");
-        let (dpi_x, dpi_y) = self.dpi_scale;
-
-        let layout_config = graphics::prepare_text_chunks(chunks, None);
-        Ok(graphics::hit_test_point(
-            text,
-            &text_format.config,
-            width,
-            height,
-            dpi_x,
-            dpi_y,
-            x,
-            y,
-            &layout_config,
-        ))
-    }
-
-    fn hit_test_text_position(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        text_index: usize,
-        trailing: bool,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error> {
-        time_it!("hit_test_text_position");
-        let (dpi_x, dpi_y) = self.dpi_scale;
-
-        let layout_config = graphics::prepare_text_chunks(chunks, None);
-        Ok(graphics::hit_test_text_position(
-            text,
-            &text_format.config,
-            width,
-            height,
-            dpi_x,
-            dpi_y,
-            text_index,
-            trailing,
-            &layout_config,
-        ))
+        text: String,
+        bounds: Rect<f32>,
+        text_format: Self::TextFormatHandle,
+    ) -> Result<Self::LayoutText, Self::Error> {
+        let mut layout = GlTextLayout::create_text_layout(text, bounds, text_format);
+        layout.dpi_scale = self.dpi_scale;
+        Ok(layout)
     }
 
     fn create_solid_color_brush(
@@ -857,42 +793,45 @@ impl RenderContext for GlRenderer {
         top: f32,
         width: f32,
         height: f32,
-        default_brush: &Self::BrushHandle,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
+        brush: &Self::BrushHandle,
         options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error> {
         time_it!("draw_text");
+
+        let mut text_layout = GlTextLayout::create_text_layout(
+            text.to_string(),
+            Rect {
+                x: left,
+                y: top,
+                w: width,
+                h: height,
+            },
+            text_format.clone(),
+        );
+        text_layout.dpi_scale = self.dpi_scale;
+
+        self.draw_layout_text(&text_layout, brush, options)
+    }
+
+    fn draw_layout_text(
+        &mut self,
+        layout_text: &Self::LayoutText,
+        brush: &Self::BrushHandle,
+        options: Option<&TextDrawOptions>,
+    ) -> Result<(), Self::Error> {
+        time_it!("draw_layout_text");
         let local_transform = options.and_then(|o| o.transform.as_ref());
 
+        let bounds = layout_text.bounds();
+
         let (dpi_x, dpi_y) = self.dpi_scale;
-        let phys_height = height * dpi_y;
 
-        let mut brushes = Vec::new();
-        let layout_config = graphics::prepare_text_chunks(chunks, Some(&mut brushes));
+        let buffer = layout_text.buffer();
+        let text_format = layout_text.text_format();
 
-        let buffer = graphics::prepare_text_buffer(
-            text,
-            &text_format.config,
-            width,
-            height,
-            dpi_x,
-            dpi_y,
-            &layout_config,
-        );
-
-        let mut total_h = 0.0f32;
-        for run in buffer.layout_runs() {
-            total_h += run.line_height;
-        }
-
-        let offset_y = match text_format.config.paragraph_alignment {
-            ParagraphAlignment::Center if phys_height > total_h => (phys_height - total_h) / 2.0,
-            ParagraphAlignment::Bottom if phys_height > total_h => phys_height - total_h,
-            _ => 0.0,
-        };
-
+        let phys_height = bounds.h * dpi_y;
+        let offset_y = text_format.config.calc_offset_y(&buffer, phys_height);
         let shadow = options.and_then(|o| o.shadow.as_ref());
-        let bounds = (left, top, width, height);
 
         let runs: Vec<_> = buffer.layout_runs().collect();
 
@@ -905,11 +844,13 @@ impl RenderContext for GlRenderer {
         let mut font_system = FONT_SYSTEM.lock();
         for run in runs.iter() {
             for glyph in run.glyphs.iter() {
-                let current_brush = brushes.get(glyph.metadata).unwrap_or(&default_brush);
+                let current_brush = layout_text.brush_at(glyph.metadata).unwrap_or(brush);
                 let brush_data = current_brush.to_shader_data();
 
-                let physical_glyph =
-                    glyph.physical((left * dpi_x, top * dpi_y + offset_y + run.line_y), 1.0);
+                let physical_glyph = glyph.physical(
+                    (bounds.x * dpi_x, bounds.y * dpi_y + offset_y + run.line_y),
+                    1.0,
+                );
 
                 let (texture, placement) = match self.glyph_cache.entry(physical_glyph.cache_key) {
                     std::collections::hash_map::Entry::Occupied(o) => o.get().clone(),
@@ -1024,7 +965,12 @@ impl RenderContext for GlRenderer {
 
         let shadow = options.and_then(|o| o.shadow.as_ref());
         let (min_x, min_y, max_x, max_y) = path.get_bounds();
-        let bounds = (min_x, min_y, max_x - min_x, max_y - min_y);
+        let bounds = Rect {
+            x: min_x,
+            y: min_y,
+            w: max_x - min_x,
+            h: max_y - min_y,
+        };
 
         unsafe {
             self.render_tessellated_geometry(
@@ -1056,7 +1002,12 @@ impl RenderContext for GlRenderer {
 
         let shadow = options.and_then(|o| o.shadow.as_ref());
         let (min_x, min_y, max_x, max_y) = path.get_bounds();
-        let bounds = (min_x, min_y, max_x - min_x, max_y - min_y);
+        let bounds = Rect {
+            x: min_x,
+            y: min_y,
+            w: max_x - min_x,
+            h: max_y - min_y,
+        };
 
         unsafe {
             self.render_tessellated_geometry(
@@ -1466,15 +1417,15 @@ impl GlRenderer {
     unsafe fn render_shadow<F>(
         &mut self,
         shadow: &Shadow,
-        bounds: (f32, f32, f32, f32), // x, y, w, h
-        clip_path: Option<&Path>,     // for clipping inset
+        bounds: Rect<f32>,        // x, y, w, h
+        clip_path: Option<&Path>, // for clipping inset
         base_transform: Option<&Transform2D>,
         draw_mask: F,
     ) -> Result<(), GlError>
     where
         F: FnOnce(&mut Self, Option<&Transform2D>) -> Result<(), GlError>,
     {
-        let (x, y, w, h) = bounds;
+        let (x, y, w, h) = (bounds.x, bounds.y, bounds.w, bounds.h);
 
         // 1. Calculate transforms
         let spread = shadow.spread;
@@ -1651,7 +1602,7 @@ impl GlRenderer {
         brush_data: &crate::handle::GlGradientData,
         local_transform: Option<&Transform2D>,
         shadow: Option<&Shadow>,
-        bounds: (f32, f32, f32, f32),
+        bounds: Rect<f32>,
     ) -> Result<(), GlError> {
         if glyphs_to_draw.is_empty() {
             return Ok(());
@@ -1757,6 +1708,7 @@ impl GlRenderer {
 
         Ok(())
     }
+
     unsafe fn create_gradient_texture(
         &self,
         brush_data: &crate::handle::GlGradientData,
@@ -1810,7 +1762,7 @@ impl GlRenderer {
         local_transform: Option<&Transform2D>,
         shadow: Option<&Shadow>,
         clip_path: Option<&Path>,
-        bounds: (f32, f32, f32, f32),
+        bounds: Rect<f32>,
     ) -> Result<(), GlError> {
         if geometry.vertices.is_empty() || geometry.indices.is_empty() {
             return Ok(());
@@ -1930,7 +1882,12 @@ impl GlRenderer {
             unsafe {
                 self.render_shadow(
                     shadow,
-                    (draw_x, draw_y, draw_w, draw_h),
+                    Rect {
+                        x: draw_x,
+                        y: draw_y,
+                        w: draw_w,
+                        h: draw_h,
+                    },
                     None,
                     local_transform,
                     |this, shadow_t| {

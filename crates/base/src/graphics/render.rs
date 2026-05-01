@@ -1,10 +1,10 @@
 use crate::graphics::{
-    BrushHandle, Gradient, HitTestResult, ImageDrawOptions, ImageHandle, Path, PathDrawOptions,
-    SurfaceDrawOptions, SurfaceId, TextChunk, TextDrawOptions, TextFormatHandle,
+    BrushHandle, Gradient, ImageDrawOptions, ImageHandle, LayoutText, Path, PathDrawOptions,
+    SurfaceDrawOptions, SurfaceId, TextDrawOptions, TextFormatHandle,
 };
 #[cfg(feature = "svg")]
 use crate::graphics::{SvgDrawOptions, SvgHandle};
-use crate::types::{Color, Transform2D};
+use crate::types::{Color, Rect, Transform2D};
 use std::any::Any;
 
 pub trait Render: RenderContext {
@@ -32,6 +32,7 @@ pub trait RenderContext: Any {
     #[cfg(feature = "svg")]
     type SvgHandle: SvgHandle;
     type TextFormatHandle: TextFormatHandle;
+    type LayoutText: LayoutText;
 
     // ==================== 帧管理 ====================
     /// 开始渲染帧
@@ -81,38 +82,12 @@ pub trait RenderContext: Any {
         ttc_index: u32,
     ) -> Result<Self::TextFormatHandle, Self::Error>;
 
-    /// 测量文本宽高
-    fn measure_text(
+    fn create_text_layout(
         &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error>;
-    /// 像素点 -> 字符索引
-    fn hit_test_point(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        x: f32,
-        y: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<Option<HitTestResult>, Self::Error>;
-
-    /// 字符索引 -> 像素点（光标）
-    fn hit_test_text_position(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        text_index: usize,
-        trailing: bool,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error>;
+        text: String,
+        bounds: Rect<f32>,
+        text_format: Self::TextFormatHandle,
+    ) -> Result<Self::LayoutText, Self::Error>;
 
     /// 创建 Brush
     fn create_solid_color_brush(
@@ -167,8 +142,14 @@ pub trait RenderContext: Any {
         top: f32,
         width: f32,
         height: f32,
-        default_brush: &Self::BrushHandle,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
+        brush: &Self::BrushHandle,
+        options: Option<&TextDrawOptions>,
+    ) -> Result<(), Self::Error>;
+
+    fn draw_layout_text(
+        &mut self,
+        layout_text: &Self::LayoutText,
+        brush: &Self::BrushHandle,
         options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error>;
 

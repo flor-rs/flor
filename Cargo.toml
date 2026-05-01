@@ -21,17 +21,17 @@ license = ""
 repository = ""
 
 [workspace.dependencies]
-arc-swap = "1.8.0"
+arc-swap = "1.9"
 atomic_float = "1.1.0"
 flor = { version = "0.1.0", path = "crates/flor" }
-cosmic-text = "0.18"
+cosmic-text = "0.19.0"
 flor-base = { version = "0.1.0", path = "crates/base" }
 flor-graphics-opengl = { version = "0.1.0", path = "crates/graphics/opengl" }
 flor-graphics-direct2d = { version = "0.1.0", path = "crates/graphics/direct2d" }
 flor-graphics-tiny-skia = { version = "0.1.0", path = "crates/graphics/tiny-skia" }
 flor-macros = { version = "0.1.0", path = "crates/macros" }
 dashmap = "*"
-image = "0.25"
+image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp", "bmp", "ico"] }
 log = "0.4"
 libblur = "0.23"
 once_cell = "1"
@@ -51,7 +51,8 @@ windows-core = "0.62"
 windows-numerics = "0.3"
 taffy = { version = "0.7.7", default-features = false, features = ["std", "taffy_tree", "content_size", "detailed_layout_info"] }
 parking_lot = "0.12"
-lru = "0.16"
+unicode-segmentation = "1.12.0"
+lru = "0.18.0"
 tiny-skia = "0.12"
 arboard = "3.6"
 slotmap = "1"

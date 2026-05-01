@@ -4,10 +4,10 @@ use crate::handle::{
     TinySkiaTextFormatHandle,
 };
 use flor_base::graphics::{
-    Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathDrawOptions, Render,
-    RenderContext, SurfaceDrawOptions, TextChunk, TextDrawOptions, FONT_SYSTEM,
+    Gradient, ImageDrawOptions, LayoutText, ParagraphAlignment, Path, PathDrawOptions, Render,
+    RenderContext, SurfaceDrawOptions, TextDrawOptions, FONT_SYSTEM,
 };
-use flor_base::types::{Color, Transform2D};
+use flor_base::types::{Color, Rect, Transform2D};
 use libblur::BlurError;
 use slotmap::SlotMap;
 use tiny_skia::{Paint, Pixmap, PixmapMut, PixmapPaint, PremultipliedColorU8};
@@ -20,6 +20,7 @@ use {
 mod config;
 use crate::display_context::{DisplayContext, NativeDisplayContext};
 use crate::has_transform::HasTransform;
+use crate::text_layout::TinySkiaTextLayout;
 use crate::to_tiny_skia::ToTinySkia;
 pub use config::*;
 use flor_base::graphics;
@@ -471,6 +472,7 @@ impl RenderContext for TinySkiaRenderer {
     #[cfg(feature = "svg")]
     type SvgHandle = TinySkiaSvgHandle;
     type TextFormatHandle = TinySkiaTextFormatHandle;
+    type LayoutText = TinySkiaTextLayout;
 
     fn begin(&mut self) -> Result<(), Self::Error> {
         let _timer = FuncTimer::new("begin");
@@ -643,78 +645,17 @@ impl RenderContext for TinySkiaRenderer {
         Ok(TinySkiaTextFormatHandle::new_with_font_source(source))
     }
 
-    fn measure_text(
+    fn create_text_layout(
         &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error> {
-        let _timer = FuncTimer::new("measure_text");
-        let (dpi_x, dpi_y) = self.dpi_scale;
-        let chunks = graphics::prepare_text_chunks(chunks, None);
-        Ok(graphics::measure_text(
-            text,
-            &text_format.config,
-            width,
-            height,
-            dpi_x,
-            dpi_y,
-            &chunks,
-        ))
-    }
-
-    fn hit_test_point(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        x: f32,
-        y: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<Option<HitTestResult>, Self::Error> {
-        let _timer = FuncTimer::new("hit_test_point");
-        let (dpi_x, dpi_y) = self.dpi_scale;
-        let chunks = graphics::prepare_text_chunks(chunks, None);
-        Ok(graphics::hit_test_point(
-            text,
-            &text_format.config,
-            width,
-            height,
-            dpi_x,
-            dpi_y,
-            x,
-            y,
-            &chunks,
-        ))
-    }
-
-    fn hit_test_text_position(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        text_index: usize,
-        trailing: bool,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error> {
-        let _timer = FuncTimer::new("hit_test_text_position");
-        let (dpi_x, dpi_y) = self.dpi_scale;
-        let chunks = graphics::prepare_text_chunks(chunks, None);
-        Ok(graphics::hit_test_text_position(
-            text,
-            &text_format.config,
-            width,
-            height,
-            dpi_x,
-            dpi_y,
-            text_index,
-            trailing,
-            &chunks,
-        ))
+        text: String,
+        bounds: Rect<f32>,
+        text_format: Self::TextFormatHandle,
+    ) -> Result<Self::LayoutText, Self::Error> {
+        let _timer = FuncTimer::new("create_text_layout");
+        let mut layout =
+            crate::text_layout::TinySkiaTextLayout::create_text_layout(text, bounds, text_format);
+        layout.dpi_scale = self.dpi_scale;
+        Ok(layout)
     }
 
     fn create_solid_color_brush(
@@ -1168,30 +1109,41 @@ impl RenderContext for TinySkiaRenderer {
         top: f32,
         width: f32,
         height: f32,
-        default_brush: &Self::BrushHandle,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
+        brush: &Self::BrushHandle,
         options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error> {
         let _timer = FuncTimer::new("draw_text");
+
+        let text_layout = self.create_text_layout(
+            text.to_string(),
+            Rect {
+                x: left,
+                y: top,
+                w: width,
+                h: height,
+            },
+            text_format.clone(),
+        )?;
+
+        self.draw_layout_text(&text_layout, brush, options)
+    }
+
+    fn draw_layout_text(
+        &mut self,
+        layout_text: &Self::LayoutText,
+        brush: &Self::BrushHandle,
+        options: Option<&TextDrawOptions>,
+    ) -> Result<(), Self::Error> {
+        let _timer = FuncTimer::new("draw_layout_text");
         let (dpi_x, dpi_y) = self.dpi_scale;
+        let bounds = layout_text.bounds();
+        let buffer = layout_text.buffer();
+        let text_format = layout_text.text_format();
+        let left = bounds.x;
+        let top = bounds.y;
+        let width = bounds.w;
+        let height = bounds.h;
         let phys_height = height * dpi_y;
-
-        let mut brushes = Vec::new();
-        let chunks = graphics::prepare_text_chunks(chunks, Some(&mut brushes));
-
-        // 将 default_brush 加入 brushes 数组最后，这样默认 span 的 metadata = chunks.len() 就能找到它
-        brushes.push(default_brush);
-
-        // 编译文本布局
-        let buffer = graphics::prepare_text_buffer(
-            text,
-            &text_format.config,
-            width,
-            height,
-            dpi_x,
-            dpi_y,
-            &chunks,
-        );
 
         // 计算文本总高度
         let mut total_h = 0.0f32;
@@ -1217,26 +1169,7 @@ impl RenderContext for TinySkiaRenderer {
                            override_color: Option<tiny_skia::Color>| {
             for run in buffer.layout_runs() {
                 for glyph in run.glyphs.iter() {
-                    // let start_byte = run
-                    //     .text
-                    //     .char_indices()
-                    //     .nth(glyph.start)
-                    //     .map_or(run.text.len(), |(i, _)| i);
-                    // let end_byte = run
-                    //     .text
-                    //     .char_indices()
-                    //     .nth(glyph.end)
-                    //     .map_or(run.text.len(), |(i, _)| i);
-
-                    // let glyph_text = &run.text[start_byte..end_byte];
-                    // debug!(
-                    //     "glyph: start={}, end={}, text={:?}",
-                    //     glyph.start, glyph.end, glyph_text
-                    // );
-
-                    let current_brush = brushes
-                        .get(glyph.metadata)
-                        .unwrap_or_else(|| brushes.last().unwrap());
+                    let current_brush = layout_text.brush_at(glyph.metadata).unwrap_or(brush);
 
                     let has_rotation = render_transform.kx != 0.0 || render_transform.ky != 0.0;
 

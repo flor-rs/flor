@@ -15,3 +15,5 @@ mod renderer;
 pub use renderer::*;
 
 mod render_factory;
+
+pub mod text_layout;

@@ -13,14 +13,15 @@ use crate::render::surface_id::FlorSurfaceId;
 #[cfg(feature = "svg")]
 use crate::render::svg_handle::FlorSvgHandle;
 use crate::render::text_format_handle::FlorTextFormatHandle;
+use crate::render::text_layout::FlorLayoutText;
 use crate::render::{FlorBrushHandle, FlorRendererError};
 #[cfg(feature = "svg")]
 use flor_base::graphics::SvgDrawOptions;
 use flor_base::graphics::{
-    Gradient, HitTestResult, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext,
-    SurfaceDrawOptions, TextChunk, TextDrawOptions,
+    Gradient, ImageDrawOptions, Path, PathDrawOptions, Render, RenderContext, SurfaceDrawOptions,
+    TextDrawOptions,
 };
-use flor_base::types::{Color, Transform2D};
+use flor_base::types::{Color, Rect, Transform2D};
 use platform::WindowId;
 
 #[derive(Debug)]
@@ -83,6 +84,7 @@ impl RenderContext for FlorRenderer {
     #[cfg(feature = "svg")]
     type SvgHandle = FlorSvgHandle;
     type TextFormatHandle = FlorTextFormatHandle;
+    type LayoutText = FlorLayoutText;
 
     fn begin(&mut self) -> Result<(), Self::Error> {
         match self {
@@ -255,330 +257,30 @@ impl RenderContext for FlorRenderer {
         }
     }
 
-    fn measure_text(
+    fn create_text_layout(
         &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error> {
-        match self {
-            #[cfg(feature = "gpu-render-backend")]
-            FlorRenderer::GPU(g) => {
-                // 解包 GPU 具体的 Format Handle
-                if let FlorTextFormatHandle::GPU(inner_fmt) = text_format {
-                    let converted_chunks = if let Some(c) = chunks {
-                        let mut v = c
-                            .iter()
-                            .filter_map(|chunk| {
-                                if let (
-                                    FlorBrushHandle::GPU(brush),
-                                    FlorTextFormatHandle::GPU(text_format),
-                                ) = (chunk.brush, chunk.text_format)
-                                {
-                                    Some(TextChunk {
-                                        brush,
-                                        text_format,
-                                        start: chunk.start,
-                                        length: chunk.length,
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        v.sort_unstable_by_key(|chunk| chunk.start);
-                        let mut last_end = 0;
-                        for chunk in &v {
-                            if chunk.start < last_end {
-                                return Err(Self::Error::OverlappingTextChunks);
-                            }
-                            last_end = chunk.start + chunk.length;
-                        }
-                        Some(v)
-                    } else {
-                        None
-                    };
-                    return Ok(g.measure_text(
-                        text,
-                        inner_fmt,
-                        width,
-                        height,
-                        converted_chunks.as_deref(),
-                    )?);
-                }
-            }
-            #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => {
-                // 解包 CPU 具体的 Format Handle
-                if let FlorTextFormatHandle::CPU(inner_fmt) = text_format {
-                    let converted_chunks = if let Some(c) = chunks {
-                        let mut v = c
-                            .iter()
-                            .filter_map(|chunk| {
-                                if let (
-                                    FlorBrushHandle::CPU(brush),
-                                    FlorTextFormatHandle::CPU(text_format),
-                                ) = (chunk.brush, chunk.text_format)
-                                {
-                                    Some(TextChunk {
-                                        brush,
-                                        text_format,
-                                        start: chunk.start,
-                                        length: chunk.length,
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        v.sort_unstable_by_key(|chunk| chunk.start);
-                        let mut last_end = 0;
-                        for chunk in &v {
-                            if chunk.start < last_end {
-                                return Err(Self::Error::OverlappingTextChunks);
-                            }
-                            last_end = chunk.start + chunk.length;
-                        }
-                        Some(v)
-                    } else {
-                        None
-                    };
-                    let result = c.measure_text(
-                        text,
-                        inner_fmt,
-                        width,
-                        height,
-                        converted_chunks.as_deref(),
-                    )?;
-                    return Ok(result);
-                }
-            }
-        }
-        // 如果后端匹配但 Handle 类型不对，或者没有启用的后端分支
-        Err(FlorRendererError::RenderNotFound)
-    }
-
-    fn hit_test_point(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        x: f32,
-        y: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<Option<HitTestResult>, Self::Error> {
+        text: String,
+        bounds: Rect<f32>,
+        text_format: Self::TextFormatHandle,
+    ) -> Result<Self::LayoutText, Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRenderer::GPU(g) => {
                 if let FlorTextFormatHandle::GPU(inner_fmt) = text_format {
-                    let converted_chunks = if let Some(c) = chunks {
-                        let mut v = c
-                            .iter()
-                            .filter_map(|chunk| {
-                                if let (
-                                    FlorBrushHandle::GPU(brush),
-                                    FlorTextFormatHandle::GPU(text_format),
-                                ) = (chunk.brush, chunk.text_format)
-                                {
-                                    Some(TextChunk {
-                                        brush,
-                                        text_format,
-                                        start: chunk.start,
-                                        length: chunk.length,
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        v.sort_unstable_by_key(|chunk| chunk.start);
-                        let mut last_end = 0;
-                        for chunk in &v {
-                            if chunk.start < last_end {
-                                return Err(Self::Error::OverlappingTextChunks);
-                            }
-                            last_end = chunk.start + chunk.length;
-                        }
-                        Some(v)
-                    } else {
-                        None
-                    };
-                    return Ok(g.hit_test_point(
-                        text,
-                        inner_fmt,
-                        width,
-                        height,
-                        x,
-                        y,
-                        converted_chunks.as_deref(),
-                    )?);
+                    return Ok(FlorLayoutText::GPU(
+                        g.create_text_layout(text, bounds, inner_fmt)?,
+                    ));
                 }
             }
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
                 if let FlorTextFormatHandle::CPU(inner_fmt) = text_format {
-                    let converted_chunks = if let Some(c) = chunks {
-                        let mut v = c
-                            .iter()
-                            .filter_map(|chunk| {
-                                if let (
-                                    FlorBrushHandle::CPU(brush),
-                                    FlorTextFormatHandle::CPU(text_format),
-                                ) = (chunk.brush, chunk.text_format)
-                                {
-                                    Some(TextChunk {
-                                        brush,
-                                        text_format,
-                                        start: chunk.start,
-                                        length: chunk.length,
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        v.sort_unstable_by_key(|chunk| chunk.start);
-                        let mut last_end = 0;
-                        for chunk in &v {
-                            if chunk.start < last_end {
-                                return Err(Self::Error::OverlappingTextChunks);
-                            }
-                            last_end = chunk.start + chunk.length;
-                        }
-                        Some(v)
-                    } else {
-                        None
-                    };
-                    return Ok(c.hit_test_point(
-                        text,
-                        inner_fmt,
-                        width,
-                        height,
-                        x,
-                        y,
-                        converted_chunks.as_deref(),
-                    )?);
+                    return Ok(FlorLayoutText::CPU(
+                        c.create_text_layout(text, bounds, inner_fmt)?,
+                    ));
                 }
             }
         }
-
-        Err(FlorRendererError::RenderNotFound)
-    }
-
-    fn hit_test_text_position(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        text_index: usize,
-        trailing: bool,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error> {
-        match self {
-            #[cfg(feature = "gpu-render-backend")]
-            FlorRenderer::GPU(g) => {
-                if let FlorTextFormatHandle::GPU(inner_fmt) = text_format {
-                    let converted_chunks = if let Some(c) = chunks {
-                        let mut v = c
-                            .iter()
-                            .filter_map(|chunk| {
-                                if let (
-                                    FlorBrushHandle::GPU(brush),
-                                    FlorTextFormatHandle::GPU(text_format),
-                                ) = (chunk.brush, chunk.text_format)
-                                {
-                                    Some(TextChunk {
-                                        brush,
-                                        text_format,
-                                        start: chunk.start,
-                                        length: chunk.length,
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        v.sort_unstable_by_key(|chunk| chunk.start);
-                        let mut last_end = 0;
-                        for chunk in &v {
-                            if chunk.start < last_end {
-                                return Err(Self::Error::OverlappingTextChunks);
-                            }
-                            last_end = chunk.start + chunk.length;
-                        }
-                        Some(v)
-                    } else {
-                        None
-                    };
-                    return Ok(g.hit_test_text_position(
-                        text,
-                        inner_fmt,
-                        width,
-                        height,
-                        text_index,
-                        trailing,
-                        converted_chunks.as_deref(),
-                    )?);
-                }
-            }
-            #[cfg(feature = "cpu-render-backend")]
-            FlorRenderer::CPU(c) => {
-                if let FlorTextFormatHandle::CPU(inner_fmt) = text_format {
-                    let converted_chunks = if let Some(c) = chunks {
-                        let mut v = c
-                            .iter()
-                            .filter_map(|chunk| {
-                                if let (
-                                    FlorBrushHandle::CPU(brush),
-                                    FlorTextFormatHandle::CPU(text_format),
-                                ) = (chunk.brush, chunk.text_format)
-                                {
-                                    Some(TextChunk {
-                                        brush,
-                                        text_format,
-                                        start: chunk.start,
-                                        length: chunk.length,
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        v.sort_unstable_by_key(|chunk| chunk.start);
-                        let mut last_end = 0;
-                        for chunk in &v {
-                            if chunk.start < last_end {
-                                return Err(Self::Error::OverlappingTextChunks);
-                            }
-                            last_end = chunk.start + chunk.length;
-                        }
-                        Some(v)
-                    } else {
-                        None
-                    };
-                    return Ok(c.hit_test_text_position(
-                        text,
-                        inner_fmt,
-                        width,
-                        height,
-                        text_index,
-                        trailing,
-                        converted_chunks.as_deref(),
-                    )?);
-                }
-            }
-        }
-
         Err(FlorRendererError::RenderNotFound)
     }
 
@@ -704,55 +406,15 @@ impl RenderContext for FlorRenderer {
         top: f32,
         width: f32,
         height: f32,
-        default_brush: &Self::BrushHandle,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
+        brush: &Self::BrushHandle,
         options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error> {
         match self {
             #[cfg(feature = "gpu-render-backend")]
             FlorRenderer::GPU(g) => {
-                // 双重解包
                 if let (FlorTextFormatHandle::GPU(inner_fmt), FlorBrushHandle::GPU(inner_brush)) =
-                    (text_format, default_brush)
+                    (text_format, brush)
                 {
-                    // 转换为 Result<Option<Vec<TextChunk>>, YourErrorType>
-                    let converted_chunks = if let Some(c) = chunks {
-                        let mut v = c
-                            .iter()
-                            .filter_map(|chunk| {
-                                if let (
-                                    FlorBrushHandle::GPU(brush),
-                                    FlorTextFormatHandle::GPU(text_format),
-                                ) = (chunk.brush, chunk.text_format)
-                                {
-                                    Some(TextChunk {
-                                        brush,
-                                        text_format,
-                                        start: chunk.start,
-                                        length: chunk.length,
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        // 1. 排序
-                        v.sort_unstable_by_key(|chunk| chunk.start);
-
-                        // 2. 线性检测并返回 Error 而不是 panic
-                        let mut last_end = 0;
-                        for chunk in &v {
-                            if chunk.start < last_end {
-                                // 假设你的错误枚举名为 FlorError
-                                return Err(Self::Error::OverlappingTextChunks);
-                            }
-                            last_end = chunk.start + chunk.length;
-                        }
-                        Some(v)
-                    } else {
-                        None
-                    };
                     g.draw_text(
                         text,
                         inner_fmt,
@@ -761,7 +423,6 @@ impl RenderContext for FlorRenderer {
                         width,
                         height,
                         inner_brush,
-                        converted_chunks.as_deref(),
                         options,
                     )?;
                     return Ok(());
@@ -770,46 +431,8 @@ impl RenderContext for FlorRenderer {
             #[cfg(feature = "cpu-render-backend")]
             FlorRenderer::CPU(c) => {
                 if let (FlorTextFormatHandle::CPU(inner_fmt), FlorBrushHandle::CPU(inner_brush)) =
-                    (text_format, default_brush)
+                    (text_format, brush)
                 {
-                    // 转换为 Result<Option<Vec<TextChunk>>, YourErrorType>
-                    let converted_chunks = if let Some(c) = chunks {
-                        let mut v = c
-                            .iter()
-                            .filter_map(|chunk| {
-                                if let (
-                                    FlorBrushHandle::CPU(brush),
-                                    FlorTextFormatHandle::CPU(text_format),
-                                ) = (chunk.brush, chunk.text_format)
-                                {
-                                    Some(TextChunk {
-                                        brush,
-                                        text_format,
-                                        start: chunk.start,
-                                        length: chunk.length,
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        // 1. 排序
-                        v.sort_unstable_by_key(|chunk| chunk.start);
-
-                        // 2. 线性检测并返回 Error 而不是 panic
-                        let mut last_end = 0;
-                        for chunk in &v {
-                            if chunk.start < last_end {
-                                // 假设你的错误枚举名为 FlorError
-                                return Err(Self::Error::OverlappingTextChunks);
-                            }
-                            last_end = chunk.start + chunk.length;
-                        }
-                        Some(v)
-                    } else {
-                        None
-                    };
                     c.draw_text(
                         text,
                         inner_fmt,
@@ -818,13 +441,38 @@ impl RenderContext for FlorRenderer {
                         width,
                         height,
                         inner_brush,
-                        converted_chunks.as_deref(),
                         options,
                     )?;
                     return Ok(());
                 }
             }
         };
+        Err(FlorRendererError::RenderNotFound)
+    }
+
+    fn draw_layout_text(
+        &mut self,
+        layout_text: &Self::LayoutText,
+        brush: &Self::BrushHandle,
+        options: Option<&TextDrawOptions>,
+    ) -> Result<(), Self::Error> {
+        match (self, layout_text) {
+            #[cfg(feature = "gpu-render-backend")]
+            (FlorRenderer::GPU(g), FlorLayoutText::GPU(inner_layout)) => {
+                if let FlorBrushHandle::GPU(inner_brush) = brush {
+                    g.draw_layout_text(inner_layout, inner_brush, options)?;
+                    return Ok(());
+                }
+            }
+            #[cfg(feature = "cpu-render-backend")]
+            (FlorRenderer::CPU(c), FlorLayoutText::CPU(inner_layout)) => {
+                if let FlorBrushHandle::CPU(inner_brush) = brush {
+                    c.draw_layout_text(inner_layout, inner_brush, options)?;
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
         Err(FlorRendererError::RenderNotFound)
     }
 

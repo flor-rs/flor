@@ -53,7 +53,7 @@ log = { workspace = true }
 once_cell = { workspace = true }
 rustc-hash = { workspace = true }
 thiserror = { workspace = true }
-flor-base = { workspace = true, features = ["graphics"] }
+flor-base = { workspace = true, features = ["graphics", "text-layout"] }
 flor-macros = { workspace = true }
 #graphics-opengl = { workspace = true, optional = true }
 flor-graphics-direct2d = { workspace = true, optional = true }

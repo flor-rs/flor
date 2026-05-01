@@ -7,6 +7,7 @@ pub mod surface_id;
 #[cfg(feature = "svg")]
 pub mod svg_handle;
 pub mod text_format_handle;
+pub mod text_layout;
 
 // #[cfg(all(
 //     not(any(feature = "direct2d", feature = "dx11")), // GPU 后端
@@ -30,5 +31,5 @@ pub use svg_handle::*;
 
 pub use {
     brush_handle::*, error::*, image_handle::*, load_resource::*, renderer::*, surface_id::*,
-    text_format_handle::*,
+    text_format_handle::*, text_layout::*,
 };

@@ -3,11 +3,12 @@ use crate::error::D2DError;
 use crate::handle::{D2DBrushHandle, D2DImageHandle, D2DSurfaceId, D2DTextFormatHandle};
 use crate::render_factory::RenderFactory;
 use crate::renderer::clip_type::ClipType;
+use crate::text_layout::D2DTextLayout;
 use crate::to_d2d::{AsD2dColor, IntoD2DTransform};
 use flor_base::graphics::{
-    Error, Gradient, HitTestResult, ImageDrawOptions, ParagraphAlignment, Path, PathCommand,
-    PathDrawOptions, Render, RenderContext, ScaleMode, SurfaceDrawOptions, TextAlignment,
-    TextChunk, TextDrawOptions, TextFormatHandle, TextTrimming, WordWrapping,
+    Error, Gradient, HitTestResult, ImageDrawOptions, LayoutText, ParagraphAlignment, Path,
+    PathCommand, PathDrawOptions, Render, RenderContext, ScaleMode, SurfaceDrawOptions,
+    TextAlignment, TextChunk, TextDrawOptions, TextFormatHandle, TextTrimming, WordWrapping,
 };
 use flor_base::types::{Color, Rect, Transform2D};
 use log::debug;
@@ -174,6 +175,7 @@ impl RenderContext for D2DRenderer {
     #[cfg(feature = "svg")]
     type SvgHandle = D2DSvgHandle;
     type TextFormatHandle = D2DTextFormatHandle;
+    type LayoutText = D2DTextLayout;
 
     fn begin(&mut self) -> Result<(), Self::Error> {
         unsafe {
@@ -449,205 +451,17 @@ impl RenderContext for D2DRenderer {
         }
     }
 
-    fn measure_text(
+    fn create_text_layout(
         &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error> {
-        self.rebuild_text_format(text_format)?;
-        unsafe {
-            let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
-                &encode_unicode(text),
-                &text_format.raw(),
-                width,
-                height,
-            )?;
-
-            // 应用文本块格式设置
-            self.apply_text_chunks(&text_layout, text, chunks)?;
-
-            let mut text_metrics = DWRITE_TEXT_METRICS {
-                left: 0.0,
-                top: 0.0,
-                width: 0.0,
-                widthIncludingTrailingWhitespace: 0.0,
-                height: 0.0,
-                layoutWidth: 0.0,
-                layoutHeight: 0.0,
-                maxBidiReorderingDepth: 0,
-                lineCount: 0,
-            };
-            text_layout.GetMetrics(&mut text_metrics)?;
-            Ok((text_metrics.width, text_metrics.height))
-        }
-    }
-
-    fn hit_test_point(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        x: f32,
-        y: f32,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<Option<HitTestResult>, Self::Error> {
-        self.rebuild_text_format(text_format)?;
-        unsafe {
-            let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
-                &encode_unicode(text),
-                &text_format.raw(),
-                width,
-                height,
-            )?;
-            self.apply_text_chunks(&text_layout, text, chunks)?;
-
-            // 1. 先拿到目标 U16 位置
-            let mut is_trailing = BOOL(0);
-            let mut is_inside = BOOL(0);
-            let mut metrics = DWRITE_HIT_TEST_METRICS::default();
-            text_layout.HitTestPoint(x, y, &mut is_trailing, &mut is_inside, &mut metrics)?;
-            let target_u16 = metrics.textPosition;
-
-            // 2. 一次性获取行指标
-            let mut line_count = 0;
-            text_layout.GetLineMetrics(None, &mut line_count)?;
-            let mut dw_line_metrics = vec![DWRITE_LINE_METRICS::default(); line_count as usize];
-            text_layout.GetLineMetrics(Some(&mut dw_line_metrics), &mut line_count)?;
-
-            // 3. 单次扫描：同步查找行号和字节偏移
-            let mut u16_acc = 0u32;
-            let mut u8_acc = 0usize;
-
-            let mut result = HitTestResult {
-                global_index: 0,
-                line: 0,
-                line_offset: 0,
-                is_trailing: is_trailing.as_bool(),
-                is_inside: is_inside.as_bool(),
-                bounds: Some(Rect {
-                    x: metrics.left,
-                    y: metrics.top,
-                    w: metrics.width,
-                    h: metrics.height,
-                }),
-            };
-
-            for (idx, lm) in dw_line_metrics.iter().enumerate() {
-                let line_u8_start = u8_acc;
-                let line_u16_start = u16_acc;
-                let line_u16_end = u16_acc + lm.length;
-
-                // 检查目标是否在这一行
-                if target_u16 >= line_u16_start && target_u16 < line_u16_end {
-                    result.line = idx;
-
-                    // 行内细查：找到具体的字节偏移
-                    let mut current_line_u16 = line_u16_start;
-                    for g in text[line_u8_start..].graphemes(true) {
-                        if current_line_u16 >= target_u16 {
-                            break;
-                        }
-
-                        let g_u16_len = g.chars().map(|c| c.len_utf16()).sum::<usize>() as u32;
-                        current_line_u16 += g_u16_len;
-                        u8_acc += g.len();
-                    }
-
-                    result.global_index = u8_acc;
-                    result.line_offset = u8_acc - line_u8_start;
-
-                    // 找到结果，提前退出全文扫描
-                    return Ok(Some(result));
-                }
-
-                // 如果没命中这一行，依然需要计算这一行的 UTF-8 总长度以供下一行使用
-                // 这一步是无法避免的，因为 D2D 不提供行起始的字节偏移
-                let mut current_line_u16 = 0u32;
-                for g in text[u8_acc..].graphemes(true) {
-                    if current_line_u16 >= lm.length {
-                        break;
-                    }
-                    let g_u16_len = g.chars().map(|c| c.len_utf16()).sum::<usize>() as u32;
-                    current_line_u16 += g_u16_len;
-                    u8_acc += g.len();
-                }
-                u16_acc = line_u16_end;
-            }
-
-            // 处理点击在文末的情况
-            if target_u16 >= u16_acc {
-                result.line = dw_line_metrics.len().saturating_sub(1);
-                result.global_index = u8_acc;
-                // 此处 line_offset 逻辑需根据需求微调
-                return Ok(Some(result));
-            }
-
-            Ok(None)
-        }
-    }
-
-    fn hit_test_text_position(
-        &self,
-        text: &str,
-        text_format: &Self::TextFormatHandle,
-        width: f32,
-        height: f32,
-        text_index: usize,
-        trailing: bool,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
-    ) -> Result<(f32, f32), Self::Error> {
-        self.rebuild_text_format(text_format)?;
-        unsafe {
-            let text_utf16 = encode_unicode(text);
-            let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
-                &text_utf16,
-                &text_format.raw(),
-                width,
-                height,
-            )?;
-
-            // 应用文本块格式设置
-            self.apply_text_chunks(&text_layout, text, chunks)?;
-
-            // 将 UTF-8 索引转换为 UTF-16 索引
-            let mut utf16_index = 0;
-            let mut utf8_index = 0;
-
-            while utf8_index < text_index && utf8_index < text.len() {
-                let c = text[utf8_index..].chars().next().unwrap();
-                utf16_index += c.len_utf16();
-                utf8_index += c.len_utf8();
-            }
-
-            let mut x = 0.0f32;
-            let mut y = 0.0f32;
-
-            let mut metrics = DWRITE_HIT_TEST_METRICS {
-                textPosition: 0,
-                length: 0,
-                left: 0.0,
-                top: 0.0,
-                width: 0.0,
-                height: 0.0,
-                bidiLevel: 0,
-                isText: BOOL(0),
-                isTrimmed: Default::default(),
-            };
-
-            text_layout.HitTestTextPosition(
-                utf16_index as u32,
-                trailing,
-                &mut x,
-                &mut y,
-                &mut metrics,
-            )?;
-
-            Ok((x, y))
-        }
+        text: String,
+        bounds: Rect<f32>,
+        default_text_format: Self::TextFormatHandle,
+    ) -> Result<Self::LayoutText, Self::Error> {
+        Ok(D2DTextLayout::create_text_layout(
+            text,
+            bounds,
+            default_text_format,
+        ))
     }
 
     fn create_solid_color_brush(
@@ -1386,23 +1200,41 @@ impl RenderContext for D2DRenderer {
         width: f32,
         height: f32,
         default_brush: &Self::BrushHandle,
-        chunks: Option<&[TextChunk<'_, Self::BrushHandle, Self::TextFormatHandle>]>,
         options: Option<&TextDrawOptions>,
     ) -> Result<(), Self::Error> {
-        // 1. 确保 Format 是最新的 (Lazy Rebuild)
-        self.rebuild_text_format(text_format)?;
+        // 1. 创建文本布局（会自动确保 format 是最新的）
+        let text_layout = self.create_text_layout(
+            text.to_string(),
+            Rect {
+                x: left,
+                y: top,
+                w: width,
+                h: height,
+            },
+            text_format.clone(),
+        )?;
+
+        // 2. 绘制文本布局
+        self.draw_layout_text(&text_layout, default_brush, options)
+    }
+
+    fn draw_layout_text(
+        &mut self,
+        layout_text: &Self::LayoutText,
+        default_brush: &Self::BrushHandle,
+        options: Option<&TextDrawOptions>,
+    ) -> Result<(), Self::Error> {
+        // 1. 获取 DirectWrite 布局对象（会自动确保 format 是最新的）
+        let dwrite_layout = layout_text.dwrite_layout()?;
+        let bounds = layout_text.bounds();
+        let text = layout_text.text();
 
         unsafe {
-            // 2. 获取资源
-            // 关键：使用 clone() (AddRef) 将接口指针从 self 的生命周期中剥离。
-            // 这样后续调用 self.get_or_create_shadow_effect() (&mut self) 时就不会报错。
-            let d2d_format = text_format.raw();
+            // 3. 获取资源
+            let d2d_format = layout_text.default_text_format().raw();
             let main_brush = default_brush.raw();
 
-            // 预处理文本 (转 UTF-16)
-            let text_utf16 = encode_unicode(text);
-
-            // 3. 处理 矩阵变换 (Transform)
+            // 4. 处理 矩阵变换 (Transform)
             let mut old_transform = Matrix3x2::default();
             self.current_render.GetTransform(&mut old_transform);
 
@@ -1422,16 +1254,17 @@ impl RenderContext for D2DRenderer {
 
             // 定义标准位置的矩形
             let layout_rect = D2D_RECT_F {
-                left,
-                top,
-                right: left + width,
-                bottom: top + height,
+                left: bounds.x,
+                top: bounds.y,
+                right: bounds.x + bounds.w,
+                bottom: bounds.y + bounds.h,
             };
 
-            // 4. 处理 阴影 (Shadow)
+            // 5. 处理 阴影 (Shadow)
             if let Some(opts) = options {
                 if let Some(shadow) = opts.shadow {
                     let shadow_color = shadow.color.as_d2d_color();
+                    let text_utf16 = encode_unicode(text);
 
                     // --- 分支 A: 真·模糊阴影 (Quality Path) ---
                     if shadow.blur_radius > 0.0 {
@@ -1443,8 +1276,6 @@ impl RenderContext for D2DRenderer {
 
                             dc5.SetTarget(&command_list);
                             // 录制时使用 Identity，位置由 DrawText 的 layout_rect 决定
-                            // 注意：这里我们是在 final_transform 的坐标系下“原地”录制，
-                            // 所以录制环境的 Transform 设为 Identity，内容位置靠 rect 控制。
                             dc5.SetTransform(&Matrix3x2::identity());
 
                             // 设置纯色画笔录制遮罩
@@ -1462,8 +1293,8 @@ impl RenderContext for D2DRenderer {
                                 &d2d_format,
                                 &layout_rect,
                                 &self.scratch_brush,
-                                &svg_glyph_style, // svgglyphstyle
-                                0,                // colorpaletteindex
+                                &svg_glyph_style,
+                                0,
                                 D2D1_DRAW_TEXT_OPTIONS_NONE,
                                 DWRITE_MEASURING_MODE_NATURAL,
                             );
@@ -1472,10 +1303,9 @@ impl RenderContext for D2DRenderer {
                             dc5.SetTarget(old_target.as_ref());
 
                             // 2. 绘制特效
-                            // 恢复主变换
                             dc5.SetTransform(&final_transform);
 
-                            let shadow_effect = self.get_or_create_shadow_effect()?; // 无需 clone, 直接拿 &Effect
+                            let shadow_effect = self.get_or_create_shadow_effect()?;
 
                             shadow_effect.SetInput(0, &command_list, true);
                             shadow_effect.SetValue(
@@ -1531,33 +1361,19 @@ impl RenderContext for D2DRenderer {
                 }
             }
 
-            // 5. 绘制 主文本 (Main Text)
-            let text_layout = RenderFactory::get().write_factory.CreateTextLayout(
-                &text_utf16,
-                &d2d_format,
-                width,
-                height,
-            )?;
-
-            // 设置默认文本范围
-            let default_range = DWRITE_TEXT_RANGE {
-                startPosition: 0,
-                length: text_utf16.len() as u32,
-            };
-            text_layout.SetDrawingEffect(main_brush, default_range)?;
-
-            // 应用文本块格式设置
-            self.apply_text_chunks(&text_layout, text, chunks)?;
-
+            // 6. 绘制 主文本 (Main Text)
             // 使用 DrawTextLayout 绘制文本以支持不同颜色的文本块
             self.current_render.DrawTextLayout(
-                Vector2 { X: left, Y: top },
-                &text_layout,
+                Vector2 {
+                    X: bounds.x,
+                    Y: bounds.y,
+                },
+                &dwrite_layout,
                 main_brush,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
             );
 
-            // 6. 恢复矩阵
+            // 7. 恢复矩阵
             self.current_render.SetTransform(&old_transform);
 
             Ok(())
@@ -2722,7 +2538,6 @@ impl D2DRenderer {
         text: &str,
         chunks: Option<
             &[TextChunk<
-                '_,
                 <D2DRenderer as RenderContext>::BrushHandle,
                 <D2DRenderer as RenderContext>::TextFormatHandle,
             >],
@@ -2779,113 +2594,6 @@ impl D2DRenderer {
                 }
             }
         }
-        Ok(())
-    }
-
-    fn rebuild_text_format(&self, text_format: &D2DTextFormatHandle) -> Result<(), D2DError> {
-        // 1. 极速路径 (Fast Path)
-        // 只要没脏，直接返回。不锁 Map，不查 Key，不做任何多余操作。
-        // 这让每一帧调用 rebuild 的开销几乎为 0。
-        if !text_format.dirty() {
-            return Ok(());
-        }
-
-        // =========================================================
-        // 慢路径 (Slow Path): 只有需要更新时才走这里
-        // =========================================================
-
-        // 2. 准备不可变参数
-        let family = HSTRING::from(&text_format.font_family_name());
-        let (weight, style, stretch) = text_format.map_props();
-        let locale = HSTRING::from("en-us");
-
-        // 3. 创建核心对象 (耗时操作，不持有锁)
-        let new_text_format = unsafe {
-            RenderFactory::get().write_factory.CreateTextFormat(
-                PCWSTR(family.as_ptr()),
-                None,
-                weight,
-                style,
-                stretch,
-                text_format.font_size(),
-                PCWSTR(locale.as_ptr()),
-            )?
-        };
-
-        // 4. 配置可变属性 (耗时操作，不持有锁)
-        unsafe {
-            // Alignment
-            let dw_text_align = match text_format.text_alignment() {
-                TextAlignment::Start => DWRITE_TEXT_ALIGNMENT_LEADING,
-                TextAlignment::End => DWRITE_TEXT_ALIGNMENT_TRAILING,
-                TextAlignment::Center => DWRITE_TEXT_ALIGNMENT_CENTER,
-                TextAlignment::Justified => DWRITE_TEXT_ALIGNMENT_JUSTIFIED,
-            };
-            new_text_format.SetTextAlignment(dw_text_align)?;
-
-            let dw_para_align = match text_format.paragraph_alignment() {
-                ParagraphAlignment::Top => DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
-                ParagraphAlignment::Center => DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-                ParagraphAlignment::Bottom => DWRITE_PARAGRAPH_ALIGNMENT_FAR,
-            };
-            new_text_format.SetParagraphAlignment(dw_para_align)?;
-
-            // Wrapping
-            // Justified alignment requires word wrapping — without wrapping
-            // DirectWrite treats the single un-wrapped line as a non-last
-            // line and incorrectly applies inter-word expansion. With
-            // wrapping enabled the line becomes the "last line" of a
-            // paragraph and is left-aligned (standard typography).
-            let dw_wrap = if text_format.text_alignment() == TextAlignment::Justified
-                && text_format.word_wrapping() == WordWrapping::NoWrap
-            {
-                DWRITE_WORD_WRAPPING_WRAP
-            } else {
-                match text_format.word_wrapping() {
-                    WordWrapping::NoWrap => DWRITE_WORD_WRAPPING_NO_WRAP,
-                    WordWrapping::Wrap => DWRITE_WORD_WRAPPING_WRAP,
-                    WordWrapping::Character => DWRITE_WORD_WRAPPING_CHARACTER,
-                }
-            };
-            new_text_format.SetWordWrapping(dw_wrap)?;
-
-            // Line Height
-            if (text_format.line_height() - 1.0).abs() > f32::EPSILON {
-                let line_spacing = text_format.font_size() * text_format.line_height();
-                let extra_space = line_spacing - text_format.font_size();
-                let baseline = extra_space / 2.0 + text_format.font_size() * 0.85;
-
-                new_text_format.SetLineSpacing(
-                    DWRITE_LINE_SPACING_METHOD_UNIFORM,
-                    line_spacing,
-                    baseline,
-                )?;
-            } else {
-                new_text_format.SetLineSpacing(DWRITE_LINE_SPACING_METHOD_DEFAULT, 0.0, 0.0)?;
-            }
-
-            // Trimming
-            let (granularity, _delimiter) = match text_format.text_trimming() {
-                TextTrimming::None => (DWRITE_TRIMMING_GRANULARITY_NONE, 0),
-                TextTrimming::Character | TextTrimming::EllipsisChar => {
-                    (DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0)
-                }
-                TextTrimming::Word | TextTrimming::EllipsisWord => {
-                    (DWRITE_TRIMMING_GRANULARITY_WORD, 0)
-                }
-            };
-            // 暂不支持省略号对象，传 None
-            new_text_format.SetTrimming(
-                &DWRITE_TRIMMING {
-                    granularity,
-                    delimiter: 0,
-                    delimiterCount: 0,
-                },
-                None,
-            )?;
-        }
-        text_format.set_raw(new_text_format);
-        text_format.clear_dirty();
         Ok(())
     }
 
