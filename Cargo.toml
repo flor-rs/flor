@@ -51,7 +51,6 @@ windows-core = "0.62"
 windows-numerics = "0.3"
 taffy = { version = "0.7.7", default-features = false, features = ["std", "taffy_tree", "content_size", "detailed_layout_info"] }
 parking_lot = "0.12"
-unicode-segmentation = "1.12.0"
 lru = "0.18.0"
 tiny-skia = "0.12"
 arboard = "3.6"

@@ -164,6 +164,7 @@ fn computed_layout(
     state_variants: &FxHashMap<ControlState, FxHashMap<LayoutKey, Layout>>,
 ) -> Style {
     let mut layout_style = Style {
+        #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
         align_items: Some(AlignItems::Start),
         ..Style::DEFAULT
     };

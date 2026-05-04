@@ -538,7 +538,7 @@ impl RenderContext for GlRenderer {
         text_format: Self::TextFormatHandle,
     ) -> Result<Self::LayoutText, Self::Error> {
         let mut layout = GlTextLayout::create_text_layout(text, bounds, text_format);
-        layout.dpi_scale = self.dpi_scale;
+        layout.set_dpi_scale(self.dpi_scale.0, self.dpi_scale.1);
         Ok(layout)
     }
 
@@ -808,7 +808,7 @@ impl RenderContext for GlRenderer {
             },
             text_format.clone(),
         );
-        text_layout.dpi_scale = self.dpi_scale;
+        text_layout.set_dpi_scale(self.dpi_scale.0, self.dpi_scale.1);
 
         self.draw_layout_text(&text_layout, brush, options)
     }

@@ -61,7 +61,6 @@ use flor_base::graphics::SvgDrawOptions;
 #[cfg(feature = "svg")]
 use std::ffi::c_void;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use unicode_segmentation::UnicodeSegmentation;
 #[cfg(feature = "svg")]
 use windows::{
     Win32::Foundation::HGLOBAL,

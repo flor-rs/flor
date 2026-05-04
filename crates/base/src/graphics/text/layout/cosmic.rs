@@ -31,7 +31,7 @@ impl<B: BrushHandle, E> CosmicTextLayout<B, E> {
             chunks: None,
             bounds,
             dpi_scale: (0.0, 0.0),
-            dirty: AtomicBool::new(false),
+            dirty: AtomicBool::new(true),
             buffer: RwLock::new(Buffer::new(
                 &mut FONT_SYSTEM.lock(),
                 Metrics::new(16., 16. * 1.),
@@ -39,6 +39,11 @@ impl<B: BrushHandle, E> CosmicTextLayout<B, E> {
             default_text_format,
             _marker: Default::default(),
         }
+    }
+
+    pub fn set_dpi_scale(&mut self, dpi_x: f32, dpi_y: f32) {
+        self.dpi_scale = (dpi_x, dpi_y);
+        self.dirty.store(true, Ordering::Relaxed);
     }
 
     fn ensure_buffer(&self) {
@@ -135,16 +140,29 @@ impl<B: BrushHandle, E> CosmicTextLayout<B, E> {
             let default_metadata = chunks.len();
             let default_attrs = config.to_cosmic_attrs().metadata(default_metadata);
 
+            // 辅助函数：确保索引是有效的 UTF-8 字符边界
+            let adjust_to_char_boundary = |s: &str, idx: usize| -> usize {
+                let mut adjusted = idx.min(s.len());
+                while adjusted > 0 && !s.is_char_boundary(adjusted) {
+                    adjusted -= 1;
+                }
+                adjusted
+            };
+
             for chunk in chunks {
                 let start = chunk.1.min(text_len);
                 let end = (chunk.1 + chunk.2).min(text_len);
 
-                if start > last_end {
-                    spans.push((&text[last_end..start], default_attrs.clone()));
+                // 确保 start 和 end 是有效的 UTF-8 字符边界
+                let safe_start = adjust_to_char_boundary(text, start);
+                let safe_end = adjust_to_char_boundary(text, end);
+
+                if safe_start > last_end {
+                    spans.push((&text[last_end..safe_start], default_attrs.clone()));
                 }
-                if end > start {
-                    spans.push((&text[start..end], chunk.0.clone()));
-                    last_end = end;
+                if safe_end > safe_start {
+                    spans.push((&text[safe_start..safe_end], chunk.0.clone()));
+                    last_end = safe_end;
                 }
             }
 
@@ -242,7 +260,8 @@ impl<B: BrushHandle, E> CosmicTextLayout<B, E> {
                         test_text.push_str("...");
                     }
 
-                    Self::set_text_to_buffer(&mut buffer, &test_text, chunks, config);
+                    // 对于截断过程中的测试，不使用 chunks（避免索引不匹配的问题）
+                    Self::set_text_to_buffer(&mut buffer, &test_text, &[], config);
                     let overflow =
                         Self::check_layout_overflow(&buffer, phys_width, phys_height, height);
 
@@ -262,6 +281,7 @@ impl<B: BrushHandle, E> CosmicTextLayout<B, E> {
                 final_text = best_text;
             }
         }
+
         Self::set_text_to_buffer(&mut buffer, &final_text, chunks, config);
         buffer
     }

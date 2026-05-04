@@ -654,7 +654,7 @@ impl RenderContext for TinySkiaRenderer {
         let _timer = FuncTimer::new("create_text_layout");
         let mut layout =
             crate::text_layout::TinySkiaTextLayout::create_text_layout(text, bounds, text_format);
-        layout.dpi_scale = self.dpi_scale;
+        layout.set_dpi_scale(self.dpi_scale.0, self.dpi_scale.1);
         Ok(layout)
     }
 

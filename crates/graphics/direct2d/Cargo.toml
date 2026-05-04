@@ -20,8 +20,6 @@ memory-font = ["flor-base/memory-font", "windows-core", "windows/Foundation"]
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }
-rustc-hash = { workspace = true }
-once_cell = { workspace = true }
 flor-base = { workspace = true, features = ["graphics"] }
 lru = { workspace = true }
 parking_lot = { workspace = true }
@@ -37,4 +35,3 @@ windows = { workspace = true, features = ["Win32_Foundation",
     "Win32_System_Com_StructuredStorage"] }
 windows-numerics = { workspace = true }
 windows-core = { workspace = true, optional = true }
-unicode-segmentation = { workspace = true }

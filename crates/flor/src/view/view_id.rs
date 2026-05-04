@@ -6,7 +6,8 @@ use crate::signal::Id;
 use crate::view::control_state::ControlState;
 use crate::view::handler::ViewHandler;
 #[cfg(feature = "class")]
-use crate::view::resolver::{Class, LayoutResolver};
+use crate::view::resolver::Class;
+use crate::view::resolver::LayoutResolver;
 use crate::view::{ScrollState, View, ViewState, VIEW_STORAGE};
 use crate::windows::{render_from_view_id, WindowBusDispatchEntry, WindowEntryVisit};
 use flor_base::graphics::RenderContext;
