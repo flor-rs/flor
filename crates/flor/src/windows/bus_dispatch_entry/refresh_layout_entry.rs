@@ -48,15 +48,12 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
         return Ok(());
     };
 
-    #[cfg(feature = "class")]
-    update_view_class(states.deref());
-
     let view_state = view_state_cell.read();
     let old_node_id = view_state.node_id;
 
     let style_update = view_state
         .layout_style
-        .get_update_data_clone(view_id.control_state());
+        .get_data_if_changed(view_id.control_state());
 
     drop(view_state);
 
@@ -174,17 +171,6 @@ pub fn refresh_layout_entry(window_id: WindowId) -> Result<(), Error> {
         total_elapsed
     );
     Ok(())
-}
-
-#[cfg(feature = "class")]
-fn update_view_class(states: &SecondaryMap<ViewId, RwLock<ViewState>>) {
-    let class = VIEW_STORAGE.class.write();
-    for (view_id, class) in class.iter() {
-        if let Some(view_state) = states.get(view_id) {
-            let mut view_state = view_state.write();
-            class.apply_layout(&mut view_state.layout_style);
-        }
-    }
 }
 
 /// 计算累积变换矩阵
@@ -331,7 +317,7 @@ pub fn collect_layout_children(
                         _ => ControlState::Normal,
                     };
 
-                    let style = view_state.layout_style.get_update_data_clone(control_state);
+                    let style = view_state.layout_style.get_data_if_changed(control_state);
                     drop(view_state);
 
                     // 获取当前节点的子节点

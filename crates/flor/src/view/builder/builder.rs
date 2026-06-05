@@ -22,7 +22,7 @@ impl<V: View> ViewBuilder for V {
 #[macro_export]
 macro_rules! view {
     ($x:expr) => {
-        Box::new($x) as Box<dyn flor::view::View + Send + Sync + 'static>
+        $crate::view::builder::IntoView::into_view($x)
     };
 }
 
@@ -30,7 +30,9 @@ macro_rules! view {
 macro_rules! views {
     ( $( $x:expr ),* $(,)? ) => {
         vec![
-            $( Box::new(($x)) as Box<dyn flor::view::View + Send + Sync + 'static> ),*
+            $(
+                $crate::view::builder::IntoView::into_view($x)
+            ),*
         ]
     };
 }

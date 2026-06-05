@@ -25,7 +25,7 @@ mod wheel_scroll_lines_changed_entry;
 
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
-use crate::view::ViewId;
+use crate::view::{ViewId, VIEW_STORAGE};
 use crate::windows::bus::render;
 use crate::windows::bus_dispatch_entry::button_down_entry::button_down_entry;
 use crate::windows::bus_dispatch_entry::button_up_entry::button_up_entry;
@@ -51,7 +51,7 @@ use crate::windows::bus_dispatch_entry::right_button_down_entry::right_button_do
 use crate::windows::bus_dispatch_entry::right_button_up_entry::right_button_up_entry;
 use crate::windows::bus_dispatch_entry::tooltip_check_entry::tooltip_check_entry;
 use crate::windows::bus_dispatch_entry::wheel_scroll_lines_changed_entry::wheel_scroll_lines_changed_entry;
-use crate::windows::WindowEntryVisit;
+use crate::windows::{TryViewId, WindowEntryVisit};
 use flor_base::graphics::RenderContext;
 use flor_base::platform::{HandleResult, InputEvent, KeyCode, KeyState};
 use flor_base::platform::{MousePosition, ScrollAxis};
@@ -204,6 +204,7 @@ pub trait WindowBusDispatchEntry {
     fn request_redraw(&self);
 
     fn update_child_layout_dpi(&self, dpi_x: f32, dpi_y: f32);
+    fn clear_layout_resolver_cache(self);
 }
 
 impl WindowBusDispatchEntry for WindowId {
@@ -463,6 +464,24 @@ impl WindowBusDispatchEntry for WindowId {
         if let Some(entry) = self.entry() {
             entry.unit.load().dpi_x.store(dpi_x, Ordering::Relaxed);
             entry.unit.load().dpi_y.store(dpi_y, Ordering::Relaxed);
+        }
+    }
+
+    fn clear_layout_resolver_cache(self) {
+        let Some(view_id) = self.try_view_id() else {
+            return;
+        };
+        let mut stack = vec![view_id];
+        let child_ids = VIEW_STORAGE.child_ids.read();
+        loop {
+            let Some(view_id) = stack.pop() else {
+                break;
+            };
+
+            view_id.clear_layout_resolver_cache();
+            if let Some(childs_ids) = child_ids.get(view_id) {
+                stack.extend(childs_ids);
+            }
         }
     }
 }

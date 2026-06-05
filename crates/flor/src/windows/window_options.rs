@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::render::FlorRenderer;
 use crate::signal::create_updater;
 use crate::view::builder::ViewBuilder;
-use crate::view::resolver::Unit;
+use crate::view::resolver::UnitMetrics;
 use crate::view::{IntoViewIter, View};
 use crate::view::{ViewStorage, VIEW_STORAGE};
 use crate::windows::bus;
@@ -96,7 +96,7 @@ impl WindowOption {
 
         let (dpi_x, dpi_y) = window_id.get_dpi()?;
         let (w, h) = window_id.get_client_size()?;
-        let unit = Arc::new(ArcSwap::from_pointee(Unit::new(
+        let unit = Arc::new(ArcSwap::from_pointee(UnitMetrics::new(
             dpi_x,
             dpi_y,
             self.rem_px,

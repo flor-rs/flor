@@ -8,16 +8,22 @@ use crate::view::control_state::ControlState;
 use crate::view::ViewId;
 use parking_lot::{MappedRwLockReadGuard, RawRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
+use slotmap::{new_key_type, SlotMap};
+use small_map::FxSmallMap;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-#[derive(Debug, Copy, Clone, Default)]
-pub enum ResolverLayer {
-    Default,
-    #[default]
-    Normal,
+new_key_type! {
+    pub struct LayerId;
 }
+
+const RESOLVER_INLINE_LIMIT: usize = 24;
+
+pub type ResolverComputeMap<K, V> = FxSmallMap<RESOLVER_INLINE_LIMIT, K, V>;
+pub type ResolverVariantsMap<K, V> =
+    FxSmallMap<RESOLVER_INLINE_LIMIT, K, FxSmallMap<4, ControlState, V>>;
 
 #[derive(Debug)]
 pub struct Resolver<K, V, D, F>
@@ -25,17 +31,16 @@ where
     K: Eq + Hash + Clone,
     V: Clone,
     D: Clone,
-    F: for<'a> Fn(&UnitResolver, ControlState, &FxHashMap<ControlState, FxHashMap<K, V>>) -> D,
+    F: for<'a> Fn(&UnitResolver, &ResolverComputeMap<K, V>) -> D,
 {
     pub unit_resolver: UnitResolver,
-    pub current_key: ControlState,
-    #[cfg(feature = "class")]
-    pub class_state_variants: FxHashMap<ControlState, FxHashMap<K, V>>,
-    pub layer: ResolverLayer,
-    pub default_state_variants: FxHashMap<ControlState, FxHashMap<K, V>>,
-    pub state_variants: FxHashMap<ControlState, FxHashMap<K, V>>,
+    pub current_control_state: ControlState,
+    pub current_layer_id: LayerId,
+    pub layer_seq: Vec<LayerId>,
+    pub state_layer: SlotMap<LayerId, ResolverVariantsMap<K, V>>,
     pub cache_data: RwLock<FxHashMap<ControlState, D>>,
     pub compute_func: Arc<F>,
+    pub dirty: AtomicBool,
 }
 
 impl<K, V, D, F> Clone for Resolver<K, V, D, F>
@@ -43,19 +48,18 @@ where
     K: Eq + Hash + Clone,
     V: Clone,
     D: Clone,
-    F: for<'a> Fn(&UnitResolver, ControlState, &FxHashMap<ControlState, FxHashMap<K, V>>) -> D,
+    F: for<'a> Fn(&UnitResolver, &ResolverComputeMap<K, V>) -> D,
 {
     fn clone(&self) -> Self {
         Self {
             unit_resolver: self.unit_resolver.clone(),
-            current_key: self.current_key,
-            #[cfg(feature = "class")]
-            class_state_variants: self.class_state_variants.clone(),
-            layer: ResolverLayer::default(),
-            default_state_variants: self.default_state_variants.clone(),
-            state_variants: self.state_variants.clone(),
-            cache_data: RwLock::new(Default::default()), // 缓存不需要克隆，会重新计算
+            current_control_state: self.current_control_state,
+            current_layer_id: self.current_layer_id,
+            layer_seq: self.layer_seq.clone(),
+            state_layer: self.state_layer.clone(),
+            cache_data: RwLock::new(Default::default()),
             compute_func: self.compute_func.clone(),
+            dirty: AtomicBool::new(true),
         }
     }
 }
@@ -65,35 +69,43 @@ where
     K: Eq + Hash + Clone,
     V: Clone,
     D: Clone,
-    F: for<'a> Fn(&UnitResolver, ControlState, &FxHashMap<ControlState, FxHashMap<K, V>>) -> D,
+    F: for<'a> Fn(&UnitResolver, &ResolverComputeMap<K, V>) -> D,
 {
     #[inline]
     pub fn new_with_compute_func(view_id: ViewId, compute_func: F) -> Self {
+        let mut state_variants = SlotMap::with_key();
+        let current_layer_id = state_variants.insert(Default::default());
         Self {
             unit_resolver: UnitResolver::new(view_id),
-            current_key: Default::default(),
-            #[cfg(feature = "class")]
-            class_state_variants: Default::default(),
-            layer: ResolverLayer::Normal,
-            default_state_variants: Default::default(),
-            state_variants: Default::default(),
+            current_control_state: Default::default(),
+            current_layer_id,
+            layer_seq: vec![current_layer_id],
+            state_layer: state_variants,
             cache_data: RwLock::new(Default::default()),
             compute_func: Arc::new(compute_func),
+            dirty: AtomicBool::new(true),
         }
     }
 
-    pub fn default_layer(mut self) -> Self {
-        self.layer = ResolverLayer::Default;
-        self
+    pub fn new_layer(&mut self) -> LayerId {
+        let layer_id = self.state_layer.insert(Default::default());
+        self.layer_seq.push(layer_id);
+        layer_id
     }
 
-    pub fn normal_layer(mut self) -> Self {
-        self.layer = ResolverLayer::Normal;
-        self
+    pub fn switch_layer(&mut self, layer_id: LayerId) {
+        self.current_layer_id = layer_id;
     }
 
-    pub fn switch(&mut self, control_state: ControlState) {
-        self.current_key = control_state;
+    pub fn switch_control_state(&mut self, control_state: ControlState) {
+        self.current_control_state = control_state;
+    }
+
+    pub fn clear_layer_variants(&mut self, layer_id: LayerId) {
+        if let Some(map) = self.state_layer.get_mut(layer_id) {
+            map.clear();
+        }
+        self.cache_data.write().clear();
     }
 
     #[inline(always)]
@@ -102,110 +114,64 @@ where
     }
     #[inline]
     pub fn normal(mut self) -> Self {
-        self.current_key = ControlState::Normal;
+        self.current_control_state = ControlState::Normal;
         self
     }
     #[inline]
     pub fn focus(mut self) -> Self {
-        self.current_key = ControlState::Focus;
+        self.current_control_state = ControlState::Focus;
         self
     }
     #[inline]
     pub fn hover(mut self) -> Self {
-        self.current_key = ControlState::Hover;
+        self.current_control_state = ControlState::Hover;
         self
     }
     #[inline]
     pub fn active(mut self) -> Self {
-        self.current_key = ControlState::Active;
+        self.current_control_state = ControlState::Active;
         self
     }
     #[inline]
     pub fn disabled(mut self) -> Self {
-        self.current_key = ControlState::Disabled;
+        self.current_control_state = ControlState::Disabled;
         self
     }
     pub fn clear(mut self) -> Self {
-        match self.layer {
-            ResolverLayer::Default => {
-                if let Some(state_variants) = self.default_state_variants.get_mut(&self.current_key)
-                {
-                    state_variants.clear();
-                }
-            }
-            ResolverLayer::Normal => {
-                if let Some(state_variants) = self.state_variants.get_mut(&self.current_key) {
-                    state_variants.clear();
-                }
-            }
-        }
-        self.cache_data.write().remove(&self.current_key);
+        self.state_layer.clear();
+        self.clear_cache();
         self
     }
+
     #[inline]
-    pub fn clear_all(mut self) -> Self {
-        self.default_state_variants.clear();
-        #[cfg(feature = "class")]
-        self.class_state_variants.clear();
-        self.state_variants.clear();
+    pub fn clear_cache(&mut self) {
         self.cache_data.write().clear();
-        self
+        self.dirty.store(true, Ordering::Release);
     }
 
     pub fn push(&mut self, k: K, v: V) {
-        match self.layer {
-            ResolverLayer::Default => {
-                self.default_state_variants
-                    .entry(self.current_key)
-                    .or_default()
-                    .insert(k, v);
+        if let Some(state_variants) = self.state_layer.get_mut(self.current_layer_id) {
+            if let Some(state_map) = state_variants.get_mut(&k) {
+                state_map.insert(self.current_control_state, v);
+            } else {
+                state_variants.insert(k, FxSmallMap::from_iter([(self.current_control_state, v)]));
             }
-            ResolverLayer::Normal => {
-                self.state_variants
-                    .entry(self.current_key)
-                    .or_default()
-                    .insert(k, v);
-            }
+            self.clear_cache();
         }
-        self.cache_data.write().remove(&self.current_key);
     }
 
     pub fn update(&mut self, state_key: ControlState, k: K, v: V) {
-        match self.layer {
-            ResolverLayer::Default => {
-                self.default_state_variants
-                    .entry(state_key)
-                    .or_default()
-                    .insert(k, v);
+        if let Some(layer_map) = self.state_layer.get_mut(self.current_layer_id) {
+            if let Some(state_map) = layer_map.get_mut(&k) {
+                state_map.insert(state_key, v);
+            } else {
+                layer_map.insert(k, FxSmallMap::from_iter([(state_key, v)]));
             }
-            ResolverLayer::Normal => {
-                self.state_variants
-                    .entry(state_key)
-                    .or_default()
-                    .insert(k, v);
-            }
-        }
-        if state_key == ControlState::Normal {
-            self.cache_data.write().clear();
-        } else {
-            self.cache_data.write().remove(&state_key);
+
+            self.clear_cache();
         }
     }
 
-    #[cfg(feature = "class")]
-    pub fn class_update(&mut self, state_key: ControlState, k: K, v: V) {
-        self.class_state_variants
-            .entry(state_key)
-            .or_default()
-            .insert(k, v);
-        if state_key == ControlState::Normal {
-            self.cache_data.write().clear();
-        } else {
-            self.cache_data.write().remove(&state_key);
-        }
-    }
-
-    /// 0 拷贝 + 返回带锁引用 + 不可到达语义
     pub fn get_data_borrow(&self, state: ControlState) -> MappedRwLockReadGuard<'_, D> {
         {
             let guard = self.cache_data.read();
@@ -242,72 +208,55 @@ where
                 guard.clear();
             }
 
-            let no_default = self.default_state_variants.is_empty();
-            let no_state = self.state_variants.is_empty();
-
-            #[cfg(feature = "class")]
-            let no_class = self.class_state_variants.is_empty();
-
-            let merge_map =
-                |dst: &mut FxHashMap<ControlState, FxHashMap<K, V>>,
-                 src: &FxHashMap<ControlState, FxHashMap<K, V>>| {
-                    for (state_key, map) in src.iter() {
-                        if let Some(existing_map) = dst.get_mut(state_key) {
-                            existing_map.extend(map.iter().map(|(k, v)| (k.clone(), v.clone())));
-                        } else {
-                            dst.insert(*state_key, map.clone());
+            let mut merged_variants = FxSmallMap::<24, _, _>::new();
+            for &layer_id in self.layer_seq.iter() {
+                if let Some(state_variants) = self.state_layer.get(layer_id) {
+                    for (k, v) in state_variants {
+                        match state {
+                            ControlState::Focus | ControlState::Hover => {
+                                // 继承默认
+                                if let Some(v) = v.get(&ControlState::Normal) {
+                                    merged_variants.insert(k.clone(), v.clone());
+                                }
+                                if let Some(v) = v.get(&state) {
+                                    merged_variants.insert(k.clone(), v.clone());
+                                }
+                            }
+                            ControlState::Active => {
+                                // 继承 focus
+                                if let Some(v) = v.get(&ControlState::Normal) {
+                                    merged_variants.insert(k.clone(), v.clone());
+                                }
+                                if let Some(v) = v.get(&ControlState::Focus) {
+                                    merged_variants.insert(k.clone(), v.clone());
+                                }
+                                if let Some(v) = v.get(&state) {
+                                    merged_variants.insert(k.clone(), v.clone());
+                                }
+                            }
+                            ControlState::Normal | ControlState::Disabled => {
+                                // 不继承
+                                if let Some(v) = v.get(&state) {
+                                    merged_variants.insert(k.clone(), v.clone());
+                                }
+                            }
                         }
                     }
-                };
-
-            #[cfg(feature = "class")]
-            let data = if no_default && no_class {
-                (self.compute_func)(&self.unit_resolver, self.current_key, &self.state_variants)
-            } else if no_default && no_state {
-                (self.compute_func)(
-                    &self.unit_resolver,
-                    self.current_key,
-                    &self.class_state_variants,
-                )
-            } else if no_class && no_state {
-                (self.compute_func)(
-                    &self.unit_resolver,
-                    self.current_key,
-                    &self.default_state_variants,
-                )
-            } else {
-                let mut merged_variants = self.default_state_variants.clone();
-                merge_map(&mut merged_variants, &self.class_state_variants);
-                merge_map(&mut merged_variants, &self.state_variants);
-                (self.compute_func)(&self.unit_resolver, self.current_key, &merged_variants)
-            };
-
-            #[cfg(not(feature = "class"))]
-            let data = if no_default {
-                (self.compute_func)(&self.unit_resolver, self.current_key, &self.state_variants)
-            } else if no_state {
-                (self.compute_func)(
-                    &self.unit_resolver,
-                    self.current_key,
-                    &self.default_state_variants,
-                )
-            } else {
-                let mut merged_variants = self.default_state_variants.clone();
-                merge_map(&mut merged_variants, &self.state_variants);
-                (self.compute_func)(&self.unit_resolver, self.current_key, &merged_variants)
-            };
+                }
+            }
+            let data = (self.compute_func)(&self.unit_resolver, &merged_variants);
 
             guard.insert(state, data);
         }
         RwLockWriteGuard::downgrade(guard)
     }
 
-    pub fn get_update_data_clone(&self, state: ControlState) -> Option<D> {
-        if !self.cache_data.read().contains_key(&state) {
-            let data = self.get_data_clone(state);
-            Some(data)
-        } else {
-            None
+    pub fn get_data_if_changed(&self, state: ControlState) -> Option<D> {
+        let dirty = self.dirty.load(Ordering::Acquire);
+        if dirty {
+            // 脏了一定要去拿数据
+            return Some(self.get_data_clone(state));
         }
+        None
     }
 }

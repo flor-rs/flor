@@ -3,7 +3,7 @@ use crate::view::control_state::ControlState;
 use crate::view::resolver::layout::{Layout, LayoutKey, LayoutResolver};
 use crate::view::resolver::shared::extract_bracket_value;
 
-use crate::view::resolver::UnitResolver;
+use crate::view::resolver::{Unit, UnitResolver};
 #[cfg(feature = "layout-grid")]
 use taffy::style_helpers::TaffyGridLine;
 #[cfg(feature = "layout-block")]
@@ -17,9 +17,7 @@ use taffy::{
 #[cfg(feature = "layout-flex")]
 use taffy::{FlexDirection, FlexWrap};
 #[cfg(feature = "layout-grid")]
-use taffy::{
-    GridAutoFlow, GridPlacement, Line, NonRepeatedTrackSizingFunction, TrackSizingFunction,
-};
+use taffy::{GridAutoFlow, GridPlacement, Line};
 
 #[derive(Default)]
 #[allow(dead_code)] // Fields may be unused depending on feature flags
@@ -662,7 +660,7 @@ impl LayoutAccumulator {
                     .push((LayoutKey::FlexShrink, Layout::FlexShrink(1.0)));
                 self.updates.push((
                     LayoutKey::FlexBasis,
-                    Layout::FlexBasis(Dimension::Percent(0.0)),
+                    Layout::FlexBasis(Dimension::Percent(0.0), Unit::Px),
                 ));
             }
             #[cfg(feature = "layout-flex")]
@@ -671,8 +669,10 @@ impl LayoutAccumulator {
                     .push((LayoutKey::FlexGrow, Layout::FlexGrow(1.0)));
                 self.updates
                     .push((LayoutKey::FlexShrink, Layout::FlexShrink(1.0)));
-                self.updates
-                    .push((LayoutKey::FlexBasis, Layout::FlexBasis(Dimension::Auto)));
+                self.updates.push((
+                    LayoutKey::FlexBasis,
+                    Layout::FlexBasis(Dimension::Auto, Unit::Px),
+                ));
             }
             #[cfg(feature = "layout-flex")]
             "flex-initial" => {
@@ -680,8 +680,10 @@ impl LayoutAccumulator {
                     .push((LayoutKey::FlexGrow, Layout::FlexGrow(0.0)));
                 self.updates
                     .push((LayoutKey::FlexShrink, Layout::FlexShrink(1.0)));
-                self.updates
-                    .push((LayoutKey::FlexBasis, Layout::FlexBasis(Dimension::Auto)));
+                self.updates.push((
+                    LayoutKey::FlexBasis,
+                    Layout::FlexBasis(Dimension::Auto, Unit::Px),
+                ));
             }
             #[cfg(feature = "layout-flex")]
             "flex-none" => {
@@ -689,8 +691,10 @@ impl LayoutAccumulator {
                     .push((LayoutKey::FlexGrow, Layout::FlexGrow(0.0)));
                 self.updates
                     .push((LayoutKey::FlexShrink, Layout::FlexShrink(0.0)));
-                self.updates
-                    .push((LayoutKey::FlexBasis, Layout::FlexBasis(Dimension::Auto)));
+                self.updates.push((
+                    LayoutKey::FlexBasis,
+                    Layout::FlexBasis(Dimension::Auto, Unit::Px),
+                ));
             }
             #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
             "items-start" => self
@@ -774,7 +778,7 @@ impl LayoutAccumulator {
                     if let Some(suffix) = class.strip_prefix("basis-") {
                         if let Some(v) = cfg.resolve_dim(suffix) {
                             self.updates
-                                .push((LayoutKey::FlexBasis, Layout::FlexBasis(v)));
+                                .push((LayoutKey::FlexBasis, Layout::FlexBasis(v, Unit::Px)));
                         }
                     }
                 }
@@ -827,8 +831,10 @@ impl LayoutAccumulator {
                         .and_then(|s| s.strip_suffix("px")?.parse::<f32>().ok())
                         .or_else(|| suffix.parse::<f32>().ok())
                     {
-                        self.updates
-                            .push((LayoutKey::ScrollbarWidth, Layout::ScrollbarWidth(v)));
+                        self.updates.push((
+                            LayoutKey::ScrollbarWidth,
+                            Layout::ScrollbarWidth(v, Unit::Px),
+                        ));
                     }
                 }
                 #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
@@ -899,107 +905,131 @@ impl LayoutAccumulator {
 
     pub(crate) fn apply(self, selector: &mut LayoutResolver, state: ControlState) {
         for (key, layout) in self.updates {
-            selector.class_update(state, key, layout);
+            selector.update(state, key, layout);
         }
 
         if self.pl.is_some() || self.pr.is_some() || self.pt.is_some() || self.pb.is_some() {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::Padding,
-                Layout::Padding(Rect {
-                    left: self.pl.unwrap_or(LengthPercentage::Length(0.0)),
-                    right: self.pr.unwrap_or(LengthPercentage::Length(0.0)),
-                    top: self.pt.unwrap_or(LengthPercentage::Length(0.0)),
-                    bottom: self.pb.unwrap_or(LengthPercentage::Length(0.0)),
-                }),
+                Layout::Padding(
+                    Rect {
+                        left: self.pl.unwrap_or(LengthPercentage::Length(0.0)),
+                        right: self.pr.unwrap_or(LengthPercentage::Length(0.0)),
+                        top: self.pt.unwrap_or(LengthPercentage::Length(0.0)),
+                        bottom: self.pb.unwrap_or(LengthPercentage::Length(0.0)),
+                    },
+                    Rect::default(),
+                ),
             );
         }
 
         if self.ml.is_some() || self.mr.is_some() || self.mt.is_some() || self.mb.is_some() {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::Margin,
-                Layout::Margin(Rect {
-                    left: self.ml.unwrap_or(LengthPercentageAuto::Length(0.0)),
-                    right: self.mr.unwrap_or(LengthPercentageAuto::Length(0.0)),
-                    top: self.mt.unwrap_or(LengthPercentageAuto::Length(0.0)),
-                    bottom: self.mb.unwrap_or(LengthPercentageAuto::Length(0.0)),
-                }),
+                Layout::Margin(
+                    Rect {
+                        left: self.ml.unwrap_or(LengthPercentageAuto::Length(0.0)),
+                        right: self.mr.unwrap_or(LengthPercentageAuto::Length(0.0)),
+                        top: self.mt.unwrap_or(LengthPercentageAuto::Length(0.0)),
+                        bottom: self.mb.unwrap_or(LengthPercentageAuto::Length(0.0)),
+                    },
+                    Rect::default(),
+                ),
             );
         }
 
         if self.il.is_some() || self.ir.is_some() || self.it.is_some() || self.ib.is_some() {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::Inset,
-                Layout::Inset(Rect {
-                    left: self.il.unwrap_or(LengthPercentageAuto::Auto),
-                    right: self.ir.unwrap_or(LengthPercentageAuto::Auto),
-                    top: self.it.unwrap_or(LengthPercentageAuto::Auto),
-                    bottom: self.ib.unwrap_or(LengthPercentageAuto::Auto),
-                }),
+                Layout::Inset(
+                    Rect {
+                        left: self.il.unwrap_or(LengthPercentageAuto::Auto),
+                        right: self.ir.unwrap_or(LengthPercentageAuto::Auto),
+                        top: self.it.unwrap_or(LengthPercentageAuto::Auto),
+                        bottom: self.ib.unwrap_or(LengthPercentageAuto::Auto),
+                    },
+                    Rect::default(),
+                ),
             );
         }
 
         if self.bd_l.is_some() || self.bd_r.is_some() || self.bd_t.is_some() || self.bd_b.is_some()
         {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::Border,
-                Layout::Border(Rect {
-                    left: self.bd_l.unwrap_or(LengthPercentage::Length(0.0)),
-                    right: self.bd_r.unwrap_or(LengthPercentage::Length(0.0)),
-                    top: self.bd_t.unwrap_or(LengthPercentage::Length(0.0)),
-                    bottom: self.bd_b.unwrap_or(LengthPercentage::Length(0.0)),
-                }),
+                Layout::Border(
+                    Rect {
+                        left: self.bd_l.unwrap_or(LengthPercentage::Length(0.0)),
+                        right: self.bd_r.unwrap_or(LengthPercentage::Length(0.0)),
+                        top: self.bd_t.unwrap_or(LengthPercentage::Length(0.0)),
+                        bottom: self.bd_b.unwrap_or(LengthPercentage::Length(0.0)),
+                    },
+                    Rect::default(),
+                ),
             );
         }
 
         if self.w.is_some() || self.h.is_some() {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::Size,
-                Layout::Size(Size {
-                    width: self.w.unwrap_or(Dimension::Auto),
-                    height: self.h.unwrap_or(Dimension::Auto),
-                }),
+                Layout::Size(
+                    Size {
+                        width: self.w.unwrap_or(Dimension::Auto),
+                        height: self.h.unwrap_or(Dimension::Auto),
+                    },
+                    Size::default(),
+                ),
             );
         }
         if self.min_w.is_some() || self.min_h.is_some() {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::MinSize,
-                Layout::MinSize(Size {
-                    width: self.min_w.unwrap_or(Dimension::Auto),
-                    height: self.min_h.unwrap_or(Dimension::Auto),
-                }),
+                Layout::MinSize(
+                    Size {
+                        width: self.min_w.unwrap_or(Dimension::Auto),
+                        height: self.min_h.unwrap_or(Dimension::Auto),
+                    },
+                    Size::default(),
+                ),
             );
         }
         if self.max_w.is_some() || self.max_h.is_some() {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::MaxSize,
-                Layout::MaxSize(Size {
-                    width: self.max_w.unwrap_or(Dimension::Auto),
-                    height: self.max_h.unwrap_or(Dimension::Auto),
-                }),
+                Layout::MaxSize(
+                    Size {
+                        width: self.max_w.unwrap_or(Dimension::Auto),
+                        height: self.max_h.unwrap_or(Dimension::Auto),
+                    },
+                    Size::default(),
+                ),
             );
         }
 
         #[cfg(any(feature = "layout-flex", feature = "layout-grid"))]
         if self.gap_w.is_some() || self.gap_h.is_some() {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::Gap,
-                Layout::Gap(Size {
-                    width: self.gap_w.unwrap_or(LengthPercentage::Length(0.0)),
-                    height: self.gap_h.unwrap_or(LengthPercentage::Length(0.0)),
-                }),
+                Layout::Gap(
+                    Size {
+                        width: self.gap_w.unwrap_or(LengthPercentage::Length(0.0)),
+                        height: self.gap_h.unwrap_or(LengthPercentage::Length(0.0)),
+                    },
+                    Size::default(),
+                ),
             );
         }
 
         if self.of_x.is_some() || self.of_y.is_some() {
-            selector.class_update(
+            selector.update(
                 state,
                 LayoutKey::Overflow,
                 Layout::Overflow(Point {
@@ -1012,7 +1042,7 @@ impl LayoutAccumulator {
         #[cfg(feature = "layout-grid")]
         {
             if self.row_start.is_some() || self.row_end.is_some() {
-                selector.class_update(
+                selector.update(
                     state,
                     LayoutKey::GridRow,
                     Layout::GridRow(Line {
@@ -1022,7 +1052,7 @@ impl LayoutAccumulator {
                 );
             }
             if self.col_start.is_some() || self.col_end.is_some() {
-                selector.class_update(
+                selector.update(
                     state,
                     LayoutKey::GridColumn,
                     Layout::GridColumn(Line {

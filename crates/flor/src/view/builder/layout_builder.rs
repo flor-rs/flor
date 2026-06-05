@@ -1,8 +1,7 @@
-use crate::log_error::ResultLogExt;
 use crate::signal::create_updater_with_id;
 use crate::view::resolver::LayoutResolver;
 use crate::view::{View, VIEW_STORAGE};
-use crate::windows::WindowBusDispatchEntry;
+use crate::windows::WindowEntryVisit;
 
 pub trait LayoutBuilder {
     // 增加 'static 约束，因为闭包需要被 move 进 updater 长期持有
@@ -18,10 +17,12 @@ impl<T: View> LayoutBuilder for T {
     {
         let view_id = self.view_id();
 
+        let layer_id = view_id.new_layout_resolver_layer();
+
         // 2. 创建响应式更新器
         let (effect_id, _) = create_updater_with_id(
             move || {
-                let base_style = {
+                let mut current_style = {
                     let states = VIEW_STORAGE.states.read();
                     let view_state = states
                         .get(view_id)
@@ -29,21 +30,24 @@ impl<T: View> LayoutBuilder for T {
                         .read();
                     view_state.layout_style.clone()
                 };
-                let current_base = base_style.clone().normal_layer();
-                (style_fn)(current_base).normal_layer()
+                current_style.switch_layer(layer_id);
+                (style_fn)(current_style)
             },
-            move |new_style| {
+            move |mut new_style| {
+                new_style.clear_cache();
                 {
                     let states = VIEW_STORAGE.states.read();
                     let mut view_state = states
                         .get(view_id)
                         .expect(&format!("view[{}] not found ViewState", view_id))
                         .write();
-
+                    {
+                        //dbg!(new_style.cache_data.read().deref());
+                    }
                     view_state.layout_style = new_style;
                 }
                 if let Some(window_id) = view_id.window_id() {
-                    window_id.bus_re_draw_entry().error_on_err("fail draw");
+                    window_id.entry_mut().map(|entry| entry.mark_layout_dirty());
                 }
                 view_id.request_redraw();
             },

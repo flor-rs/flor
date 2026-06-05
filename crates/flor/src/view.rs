@@ -1056,6 +1056,24 @@ pub trait View {
                 .error_on_err(format!("on_tooltip_hide {{ view_id:{} }}", self.view_id()));
         }
     }
+
+    fn disable<F>(self, f: F) -> Self
+    where
+        Self: Sized,
+        F: Fn() + Read<bool> + 'static,
+    {
+        let view_id = self.view_id();
+        let val = create_updater_with_id(
+            move || f.get(),
+            move |disable| {
+                let _ = view_id.with_state_mut(|x| {
+                    x.disable = disable;
+                });
+            },
+        );
+        view_id.pending_effect_id(val.0);
+        self
+    }
 }
 
 impl<T: View> LoadRenderResource for T {

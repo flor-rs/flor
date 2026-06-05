@@ -2,8 +2,6 @@ use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::signal::{Id, RUNTIME};
 use crate::view::handler::ViewHandler;
-#[cfg(feature = "class")]
-use crate::view::resolver::Class;
 use crate::view::{ScrollState, View, ViewId, ViewState};
 use crate::windows::WINDOW_ENTRY_MAP;
 use flor_base::types::{Rect, Transform2D};
@@ -46,8 +44,6 @@ pub struct ViewStorage {
     pub accumulated_transform: RwLock<SecondaryMap<ViewId, Transform2D>>,
     // 缓存的视觉矩形（布局后计算）
     pub visual_rect: RwLock<SecondaryMap<ViewId, Rect<f32, f32>>>,
-    #[cfg(feature = "class")]
-    pub class: RwLock<SecondaryMap<ViewId, Class>>,
 }
 
 impl ViewStorage {
@@ -70,8 +66,6 @@ impl ViewStorage {
             transform: Default::default(),
             accumulated_transform: Default::default(),
             visual_rect: Default::default(),
-            #[cfg(feature = "class")]
-            class: Default::default(),
         }
     }
 

@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::log_error::ResultLogExt;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRendererError, LoadRenderResource};
@@ -7,7 +8,7 @@ use crate::view::control_state::ControlState;
 use crate::view::handler::ViewHandler;
 #[cfg(feature = "class")]
 use crate::view::resolver::Class;
-use crate::view::resolver::LayoutResolver;
+use crate::view::resolver::{parse_state_prefix, LayerId, LayoutResolver};
 use crate::view::{ScrollState, View, ViewState, VIEW_STORAGE};
 use crate::windows::{render_from_view_id, WindowBusDispatchEntry, WindowEntryVisit};
 use flor_base::graphics::RenderContext;
@@ -119,8 +120,17 @@ impl ViewId {
         }
     }
 
+    pub fn new_layout_resolver_layer(self) -> LayerId {
+        self.with_state_mut(|state| state.layout_style.new_layer())
+            .unwrap_or_else(|_| unreachable!())
+    }
+
+    pub fn clear_layout_resolver_cache(self) {
+        let _ = self.with_state_mut(|view_state| view_state.layout_style.clear_cache());
+    }
+
     #[cfg(feature = "class")]
-    pub fn update_class(self, class_str: String) {
+    pub fn update_class(self, layer_id: LayerId, class_str: String) {
         let mut classes = class_str
             .split_whitespace()
             .map(String::from)
@@ -148,8 +158,6 @@ impl ViewId {
         if let Some(view) = VIEW_STORAGE.views.read().get(self) {
             let mut view = view.write();
 
-            use crate::log_error::ResultLogExt;
-            use crate::view::resolver::parse_state_prefix;
             for class in &classes {
                 // 解析状态前缀: "hover:class_name" -> (Hover, "class_name")
                 let (control_state, actual_class) = parse_state_prefix(class);
@@ -158,23 +166,14 @@ impl ViewId {
             }
         }
 
-        let mut view_class = VIEW_STORAGE.class.write();
-        if !view_class.contains_key(self) {
-            view_class.insert(self, Class::new(self));
+        {
+            if let Some(view_state) = VIEW_STORAGE.states.read().get(self) {
+                let mut view_state = view_state.write();
+                view_state.layout_style.switch_layer(layer_id);
+                view_state.layout_style.clear_layer_variants(layer_id);
+                classes.apply_layout(&mut view_state.layout_style);
+            }
         }
-
-        let Some(class) = view_class.get_mut(self) else {
-            unreachable!()
-        };
-        class.load_classes(classes);
-
-        let states = VIEW_STORAGE.states.read();
-        let Some(view_state) = states.get(self) else {
-            unreachable!()
-        };
-        let mut view_state = view_state.write();
-
-        class.apply_layout(&mut view_state.layout_style);
 
         if let Some(window_id) = self.window_id() {
             window_id.entry().map(|e| e.mark_layout_dirty());

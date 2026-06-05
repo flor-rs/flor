@@ -19,21 +19,15 @@ where
     fn class(self, class_str: M) -> V {
         let view_id = self.view_id();
 
-        // create_updater 的第一个参数通常是一个 Fn，会多次执行以重新计算
-        // class_str 被 move 进这个闭包，成为闭包环境的一部分
-        let (effect_id, class_str) = create_updater_with_id(
-            move || {
-                // 无论是 String 还是 Fn，统一调用 make()
-                // 如果是 String，这里就相当于取环境里的变量
-                // 如果是 Fn，这里就是执行计算
-                class_str.make()
-            },
+        let layer_id = view_id.new_layout_resolver_layer();
+
+        let (effect_id, _class_str) = create_updater_with_id(
+            move || class_str.make(),
             move |class_str| {
-                view_id.update_class(class_str);
+                view_id.update_class(layer_id, class_str.clone());
             },
         );
         view_id.pending_effect_id(effect_id);
-        view_id.update_class(class_str);
         self
     }
 }

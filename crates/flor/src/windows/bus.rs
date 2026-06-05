@@ -83,13 +83,7 @@ pub fn event(window_id: WindowId, message: Message) -> Result<HandleResult, Erro
                     .viewport_height
                     .store(height as f32, Ordering::Relaxed);
             }
-            #[cfg(feature = "class")]
-            {
-                let mut class = VIEW_STORAGE.class.write();
-                for class in class.values_mut() {
-                    class.set_update();
-                }
-            }
+            window_id.clear_layout_resolver_cache();
             window_id.bus_refresh_layout_entry()?;
             {
                 let bus = render(window_id);
@@ -196,6 +190,8 @@ pub fn event(window_id: WindowId, message: Message) -> Result<HandleResult, Erro
             };
             render_lock.write().set_scale_factor(dpi_x, dpi_y)?;
             window_id.update_child_layout_dpi(dpi_x, dpi_y);
+            window_id.clear_layout_resolver_cache();
+            window_id.bus_refresh_layout_entry()?;
             HandleResult::Handled
         }
         Message::WindowDestroy => {

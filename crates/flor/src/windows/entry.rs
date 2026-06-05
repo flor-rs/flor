@@ -1,5 +1,5 @@
 use crate::view::focus_manager::FocusManager;
-use crate::view::resolver::Unit;
+use crate::view::resolver::UnitMetrics;
 use crate::view::ViewId;
 use arc_swap::ArcSwap;
 use dashmap::mapref::one::{Ref, RefMut};
@@ -35,7 +35,7 @@ pub struct WindowEntry {
     pub capture_view_id: Option<ViewId>,
     pub current_drag_target: Option<ViewId>,
     pub background_color: Color,
-    pub unit: Arc<ArcSwap<Unit>>,
+    pub unit: Arc<ArcSwap<UnitMetrics>>,
     /// tooltip 计时起点：鼠标进入当前 hover 控件时的时间戳
     pub tooltip_hover_start: Option<Instant>,
     /// 已经触发了 tooltip_show 的控件（避免重复触发）
@@ -54,7 +54,7 @@ impl WindowEntry {
         continuous_rendering: bool,
         show_fps: bool,
         background_color: Color,
-        unit: Arc<ArcSwap<Unit>>,
+        unit: Arc<ArcSwap<UnitMetrics>>,
         tooltip_delay: Duration,
     ) -> ViewId {
         let view_id = ViewId::new();
