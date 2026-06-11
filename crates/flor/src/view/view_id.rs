@@ -47,7 +47,7 @@ impl ViewId {
     #[inline]
     pub fn new_with_layout(layout_style_fn: impl FnOnce(ViewId) -> LayoutResolver) -> ViewId {
         let view_id = VIEW_STORAGE.view_ids.lock().insert(());
-        let layout_style = layout_style_fn(view_id).normal_layer();
+        let layout_style = layout_style_fn(view_id);
         VIEW_STORAGE.states.write().insert(
             view_id,
             RwLock::new(ViewState {

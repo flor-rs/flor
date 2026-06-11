@@ -404,8 +404,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
                     D: Clone,
                     F: for<'a> Fn(
                         &#flor_crate::view::resolver::UnitResolver,
-                        #flor_crate::view::ControlState,
-                        &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
+                        &#flor_crate::view::resolver::ResolverComputeMap<#key_enum_name, #enum_name>
                     ) -> D,
                 {
                     match update {
@@ -439,7 +438,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    // computed_xxx 独立函数（条件生成，带优化的 clone 逻辑）
+    // computed_xxx 独立函数（条件生成）
     // 需要 computed 结构体存在才能生成
     let computed_fn_code = if generate_computed && generate_computed_fn {
         quote! {
@@ -448,41 +447,17 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             // ==========================================
             pub fn #computed_fn_name(
                 _unit_resolver: &#flor_crate::view::resolver::UnitResolver,
-                state: #flor_crate::view::ControlState,
-                state_variants: &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>,
+                variants: &#flor_crate::view::resolver::ResolverComputeMap<#key_enum_name, #enum_name>
             ) -> #computed_struct_name {
                 let mut computed = #computed_struct_name::default();
 
-                // 预先获取 Specific 状态的 Map 引用，用于优化 clone
-                let specific_variants = if state == #flor_crate::view::ControlState::Normal {
-                    None
-                } else {
-                    state_variants.get(&state)
-                };
-
-                // 1. 应用 Normal 状态 (基础样式)
-                if let Some(normal_map) = state_variants.get(&#flor_crate::view::ControlState::Normal) {
-                    for (k, v) in normal_map.iter() {
-                        // 优化：如果 Specific 层有相同的 key，跳过 Normal 层的 clone
-                        if specific_variants.map_or(false, |s| s.contains_key(k)) {
-                            continue;
-                        }
-                        match k {
-                            #(#compute_match_arms)*
-                            _ => {}
-                        }
+                for (k, v) in variants.iter() {
+                    match k {
+                        #(#compute_match_arms)*
+                        _ => {}
                     }
                 }
 
-                // 2. 应用 Specific (Current State) 层
-                if let Some(map) = specific_variants {
-                    for (k, v) in map.iter() {
-                        match k {
-                            #(#compute_match_arms)*
-                            _ => {}
-                        }
-                    }
-                }
                 computed
             }
         }
@@ -500,8 +475,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             // ==========================================
             pub type #alias_name<F = fn(
                 &#flor_crate::view::resolver::UnitResolver,
-                #flor_crate::view::ControlState,
-                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
+                &#flor_crate::view::resolver::ResolverComputeMap<#key_enum_name, #enum_name>
             ) -> #data_ty> = #flor_crate::view::resolver::Resolver<
                 #key_enum_name,
                 #enum_name,
@@ -517,8 +491,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             // ==========================================
             pub type #alias_name<F = fn(
                 &#flor_crate::view::resolver::UnitResolver,
-                #flor_crate::view::ControlState,
-                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
+                &#flor_crate::view::resolver::ResolverComputeMap<#key_enum_name, #enum_name>
             ) -> #computed_struct_name> = #flor_crate::view::resolver::Resolver<
                 #key_enum_name,
                 #enum_name,
@@ -587,8 +560,7 @@ fn generate_resolver_impl(input: TokenStream) -> TokenStream {
             D: Clone,
             F: for<'a> Fn(
                 &#flor_crate::view::resolver::UnitResolver,
-                #flor_crate::view::ControlState,
-                &#flor_crate::rustc_hash::FxHashMap<#flor_crate::view::ControlState, #flor_crate::rustc_hash::FxHashMap<#key_enum_name, #enum_name>>
+                &#flor_crate::view::resolver::ResolverComputeMap<#key_enum_name, #enum_name>
             ) -> D,
         {
             #(#impl_methods)*

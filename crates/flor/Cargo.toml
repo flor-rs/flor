@@ -64,6 +64,7 @@ parking_lot = { workspace = true }
 slotmap = { workspace = true }
 dashmap = { workspace = true }
 rand = { workspace = true }
+small-map = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 flor-platform = { version = "0.1.0", path = "../platform/windows", package = "flor-platform-windows" }

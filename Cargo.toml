@@ -55,6 +55,7 @@ lru = "0.18.0"
 tiny-skia = "0.12"
 arboard = "3.6"
 slotmap = "1"
+small-map = "0.1.5"
 usvg = { version = "0.47.0" }
 resvg = { version = "0.47.0" }
 

@@ -3,21 +3,11 @@ mod resolver;
 
 pub use {metrics::*, resolver::*};
 
-    pub fn parse_length_percentage(&self, value: &str) -> Option<LengthPercentage> {
-        if value == "full" {
-            return Some(LengthPercentage::Percent(100.0));
-        }
-        if let Some(pct) = Self::parse_percent(value) {
-            return Some(LengthPercentage::Percent(pct));
-        }
-        if let Some(pct) = Self::parse_fraction(value) {
-            return Some(LengthPercentage::Percent(pct));
-        }
-        if let Some(px) = self.parse_unit_px(value) {
-            return Some(LengthPercentage::Length(px));
-        }
-        None
-    }
+#[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
+pub enum Unit {
+    #[default]
+    Px,
+    Pt,
 
     Rem,
 
@@ -25,19 +15,10 @@ pub use {metrics::*, resolver::*};
     Vh,
 }
 
-    #[inline]
-    pub fn resolve_dim(&self, suffix: &str) -> Option<Dimension> {
-        extract_bracket_value(suffix)
-            .and_then(|v| self.parse_dimension(v))
-            .or_else(|| self.parse_dimension(suffix))
-    }
-
-    #[inline]
-    pub fn resolve_lp(&self, suffix: &str) -> Option<LengthPercentage> {
-        extract_bracket_value(suffix)
-            .and_then(|v| self.parse_length_percentage(v))
-            .or_else(|| self.parse_length_percentage(suffix))
-    }
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub enum Length {
+    Px(f32),
+    Pt(f32),
 
     Rem(f32),
 
