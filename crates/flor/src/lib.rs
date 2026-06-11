@@ -1,9 +1,11 @@
+pub extern crate flor_base;
 #[cfg(feature = "direct2d")]
 pub extern crate flor_graphics_direct2d as graphics_gpu;
 #[cfg(feature = "opengl")]
 pub extern crate flor_graphics_opengl as graphics_gpu;
 #[cfg(feature = "tiny-skia")]
 pub extern crate flor_graphics_tiny_skia as graphics_cpu;
+pub extern crate flor_macros;
 pub extern crate flor_platform as platform;
 pub extern crate once_cell;
 pub extern crate parking_lot;
