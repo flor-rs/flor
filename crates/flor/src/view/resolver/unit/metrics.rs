@@ -2,15 +2,18 @@ use atomic_float::AtomicF32;
 
 #[derive(Debug)]
 pub struct UnitMetrics {
-    /// 1rem 对应的像素值 (默认 16.0)
+    /// Pixel size of 1rem for this window.
+    ///
+    /// Initialized from `WindowOption::rem_px`; the default window option is
+    /// 16.0, so 1rem resolves to 16px unless the window overrides it.
     pub rem_px: AtomicF32,
-    /// 水平方向 DPI (默认 96.0)
+    /// Horizontal DPI for this window. The default fallback is 96.0.
     pub dpi_x: AtomicF32,
-    /// 垂直方向 DPI (默认 96.0)
+    /// Vertical DPI for this window. The default fallback is 96.0.
     pub dpi_y: AtomicF32,
-    /// 视口宽度 (窗口客户区宽度，单位: px)
+    /// Viewport width, taken from the window client area, in pixels.
     pub viewport_width: AtomicF32,
-    /// 视口高度 (窗口客户区高度，单位: px)
+    /// Viewport height, taken from the window client area, in pixels.
     pub viewport_height: AtomicF32,
 }
 

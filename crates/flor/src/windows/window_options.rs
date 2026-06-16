@@ -21,6 +21,9 @@ pub struct WindowOption {
     pub title: String,
     pub width: u32,
     pub height: u32,
+    /// Pixel size of 1rem for layout and class length resolution in this window.
+    ///
+    /// This value seeds `UnitMetrics::rem_px`. The default is 16.0.
     pub rem_px: f32,
     pub wait_v_sync: bool,
     pub show_fps: bool,
