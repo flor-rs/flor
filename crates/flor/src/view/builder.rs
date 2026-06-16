@@ -9,9 +9,11 @@ mod style_builder;
 mod transform_builder;
 mod z_index_builder;
 
+mod disable_builder;
+
 pub use {
-    builder::*, event_builder::*, focus_index_builder::*, layout_builder::*, prop::*,
-    style_builder::*, transform_builder::*, z_index_builder::*,
+    builder::*, disable_builder::*, event_builder::*, focus_index_builder::*, layout_builder::*,
+    prop::*, style_builder::*, transform_builder::*, z_index_builder::*,
 };
 
 #[cfg(feature = "class")]
