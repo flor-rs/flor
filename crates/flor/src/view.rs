@@ -4,9 +4,9 @@ use crate::min_wait_time::MinWaitTime;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderer, FlorRendererError, LoadRenderResource};
-use crate::signal::{create_updater_with_id, Read};
+use crate::signal::Read;
+use crate::view::resolver::ComputedLayout;
 use crate::windows::render_from_view_id;
-use crate::ComputedLayout;
 use flor_base::graphics::RenderContext;
 #[cfg(feature = "drag-drop")]
 use flor_base::platform::{DragData, DragFormat, DropEffect};

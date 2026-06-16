@@ -2,6 +2,10 @@
 pub mod accumulators;
 #[cfg(feature = "class")]
 mod class;
+
+// Public type aliases.
+pub type ComputedLayout = taffy::Layout;
+
 #[cfg(feature = "class")]
 pub use class::*;
 

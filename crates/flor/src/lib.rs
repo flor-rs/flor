@@ -1,60 +1,67 @@
-pub extern crate flor_base;
+// Public crate facade.
+pub extern crate flor_base as base;
 #[cfg(feature = "direct2d")]
 pub extern crate flor_graphics_direct2d as graphics_gpu;
 #[cfg(feature = "opengl")]
 pub extern crate flor_graphics_opengl as graphics_gpu;
 #[cfg(feature = "tiny-skia")]
 pub extern crate flor_graphics_tiny_skia as graphics_cpu;
-pub extern crate flor_macros;
+pub extern crate flor_macros as macros;
 pub extern crate flor_platform as platform;
-pub extern crate once_cell;
-pub extern crate parking_lot;
-pub extern crate rustc_hash;
+pub extern crate taffy;
 
-pub mod graphics {
-    pub mod base {
-        pub use flor_base::graphics::*;
-    }
+/// Re-exported third-party dependencies used by Flor.
+///
+/// These are provided for convenience and version alignment.
+pub mod deps {
+    pub use once_cell;
+    pub use parking_lot;
+    pub use rustc_hash;
 }
 
+// Public re-exports.
+pub use base::types;
+
+// Public modules.
 pub mod device_kind;
 pub mod error;
 pub mod log_error;
-mod min_wait_time;
 pub mod proc;
 pub mod render;
 pub mod signal;
 pub mod view;
 pub mod windows;
 
-pub type ComputedLayout = taffy::Layout;
+// private modules
+mod min_wait_time;
 
+// Internal imports.
 use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::min_wait_time::MinWaitTime;
 use crate::proc::WindowsProcHandler;
 use crate::signal::{create_updater, RUNTIME};
 use crate::windows::{WindowBusDispatchEntry, RENDERS, WINDOW_ENTRY_MAP};
-pub use flor_base::types;
+
 use log::{debug, info, trace};
 use once_cell::sync::Lazy;
 use platform::set_proc_handler;
 #[cfg(feature = "tray")]
 use platform::{base::TrayEvent, base::TrayManagerEntry, base::TrayOptions, Tray, TrayId};
-pub use slotmap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-pub use taffy;
 
+// Internal global state.
 static ALLOW_NO_WINDOWS_LOOP: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 static EXIT: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
-
-pub static CONFIG: Lazy<bool> = Lazy::new(|| false);
 
 #[cfg(feature = "cross-thread-window-creation")]
 use crate::windows::WindowCreationQueue;
 #[cfg(feature = "cross-thread-window-creation")]
 static WINDOW_SPAWNER: WindowCreationQueue = WindowCreationQueue::new();
+
+// Public global config.
+pub static CONFIG: Lazy<bool> = Lazy::new(|| false);
 
 pub struct FlorGui;
 
