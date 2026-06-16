@@ -234,7 +234,7 @@ impl UnitResolver {
             Unit::Px => length,
             Unit::Pt => self.pt_to_px(length),
             Unit::Rem => self.rem_to_px(length),
-            Unit::Vw => self.vh_to_px(length),
+            Unit::Vw => self.vw_to_px(length),
             Unit::Vh => self.vh_to_px(length),
         }
     }
