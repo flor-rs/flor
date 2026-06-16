@@ -321,7 +321,7 @@ impl ViewId {
         ControlState::Normal
     }
 
-    pub fn update_focus_index(self, focus_index: u32) {
+    pub fn update_focus_index(self, focus_index: Option<u32>) {
         if let Some(win_id) = self.window_id() {
             if let Some(mut entry) = win_id.entry_mut() {
                 entry.focus_manager.update_focused(self, focus_index);
@@ -340,9 +340,7 @@ impl ViewId {
     pub fn set_focus(self, virtual_index: Option<u16>) {
         if let Some(win_id) = self.window_id() {
             if let Some(mut entry) = win_id.entry_mut() {
-                entry
-                    .focus_manager
-                    .set_focus(self, virtual_index.unwrap_or(1));
+                entry.focus_manager.set_focus(self, virtual_index);
             }
         }
     }

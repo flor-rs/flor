@@ -35,14 +35,14 @@ impl FocusManager {
     }
 
     /// 更新或插入焦点顺序（运行时动态更新，按单焦点处理）
-    pub fn update_focused(&mut self, view_id: ViewId, focus_index: u32) {
+    pub fn update_focused(&mut self, view_id: ViewId, focus_index: Option<u32>) {
         let old_entry = self.current_entry();
 
         // 清理该 ViewId 的所有旧条目
         self.focus_list.retain(|(_, vid, _)| *vid != view_id);
 
-        // 为0是禁用焦点功能，所以不为0才插入
-        if focus_index > 0 {
+        // 为None是禁用焦点功能,就不插入了
+        if let Some(focus_index) = focus_index {
             self.focus_list.push((focus_index, view_id, 0));
             self.focus_list
                 .sort_by_key(|(idx, vid, vi)| (*idx, *vid, *vi));
@@ -204,7 +204,7 @@ impl FocusManager {
         if let Some(scope) = self.scope_stack.pop() {
             // 恢复之前的焦点
             if let Some((vid, vi)) = scope.previous_focus {
-                self.set_focus(vid, vi);
+                self.set_focus(vid, Some(vi));
             }
         }
     }
@@ -218,7 +218,7 @@ impl FocusManager {
     fn focus_first_in_scope(&mut self) {
         let scoped_list = self.get_scoped_focus_list();
         if let Some((_, vid, vi)) = scoped_list.first() {
-            self.set_focus(*vid, *vi);
+            self.set_focus(*vid, Some(*vi));
         }
     }
 
@@ -247,7 +247,17 @@ impl FocusManager {
         new.0.call_focus(new.1);
     }
 
-    pub fn set_focus(&mut self, view_id: ViewId, virtual_index: u16) {
+    pub fn set_focus(&mut self, view_id: ViewId, virtual_index: Option<u16>) {
+        let Some(virtual_index) = virtual_index else {
+            if let Some((old_vid, old_vi)) = self.current_entry() {
+                if old_vid == view_id {
+                    self.current = None;
+                    old_vid.call_blur(old_vi);
+                }
+            }
+            return;
+        };
+
         let new_index = match self.index_map.get(&(view_id, virtual_index)).copied() {
             Some(idx) => idx,
             None => return,
