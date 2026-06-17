@@ -16,6 +16,31 @@ pub use theme_change_handler::*;
 
 pub use {key_handler::*, mouse_handler::*, view_handler::*, window_handler::*};
 
+#[doc(hidden)]
+pub struct FullArgs;
+
+#[doc(hidden)]
+pub struct NoArgs;
+
+#[doc(hidden)]
+pub struct ViewIdOnly;
+
+#[doc(hidden)]
+pub struct WithoutViewId;
+
+pub trait IntoEventHandler<T, Args> {
+    fn into_event_handler(self) -> T;
+}
+
+impl<T, F> IntoEventHandler<T, FullArgs> for F
+where
+    F: Into<T>,
+{
+    fn into_event_handler(self) -> T {
+        self.into()
+    }
+}
+
 #[derive(Default)]
 pub struct ViewHandler {
     // mouse_handler
@@ -138,5 +163,81 @@ where
 {
     fn from(f: F) -> Self {
         Handler(Arc::new(f))
+    }
+}
+
+impl<F> IntoEventHandler<Handler, NoArgs> for F
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    fn into_event_handler(self) -> Handler {
+        Handler(Arc::new(move |_| self()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(feature = "theme-change")]
+    use flor_base::platform::ThemeMode;
+    use flor_base::platform::{HandleResult, KeyCode, KeyState, MousePosition, ScrollAxis};
+
+    fn accept<T, Args>(handler: impl IntoEventHandler<T, Args>) -> T {
+        handler.into_event_handler()
+    }
+
+    #[test]
+    fn accepts_handler_parameter_shapes() {
+        let _: Handler = accept(|_: ViewId| {});
+        let _: Handler = accept(|| {});
+    }
+
+    #[test]
+    fn accepts_key_handler_parameter_shapes() {
+        let _: KeyHandler =
+            accept(|_: ViewId, _: KeyCode, _: bool, _: bool, _: bool| HandleResult::Default);
+        let _: KeyHandler = accept(|| HandleResult::Default);
+        let _: KeyHandler = accept(|_: ViewId| HandleResult::Default);
+        let _: KeyHandler = accept(|_: KeyCode, _: bool, _: bool, _: bool| HandleResult::Default);
+    }
+
+    #[test]
+    fn accepts_mouse_handler_parameter_shapes() {
+        let _: MouseHandler = accept(|_: ViewId, _: KeyState, _: MousePosition| {});
+        let _: MouseHandler = accept(|| {});
+        let _: MouseHandler = accept(|_: ViewId| {});
+        let _: MouseHandler = accept(|_: KeyState, _: MousePosition| {});
+    }
+
+    #[test]
+    fn accepts_focus_handler_parameter_shapes() {
+        let _: FocusHandler = accept(|_: ViewId, _: u16| {});
+        let _: FocusHandler = accept(|| {});
+        let _: FocusHandler = accept(|_: ViewId| {});
+        let _: FocusHandler = accept(|_: u16| {});
+    }
+
+    #[test]
+    fn accepts_window_handler_parameter_shapes() {
+        let _: OnWheelSettingsChangedHandler =
+            accept(|_: ViewId, _: ScrollAxis, _: f32, _: KeyState, _: MousePosition| {});
+        let _: OnWheelSettingsChangedHandler = accept(|| {});
+        let _: OnWheelSettingsChangedHandler = accept(|_: ViewId| {});
+        let _: OnWheelSettingsChangedHandler =
+            accept(|_: ScrollAxis, _: f32, _: KeyState, _: MousePosition| {});
+
+        let _: OnDpiChangeHandler = accept(|_: ViewId, _: f32, _: f32| {});
+        let _: OnDpiChangeHandler = accept(|| {});
+        let _: OnDpiChangeHandler = accept(|_: ViewId| {});
+        let _: OnDpiChangeHandler = accept(|_: f32, _: f32| {});
+    }
+
+    #[cfg(feature = "theme-change")]
+    #[test]
+    fn accepts_theme_handler_parameter_shapes() {
+        let _: OnThemeChangedHandler = accept(|_: ViewId, _: ThemeMode| {});
+        let _: OnThemeChangedHandler = accept(|| {});
+        let _: OnThemeChangedHandler = accept(|_: ViewId| {});
+        let _: OnThemeChangedHandler = accept(|_: ThemeMode| {});
     }
 }
