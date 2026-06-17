@@ -201,8 +201,8 @@ component, and declarative UI experience to help users quickly generate, modify,
 The documentation site provides LLM-oriented documentation entries for direct use when leveraging AI-assisted
 development.
 
-* Chinese: https://flor-rs.github.io/website/zh/ai.html
-* English: https://flor-rs.github.io/website/ai.html
+* Chinese: https://flor-rs.github.io/website/zh/guide/ai
+* English: https://flor-rs.github.io/website/guide/ai
 
 ## Roadmap
 

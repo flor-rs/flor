@@ -166,8 +166,8 @@ Flor 的界面布局。
 
 文档站有提供面向 LLM 的文档入口，方便在使用 AI 辅助开发时直接提供给模型阅读。
 
-* 中文：https://flor-rs.github.io/website/zh/ai.html
-* English：https://flor-rs.github.io/website/ai.html
+* 中文：https://flor-rs.github.io/website/zh/guide/ai
+* English：https://flor-rs.github.io/website/guide/ai
 
 ## 路线
 
