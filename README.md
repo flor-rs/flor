@@ -66,6 +66,27 @@ participate in early feedback.
 
 If you need fully stable production-grade commitments, it is better to wait for a future official release.
 
+## Core Capabilities
+
+Flor is positioned as a "framework kernel", not a finished GUI product with a complete built-in widget set and default
+visual system. It needs to be used together with a widget library, or with widgets implemented by the user. At this
+stage, what matters more than screenshots is clarifying the framework-level capability boundaries and the documentation
+entry points for those capabilities.
+
+Runnable examples will be added as the example projects are organized; these examples will mainly live in the `flor-lys`
+example projects.
+
+| Capability scope                                               |                                                         Current status | Documentation entry                                                                                                                                                                                                                                                                               |
+|----------------------------------------------------------------|-----------------------------------------------------------------------:|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Pure Rust native GUI / self-built platform and graphics layers |                                              Implemented and expanding | [Feature overview](https://flor-rs.github.io/website/guide/features/overview), [Window creation and control](https://flor-rs.github.io/website/guide/use/window)                                                                                                                                  |
+| Reactive signal system                                         |                                                            Implemented | [Cross-thread reactive signals](https://flor-rs.github.io/website/guide/use/signal)                                                                                                                                                                                                               |
+| No forced context binding / cross-thread capability            |                                                            Implemented | [Cross-thread reactive signals](https://flor-rs.github.io/website/guide/use/signal), [Cross-thread window creation](https://flor-rs.github.io/website/guide/features/cross-thread-window-creation)                                                                                                |
+| Multi-window creation and control                              |                                                            Implemented | [Window creation and control](https://flor-rs.github.io/website/guide/use/window)                                                                                                                                                                                                                 |
+| Widget-based development model / View extension                |                                                            Implemented | [View Trait](https://flor-rs.github.io/website/guide/control/view-trait), [Control state](https://flor-rs.github.io/website/guide/use/control-state), [Developing widgets from scratch](https://flor-rs.github.io/website/guide/control/create-widget)                                            |
+| Declarative UI DSL and utility-first styling                   |                                                            Implemented | [Framework DSL](https://flor-rs.github.io/website/guide/use/framework-dsl), [Layout](https://flor-rs.github.io/website/guide/use/builder/layout), [Atomic classes](https://flor-rs.github.io/website/guide/use/builder/class), [Style](https://flor-rs.github.io/website/guide/use/builder/style) |
+| Small size, few dependencies, and high-performance direction   | Design goal; quantified data will be added before the official release | For now, see [Cargo.toml](https://github.com/flor-rs/flor/blob/main/Cargo.toml) and the documentation; benchmark / size data will be added later                                                                                                                                                  |
+| Widget library                                                 |                                                        Being organized | Flor focuses on the framework kernel and is not expected to provide built-in widgets; the widget library is maintained separately as [flor-lys](https://github.com/flor-rs/flor-lys), and example projects are being organized                                                                    |
+
 ## Quick Start
 
 Flor is still in its early stage and has not been published to crates.io. Please import it from the Git repositories for
@@ -119,6 +140,10 @@ Example projects are being organized. At this stage, the suggested path is:
 * If you want to write real widgets, read the widget extension sections in the documentation site and refer to the
   implementation of `flor-lys`.
 
+> `flor-lys` still needs some time before its official release. It is currently in a stage where old and new code are
+> mixed and capabilities are still being filled in. Releasing it too early would only give users an incomplete and
+> hard-to-judge experience, rather than helping them understand or use Flor.
+
 Flor is a **framework**, not a widget library.
 
 It provides the infrastructure required by GUI applications, including the view system, signal system, window
@@ -139,40 +164,6 @@ Referencing, copying, and modifying existing widgets is enough to gradually get 
 This is exactly what the framework's name means:
 
 *Flowers bloom in succession, each with its own brilliance.*
-
-## Core Features
-
-* **Pure Rust Native GUI**
-  Builds the platform layer, graphics layer, event loop, layout integration, signal system, and view system from
-  scratch.
-
-* **Small Size, Few Dependencies**
-  Does not force dependencies on heavy abstraction crates such as winit or wgpu, and tries to keep the dependency tree
-  and binary size small.
-
-* **Reactive Signal System**
-  Signals can be read and written across threads, support O(1) update propagation, and reduce manual refresh work and
-  lifetime gymnastics.
-
-* **No Forced Context Binding**
-  Windows, signals, views, and tasks are not forcibly tied to a global context, making complex applications easier to
-  organize.
-
-* **Flexible Multi-Window Support**
-  Supports creating and controlling windows from any thread and any location, with each window able to set its refresh
-  mode independently.
-
-* **Retained Mode + Immediate Mode**
-  Flor's retained mode is built on top of an immediate-mode execution path, keeping performance characteristics close to
-  immediate mode even in retained mode, and making it naturally suitable for high-performance animation.
-
-* **Widget-Based Development Model**
-  `View` is Flor's widget foundation. The framework handles lifecycle, hit testing, focus, event dispatch, layout, and
-  drawing, while widget authors can extend their own widgets on a unified model.
-
-* **Declarative UI DSL and Utility-First Styling**
-  Flor supports declarative layout expressions similar to modern frontend development, and utility-first styling similar
-  to TailwindCSS, making it convenient to quickly organize interface structure.
 
 ## Suitable Use Cases
 
