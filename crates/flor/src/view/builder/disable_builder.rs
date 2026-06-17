@@ -1,5 +1,5 @@
 use crate::signal::create_updater_with_id;
-use crate::view::View;
+use crate::view::ViewIdentity;
 
 pub trait DisableBuilder {
     fn disable<F>(self, f: F) -> Self
@@ -7,12 +7,12 @@ pub trait DisableBuilder {
         F: Fn() -> bool + 'static;
 }
 
-impl<V: View> DisableBuilder for V {
+impl<V: ViewIdentity> DisableBuilder for V {
     fn disable<F>(self, f: F) -> Self
     where
         F: Fn() -> bool + 'static,
     {
-        let view_id = self.view_id();
+        let view_id = self.identity();
         let val = create_updater_with_id(
             move || f(),
             move |disable| {

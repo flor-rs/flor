@@ -4,7 +4,6 @@ use crate::min_wait_time::MinWaitTime;
 #[cfg(feature = "svg")]
 use crate::render::FlorSvgHandle;
 use crate::render::{FlorImageHandle, FlorRenderer, FlorRendererError, LoadRenderResource};
-use crate::signal::Read;
 use crate::view::resolver::ComputedLayout;
 use crate::windows::render_from_view_id;
 use flor_base::graphics::RenderContext;
@@ -20,7 +19,7 @@ mod control_state;
 pub mod focus_manager;
 mod frame_policy;
 pub mod handler;
-mod into_iter;
+mod into_view;
 pub mod resolver;
 mod scroll_state;
 mod view_id;
@@ -29,7 +28,7 @@ mod view_storage;
 mod visual_overflow;
 
 pub use {
-    control_state::*, frame_policy::*, handler::*, into_iter::*, scroll_state::*, view_id::*,
+    control_state::*, frame_policy::*, handler::*, into_view::*, scroll_state::*, view_id::*,
     view_state::*, view_storage::*, visual_overflow::*,
 };
 

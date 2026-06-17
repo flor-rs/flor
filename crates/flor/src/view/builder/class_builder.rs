@@ -1,5 +1,5 @@
 use crate::signal::create_updater_with_id;
-use crate::view::View;
+use crate::view::ViewIdentity;
 
 // 使用 define_prop! 宏生成 ClassProp trait
 crate::define_prop!(clone ClassProp, String, extra: &'static str => |s: &str| s.to_string());
@@ -13,11 +13,11 @@ pub trait ClassBuilder<M> {
 // 实现 Builder
 impl<V, M> ClassBuilder<M> for V
 where
-    V: View,
+    V: ViewIdentity,
     M: ClassProp, // 约束 M 必须实现了上述 Trait
 {
     fn class(self, class_str: M) -> V {
-        let view_id = self.view_id();
+        let view_id = self.identity();
 
         let layer_id = view_id.new_layout_resolver_layer();
 

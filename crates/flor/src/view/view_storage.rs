@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::log_error::ResultLogExt;
 use crate::signal::{Id, RUNTIME};
 use crate::view::handler::ViewHandler;
-use crate::view::{ScrollState, View, ViewId, ViewState};
+use crate::view::{IntoViewIter, ScrollState, View, ViewBox, ViewId, ViewState};
 use crate::windows::WINDOW_ENTRY_MAP;
 use flor_base::types::{Rect, Transform2D};
 use once_cell::sync::Lazy;
@@ -80,20 +80,16 @@ impl ViewStorage {
         view_id
     }
 
-    pub fn add_childs(
-        &self,
-        parent: ViewId,
-        children: impl IntoIterator<Item = Box<dyn View + Send + Sync + 'static>>,
-    ) {
-        let children: Vec<_> = children.into_iter().collect();
+    pub fn add_childs(&self, parent: ViewId, children: impl IntoViewIter) {
+        let children = children.into_view_iter().collect::<Vec<_>>();
         if children.is_empty() {
             return;
         }
 
-        let children_with_ids: Vec<(ViewId, Box<dyn View + Send + Sync + 'static>)> = children
+        let children_with_ids = children
             .into_iter()
             .map(|child| (child.view_id(), child))
-            .collect();
+            .collect::<Vec<(ViewId, ViewBox)>>();
 
         {
             let mut child_ids_guard = self.child_ids.write();

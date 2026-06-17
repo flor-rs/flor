@@ -1,5 +1,5 @@
 use crate::signal::create_updater_with_id;
-use crate::view::View;
+use crate::view::ViewIdentity;
 use flor_base::types::Transform2D;
 
 crate::define_prop!(clone TransformProp, Transform2D);
@@ -25,9 +25,9 @@ pub trait TransformBuilder {
     fn transform(self, transform: impl TransformProp) -> Self;
 }
 
-impl<V: View> TransformBuilder for V {
+impl<V: ViewIdentity> TransformBuilder for V {
     fn transform(self, transform: impl TransformProp) -> Self {
-        let view_id = self.view_id();
+        let view_id = self.identity();
         let (effect_id, init_transform) =
             create_updater_with_id(move || transform.make(), move |v| view_id.set_transform(v));
         view_id.pending_effect_id(effect_id);

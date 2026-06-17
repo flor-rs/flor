@@ -1,6 +1,6 @@
 use crate::signal::create_updater_with_id;
 use crate::view::resolver::LayoutResolver;
-use crate::view::{View, VIEW_STORAGE};
+use crate::view::{ViewIdentity, VIEW_STORAGE};
 use crate::windows::WindowEntryVisit;
 
 pub trait LayoutBuilder {
@@ -10,12 +10,12 @@ pub trait LayoutBuilder {
         F: Fn(LayoutResolver) -> LayoutResolver + 'static;
 }
 
-impl<T: View> LayoutBuilder for T {
+impl<T: ViewIdentity> LayoutBuilder for T {
     fn layout<F>(self, style_fn: F) -> Self
     where
         F: Fn(LayoutResolver) -> LayoutResolver + 'static,
     {
-        let view_id = self.view_id();
+        let view_id = self.identity();
 
         let layer_id = view_id.new_layout_resolver_layer();
 
